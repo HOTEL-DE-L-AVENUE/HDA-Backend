@@ -1,32 +1,3 @@
--- phpMyAdmin SQL Dump
--- version 5.2.1
--- https://www.phpmyadmin.net/
---
--- Hôte : 127.0.0.1
--- Généré le : mar. 23 juin 2026 à 14:41
--- Version du serveur : 10.4.32-MariaDB
--- Version de PHP : 8.2.12
-
-SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
-START TRANSACTION;
-SET time_zone = "+00:00";
-
-
-/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
-/*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
-/*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
-/*!40101 SET NAMES utf8mb4 */;
-
---
--- Base de données : `hda`
---
-
--- --------------------------------------------------------
-
---
--- Structure de la table `audit_logs`
---
-
 CREATE TABLE `audit_logs` (
   `id` bigint(20) UNSIGNED NOT NULL,
   `user_id` bigint(20) UNSIGNED DEFAULT NULL,
@@ -37,12 +8,6 @@ CREATE TABLE `audit_logs` (
   `created_at` datetime DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- --------------------------------------------------------
-
---
--- Structure de la table `casino_cards`
---
-
 CREATE TABLE `casino_cards` (
   `id` bigint(20) UNSIGNED NOT NULL,
   `client_id` bigint(20) UNSIGNED DEFAULT NULL,
@@ -51,24 +16,12 @@ CREATE TABLE `casino_cards` (
   `points` bigint(20) DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- --------------------------------------------------------
-
---
--- Structure de la table `casino_cashiers`
---
-
 CREATE TABLE `casino_cashiers` (
   `id` bigint(20) UNSIGNED NOT NULL,
   `room_id` bigint(20) UNSIGNED DEFAULT NULL,
   `nom` varchar(100) DEFAULT NULL,
   `statut` varchar(30) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- --------------------------------------------------------
-
---
--- Structure de la table `casino_chip_transactions`
---
 
 CREATE TABLE `casino_chip_transactions` (
   `id` bigint(20) UNSIGNED NOT NULL,
@@ -79,12 +32,6 @@ CREATE TABLE `casino_chip_transactions` (
   `created_at` datetime DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- --------------------------------------------------------
-
---
--- Structure de la table `casino_credits`
---
-
 CREATE TABLE `casino_credits` (
   `id` bigint(20) UNSIGNED NOT NULL,
   `client_id` bigint(20) UNSIGNED DEFAULT NULL,
@@ -94,24 +41,12 @@ CREATE TABLE `casino_credits` (
   `statut` varchar(30) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- --------------------------------------------------------
-
---
--- Structure de la table `casino_rooms`
---
-
 CREATE TABLE `casino_rooms` (
   `id` bigint(20) UNSIGNED NOT NULL,
   `nom` varchar(100) DEFAULT NULL,
   `type_salle` varchar(50) DEFAULT NULL,
   `statut` varchar(30) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- --------------------------------------------------------
-
---
--- Structure de la table `casino_scores`
---
 
 CREATE TABLE `casino_scores` (
   `id` bigint(20) UNSIGNED NOT NULL,
@@ -120,12 +55,6 @@ CREATE TABLE `casino_scores` (
   `categorie` varchar(30) DEFAULT NULL,
   `details` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`details`))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- --------------------------------------------------------
-
---
--- Structure de la table `casino_sessions`
---
 
 CREATE TABLE `casino_sessions` (
   `id` bigint(20) UNSIGNED NOT NULL,
@@ -137,12 +66,6 @@ CREATE TABLE `casino_sessions` (
   `fond_final` bigint(20) DEFAULT NULL,
   `ecart` bigint(20) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- --------------------------------------------------------
-
---
--- Structure de la table `casino_transactions`
---
 
 CREATE TABLE `casino_transactions` (
   `id` bigint(20) UNSIGNED NOT NULL,
@@ -401,7 +324,7 @@ CREATE TABLE `rooms` (
   `numero` varchar(20) DEFAULT NULL,
   `capacite` int(11) DEFAULT NULL,
   `prix_nuit` bigint(20) DEFAULT NULL,
-  `statut` varchar(30) DEFAULT NULL
+  `statut` enum('LIBRE','OCCUPEE','RESERVEE','NETTOYAGE','MAINTENANCE','HORS_SERVICE') DEFAULT 'LIBRE'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -513,6 +436,256 @@ CREATE TABLE `users` (
   `created_at` timestamp NULL DEFAULT NULL,
   `updated_at` timestamp NULL DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE equipments (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+
+    code VARCHAR(50) UNIQUE,
+    nom VARCHAR(100) NOT NULL,
+    categorie VARCHAR(50),
+
+    description TEXT,
+
+    created_at TIMESTAMP NULL,
+    updated_at TIMESTAMP NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE room_equipments (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+
+    room_id BIGINT UNSIGNED NOT NULL,
+    equipment_id BIGINT UNSIGNED NOT NULL,
+
+    quantite INT DEFAULT 1,
+
+    statut ENUM(
+        'BON',
+        'EN_PANNE',
+        'REMPLACE',
+        'HORS_SERVICE'
+    ) DEFAULT 'BON',
+
+    created_at TIMESTAMP NULL,
+    updated_at TIMESTAMP NULL,
+
+    CONSTRAINT fk_room_equipment_room
+        FOREIGN KEY (room_id)
+        REFERENCES rooms(id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_room_equipment_equipment
+        FOREIGN KEY (equipment_id)
+        REFERENCES equipments(id)
+        ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE room_maintenance (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+
+    room_id BIGINT UNSIGNED NOT NULL,
+
+    equipment_id BIGINT UNSIGNED NULL,
+
+    type_intervention ENUM(
+        'PREVENTIVE',
+        'CORRECTIVE',
+        'URGENCE'
+    ) NOT NULL,
+
+    description TEXT,
+
+    statut ENUM(
+        'OUVERT',
+        'EN_COURS',
+        'TERMINE',
+        'ANNULE'
+    ) DEFAULT 'OUVERT',
+
+    date_declaration DATETIME NOT NULL,
+
+    date_resolution DATETIME NULL,
+
+    cout BIGINT DEFAULT 0,
+
+    created_by BIGINT UNSIGNED NULL,
+
+    created_at TIMESTAMP NULL,
+    updated_at TIMESTAMP NULL,
+
+    FOREIGN KEY (room_id)
+        REFERENCES rooms(id),
+
+    FOREIGN KEY (equipment_id)
+        REFERENCES equipments(id),
+
+    FOREIGN KEY (created_by)
+        REFERENCES users(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE room_minibar (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+
+    room_id BIGINT UNSIGNED NOT NULL,
+
+    product_id BIGINT UNSIGNED NOT NULL,
+
+    quantite INT NOT NULL DEFAULT 0,
+
+    seuil_alerte INT DEFAULT 1,
+
+    created_at TIMESTAMP NULL,
+    updated_at TIMESTAMP NULL,
+
+    FOREIGN KEY (room_id)
+        REFERENCES rooms(id)
+        ON DELETE CASCADE,
+
+    FOREIGN KEY (product_id)
+        REFERENCES products(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE minibar_consumptions (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+
+    room_id BIGINT UNSIGNED NOT NULL,
+
+    client_id BIGINT UNSIGNED NOT NULL,
+
+    product_id BIGINT UNSIGNED NOT NULL,
+
+    quantite INT NOT NULL,
+
+    prix_unitaire BIGINT NOT NULL,
+
+    montant BIGINT NOT NULL,
+
+    facturee TINYINT(1) DEFAULT 0,
+
+    consumed_at DATETIME NOT NULL,
+
+    created_at TIMESTAMP NULL,
+
+    FOREIGN KEY (room_id)
+        REFERENCES rooms(id),
+
+    FOREIGN KEY (client_id)
+        REFERENCES clients(id),
+
+    FOREIGN KEY (product_id)
+        REFERENCES products(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE housekeeping_tasks (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+
+    room_id BIGINT UNSIGNED NOT NULL,
+
+    assigned_user_id BIGINT UNSIGNED NULL,
+
+    type_tache ENUM(
+        'NETTOYAGE',
+        'DESINFECTION',
+        'CHANGEMENT_DRAPS',
+        'CONTROLE'
+    ),
+
+    statut ENUM(
+        'A_FAIRE',
+        'EN_COURS',
+        'TERMINE'
+    ) DEFAULT 'A_FAIRE',
+
+    commentaire TEXT,
+
+    planned_at DATETIME,
+
+    completed_at DATETIME NULL,
+
+    created_at TIMESTAMP NULL,
+    updated_at TIMESTAMP NULL,
+
+    FOREIGN KEY (room_id)
+        REFERENCES rooms(id),
+
+    FOREIGN KEY (assigned_user_id)
+        REFERENCES users(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE lost_and_found (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+
+    room_id BIGINT UNSIGNED,
+
+    client_id BIGINT UNSIGNED NULL,
+
+    objet VARCHAR(255),
+
+    description TEXT,
+
+    date_trouvee DATETIME,
+
+    statut ENUM(
+        'TROUVE',
+        'RESTITUE',
+        'DETRUIT'
+    ) DEFAULT 'TROUVE',
+
+    date_restitution DATETIME NULL,
+
+    created_at TIMESTAMP NULL,
+
+    FOREIGN KEY (room_id)
+        REFERENCES rooms(id),
+
+    FOREIGN KEY (client_id)
+        REFERENCES clients(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE reservation_guests (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+
+    reservation_id BIGINT UNSIGNED NOT NULL,
+
+    nom VARCHAR(100) NOT NULL,
+
+    prenom VARCHAR(100),
+
+    date_naissance DATE NULL,
+
+    type_piece VARCHAR(50),
+
+    numero_piece VARCHAR(100),
+
+    created_at TIMESTAMP NULL,
+
+    FOREIGN KEY (reservation_id)
+        REFERENCES reservations(id)
+        ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE room_status_history (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+
+    room_id BIGINT UNSIGNED NOT NULL,
+
+    ancien_statut VARCHAR(30),
+
+    nouveau_statut VARCHAR(30),
+
+    commentaire TEXT,
+
+    changed_by BIGINT UNSIGNED,
+
+    changed_at DATETIME NOT NULL,
+
+    FOREIGN KEY (room_id)
+        REFERENCES rooms(id),
+
+    FOREIGN KEY (changed_by)
+        REFERENCES users(id)
+) ENGINE=InnoDB;
+
+
 
 --
 -- Index pour les tables déchargées
