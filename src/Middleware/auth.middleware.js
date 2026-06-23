@@ -1,6 +1,6 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+// middleware/auth.middleware.js
 const jwt = require("jsonwebtoken");
+const pool = require('../config/database');
 
 /**
  * Middleware d'authentification JWT
@@ -11,7 +11,10 @@ async function authenticateToken(req, res, next) {
   const token = authHeader && authHeader.split(" ")[1];
 
   if (!token) {
-    return res.status(401).json({ success: false, error: "Token requis" });
+    return res.status(401).json({ 
+      success: false, 
+      error: "Token requis" 
+    });
   }
 
   try {
@@ -24,40 +27,63 @@ async function authenticateToken(req, res, next) {
 
     // Vérifier si l'utilisateur est un client
     if (decoded.type === 'client') {
-      user = await prisma.clients.findUnique({
-        where: { id: parseInt(decoded.userId) },
-        select: {
-          id: true,
-          nom: true,
-          prenom: true,
-          email: true,
-          telephone: true,
-          code_client: true,
-          statut: true,
-          created_at: true,
-          updated_at: true
-        }
-      });
+      const [rows] = await pool.query(
+        `SELECT 
+          id, 
+          nom, 
+          prenom, 
+          email, 
+          telephone, 
+          code_client, 
+          statut,
+          is_casino_player,
+          created_at, 
+          updated_at 
+        FROM clients 
+        WHERE id = ?`,
+        [parseInt(decoded.userId)]
+      );
+      
+      user = rows[0] || null;
       userType = 'client';
       userRole = 'client';
+      
+      // Vérifier si le client est actif
+      if (user && user.statut !== 'ACTIF') {
+        return res.status(403).json({
+          success: false,
+          error: "Compte client inactif"
+        });
+      }
     } 
-    // Vérifier si l'utilisateur est un user (admin, manager, etc.)
+    // Vérifier si l'utilisateur est un user (admin, manager, chauffeur, etc.)
     else if (decoded.type === 'user') {
-      user = await prisma.users.findUnique({
-        where: { id: parseInt(decoded.userId) },
-        select: {
-          id: true,
-          nom: true,
-          prenom: true,
-          email: true,
-          role: true,
-          actif: true,
-          created_at: true,
-          updated_at: true
-        }
-      });
+      const [rows] = await pool.query(
+        `SELECT 
+          id, 
+          nom, 
+          prenom, 
+          email, 
+          role, 
+          actif,
+          created_at, 
+          updated_at 
+        FROM users 
+        WHERE id = ?`,
+        [parseInt(decoded.userId)]
+      );
+      
+      user = rows[0] || null;
       userType = 'user';
       userRole = user ? user.role.toLowerCase() : null;
+      
+      // Vérifier si l'utilisateur est actif
+      if (user && user.actif === 0) {
+        return res.status(403).json({
+          success: false,
+          error: "Compte utilisateur désactivé"
+        });
+      }
     }
 
     if (!user) {
@@ -67,35 +93,41 @@ async function authenticateToken(req, res, next) {
       });
     }
 
-    // Vérifier si l'utilisateur est actif (pour les users)
-    if (userType === 'user' && user.actif === 0) {
-      return res.status(403).json({
-        success: false,
-        error: "Compte utilisateur désactivé"
-      });
-    }
-
-    // Vérifier si le client est actif
-    if (userType === 'client' && user.statut !== 'ACTIF') {
-      return res.status(403).json({
-        success: false,
-        error: "Compte client inactif"
-      });
-    }
-
+    // Ajouter les informations utilisateur à req.user
     req.user = {
-      ...user,
+      id: user.id,
+      nom: user.nom,
+      prenom: user.prenom || null,
+      email: user.email,
       type: userType,
       role: userRole,
-      id_agence: id_agence
+      id_agence: id_agence, // null par défaut car pas dans votre table
+      // Ajouter des champs spécifiques selon le type
+      ...(userType === 'client' && {
+        code_client: user.code_client,
+        telephone: user.telephone,
+        statut: user.statut,
+        is_casino_player: user.is_casino_player === 1
+      }),
+      ...(userType === 'user' && {
+        actif: user.actif === 1
+      })
     };
     
     next();
   } catch (error) {
     console.error("Token verification error:", error);
+    
+    if (error.name === 'TokenExpiredError') {
+      return res.status(403).json({
+        success: false,
+        error: "Token expiré"
+      });
+    }
+    
     return res.status(403).json({
       success: false,
-      error: "Token invalide ou expiré"
+      error: "Token invalide"
     });
   }
 }
@@ -119,7 +151,7 @@ function requireRole(allowedRoles) {
 
     // Convertir les rôles en minuscules pour la comparaison
     const normalizedRoles = rolesArray.map(role => role.toLowerCase());
-    const normalizedUserRole = userRole.toLowerCase();
+    const normalizedUserRole = userRole ? userRole.toLowerCase() : '';
 
     // Admin a accès à tout
     if (normalizedUserRole === 'admin') {
@@ -133,9 +165,56 @@ function requireRole(allowedRoles) {
 
     res.status(403).json({
       success: false,
-      error: 'Accès non autorisé'
+      error: 'Accès non autorisé. Rôle requis: ' + rolesArray.join(', ')
     });
   };
 }
 
-module.exports = { authenticateToken, requireRole };
+/**
+ * Middleware pour vérifier si l'utilisateur est un client
+ */
+function requireClient(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      error: 'Authentification requise'
+    });
+  }
+
+  if (req.user.type !== 'client') {
+    return res.status(403).json({
+      success: false,
+      error: 'Accès réservé aux clients'
+    });
+  }
+
+  next();
+}
+
+/**
+ * Middleware pour vérifier si l'utilisateur est un user (employé)
+ */
+function requireUser(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      error: 'Authentification requise'
+    });
+  }
+
+  if (req.user.type !== 'user') {
+    return res.status(403).json({
+      success: false,
+      error: 'Accès réservé aux employés'
+    });
+  }
+
+  next();
+}
+
+module.exports = { 
+  authenticateToken, 
+  requireRole,
+  requireClient,
+  requireUser
+};

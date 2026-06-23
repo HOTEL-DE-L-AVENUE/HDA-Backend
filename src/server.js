@@ -1,8 +1,8 @@
 require('dotenv').config();
 
 const express = require('express');
-const { connectDatabase } = require('./config/database');
-const corsMiddleware = require('./src/Middleware/cors.middleware');
+const corsMiddleware = require('./Middleware/cors.middleware');
+const { connectDatabase } = require('./Config/connectDatabase');
 
 const app = express();
 
