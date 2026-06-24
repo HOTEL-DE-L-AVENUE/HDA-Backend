@@ -1,3 +1,32 @@
+-- phpMyAdmin SQL Dump
+-- version 5.2.1
+-- https://www.phpmyadmin.net/
+--
+-- Hôte : 127.0.0.1
+-- Généré le : mer. 24 juin 2026 à 07:43
+-- Version du serveur : 10.4.32-MariaDB
+-- Version de PHP : 8.2.12
+
+SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
+START TRANSACTION;
+SET time_zone = "+00:00";
+
+
+/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+/*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
+/*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
+/*!40101 SET NAMES utf8mb4 */;
+
+--
+-- Base de données : `hda`
+--
+
+-- --------------------------------------------------------
+
+--
+-- Structure de la table `audit_logs`
+--
+
 CREATE TABLE `audit_logs` (
   `id` bigint(20) UNSIGNED NOT NULL,
   `user_id` bigint(20) UNSIGNED DEFAULT NULL,
@@ -8,6 +37,12 @@ CREATE TABLE `audit_logs` (
   `created_at` datetime DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+-- --------------------------------------------------------
+
+--
+-- Structure de la table `casino_cards`
+--
+
 CREATE TABLE `casino_cards` (
   `id` bigint(20) UNSIGNED NOT NULL,
   `client_id` bigint(20) UNSIGNED DEFAULT NULL,
@@ -16,12 +51,24 @@ CREATE TABLE `casino_cards` (
   `points` bigint(20) DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+-- --------------------------------------------------------
+
+--
+-- Structure de la table `casino_cashiers`
+--
+
 CREATE TABLE `casino_cashiers` (
   `id` bigint(20) UNSIGNED NOT NULL,
   `room_id` bigint(20) UNSIGNED DEFAULT NULL,
   `nom` varchar(100) DEFAULT NULL,
   `statut` varchar(30) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Structure de la table `casino_chip_transactions`
+--
 
 CREATE TABLE `casino_chip_transactions` (
   `id` bigint(20) UNSIGNED NOT NULL,
@@ -32,6 +79,12 @@ CREATE TABLE `casino_chip_transactions` (
   `created_at` datetime DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+-- --------------------------------------------------------
+
+--
+-- Structure de la table `casino_credits`
+--
+
 CREATE TABLE `casino_credits` (
   `id` bigint(20) UNSIGNED NOT NULL,
   `client_id` bigint(20) UNSIGNED DEFAULT NULL,
@@ -41,12 +94,24 @@ CREATE TABLE `casino_credits` (
   `statut` varchar(30) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+-- --------------------------------------------------------
+
+--
+-- Structure de la table `casino_rooms`
+--
+
 CREATE TABLE `casino_rooms` (
   `id` bigint(20) UNSIGNED NOT NULL,
   `nom` varchar(100) DEFAULT NULL,
   `type_salle` varchar(50) DEFAULT NULL,
   `statut` varchar(30) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Structure de la table `casino_scores`
+--
 
 CREATE TABLE `casino_scores` (
   `id` bigint(20) UNSIGNED NOT NULL,
@@ -55,6 +120,12 @@ CREATE TABLE `casino_scores` (
   `categorie` varchar(30) DEFAULT NULL,
   `details` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`details`))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Structure de la table `casino_sessions`
+--
 
 CREATE TABLE `casino_sessions` (
   `id` bigint(20) UNSIGNED NOT NULL,
@@ -66,6 +137,12 @@ CREATE TABLE `casino_sessions` (
   `fond_final` bigint(20) DEFAULT NULL,
   `ecart` bigint(20) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Structure de la table `casino_transactions`
+--
 
 CREATE TABLE `casino_transactions` (
   `id` bigint(20) UNSIGNED NOT NULL,
@@ -141,6 +218,22 @@ CREATE TABLE `client_accounts` (
 -- --------------------------------------------------------
 
 --
+-- Structure de la table `equipments`
+--
+
+CREATE TABLE `equipments` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `code` varchar(50) DEFAULT NULL,
+  `nom` varchar(100) NOT NULL,
+  `categorie` varchar(50) DEFAULT NULL,
+  `description` text DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Structure de la table `financial_transactions`
 --
 
@@ -153,6 +246,25 @@ CREATE TABLE `financial_transactions` (
   `reference_id` bigint(20) DEFAULT NULL,
   `description` text DEFAULT NULL,
   `created_at` datetime DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Structure de la table `housekeeping_tasks`
+--
+
+CREATE TABLE `housekeeping_tasks` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `room_id` bigint(20) UNSIGNED NOT NULL,
+  `assigned_user_id` bigint(20) UNSIGNED DEFAULT NULL,
+  `type_tache` enum('NETTOYAGE','DESINFECTION','CHANGEMENT_DRAPS','CONTROLE') DEFAULT NULL,
+  `statut` enum('A_FAIRE','EN_COURS','TERMINE') DEFAULT 'A_FAIRE',
+  `commentaire` text DEFAULT NULL,
+  `planned_at` datetime DEFAULT NULL,
+  `completed_at` datetime DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -184,6 +296,24 @@ CREATE TABLE `invoice_items` (
 -- --------------------------------------------------------
 
 --
+-- Structure de la table `lost_and_found`
+--
+
+CREATE TABLE `lost_and_found` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `room_id` bigint(20) UNSIGNED DEFAULT NULL,
+  `client_id` bigint(20) UNSIGNED DEFAULT NULL,
+  `objet` varchar(255) DEFAULT NULL,
+  `description` text DEFAULT NULL,
+  `date_trouvee` datetime DEFAULT NULL,
+  `statut` enum('TROUVE','RESTITUE','DETRUIT') DEFAULT 'TROUVE',
+  `date_restitution` datetime DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Structure de la table `loyalty_points`
 --
 
@@ -193,6 +323,25 @@ CREATE TABLE `loyalty_points` (
   `points` bigint(20) DEFAULT NULL,
   `motif` varchar(255) DEFAULT NULL,
   `created_at` datetime DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Structure de la table `minibar_consumptions`
+--
+
+CREATE TABLE `minibar_consumptions` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `room_id` bigint(20) UNSIGNED NOT NULL,
+  `client_id` bigint(20) UNSIGNED NOT NULL,
+  `product_id` bigint(20) UNSIGNED NOT NULL,
+  `quantite` int(11) NOT NULL,
+  `prix_unitaire` bigint(20) NOT NULL,
+  `montant` bigint(20) NOT NULL,
+  `facturee` tinyint(1) DEFAULT 0,
+  `consumed_at` datetime NOT NULL,
+  `created_at` timestamp NULL DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -266,7 +415,8 @@ CREATE TABLE `products` (
   `unite` varchar(20) DEFAULT NULL,
   `prix_achat` bigint(20) DEFAULT NULL,
   `prix_vente` bigint(20) DEFAULT NULL,
-  `actif` tinyint(1) DEFAULT 1
+  `actif` tinyint(1) DEFAULT 1,
+  `type_produit` enum('MATIERE_PREMIERE','PRODUIT_FINI','CONSOMMABLE','SERVICE') DEFAULT 'MATIERE_PREMIERE'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -299,6 +449,33 @@ CREATE TABLE `purchase_items` (
 -- --------------------------------------------------------
 
 --
+-- Structure de la table `recipes`
+--
+
+CREATE TABLE `recipes` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `product_id` bigint(20) UNSIGNED NOT NULL,
+  `nom` varchar(255) DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Structure de la table `recipe_items`
+--
+
+CREATE TABLE `recipe_items` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `recipe_id` bigint(20) UNSIGNED NOT NULL,
+  `ingredient_id` bigint(20) UNSIGNED NOT NULL,
+  `quantite` decimal(15,3) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Structure de la table `reservations`
 --
 
@@ -315,6 +492,23 @@ CREATE TABLE `reservations` (
 -- --------------------------------------------------------
 
 --
+-- Structure de la table `reservation_guests`
+--
+
+CREATE TABLE `reservation_guests` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `reservation_id` bigint(20) UNSIGNED NOT NULL,
+  `nom` varchar(100) NOT NULL,
+  `prenom` varchar(100) DEFAULT NULL,
+  `date_naissance` date DEFAULT NULL,
+  `type_piece` varchar(50) DEFAULT NULL,
+  `numero_piece` varchar(100) DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Structure de la table `rooms`
 --
 
@@ -325,6 +519,75 @@ CREATE TABLE `rooms` (
   `capacite` int(11) DEFAULT NULL,
   `prix_nuit` bigint(20) DEFAULT NULL,
   `statut` enum('LIBRE','OCCUPEE','RESERVEE','NETTOYAGE','MAINTENANCE','HORS_SERVICE') DEFAULT 'LIBRE'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Structure de la table `room_equipments`
+--
+
+CREATE TABLE `room_equipments` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `room_id` bigint(20) UNSIGNED NOT NULL,
+  `equipment_id` bigint(20) UNSIGNED NOT NULL,
+  `quantite` int(11) DEFAULT 1,
+  `statut` enum('BON','EN_PANNE','REMPLACE','HORS_SERVICE') DEFAULT 'BON',
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Structure de la table `room_maintenance`
+--
+
+CREATE TABLE `room_maintenance` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `room_id` bigint(20) UNSIGNED NOT NULL,
+  `equipment_id` bigint(20) UNSIGNED DEFAULT NULL,
+  `type_intervention` enum('PREVENTIVE','CORRECTIVE','URGENCE') NOT NULL,
+  `description` text DEFAULT NULL,
+  `statut` enum('OUVERT','EN_COURS','TERMINE','ANNULE') DEFAULT 'OUVERT',
+  `date_declaration` datetime NOT NULL,
+  `date_resolution` datetime DEFAULT NULL,
+  `cout` bigint(20) DEFAULT 0,
+  `created_by` bigint(20) UNSIGNED DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Structure de la table `room_minibar`
+--
+
+CREATE TABLE `room_minibar` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `room_id` bigint(20) UNSIGNED NOT NULL,
+  `product_id` bigint(20) UNSIGNED NOT NULL,
+  `quantite` int(11) NOT NULL DEFAULT 0,
+  `seuil_alerte` int(11) DEFAULT 1,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Structure de la table `room_status_history`
+--
+
+CREATE TABLE `room_status_history` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `room_id` bigint(20) UNSIGNED NOT NULL,
+  `ancien_statut` varchar(30) DEFAULT NULL,
+  `nouveau_statut` varchar(30) DEFAULT NULL,
+  `commentaire` text DEFAULT NULL,
+  `changed_by` bigint(20) UNSIGNED DEFAULT NULL,
+  `changed_at` datetime NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -422,6 +685,18 @@ CREATE TABLE `tables_restaurant` (
 -- --------------------------------------------------------
 
 --
+-- Structure de la table `units`
+--
+
+CREATE TABLE `units` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `code` varchar(20) DEFAULT NULL,
+  `nom` varchar(100) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Structure de la table `users`
 --
 
@@ -436,256 +711,6 @@ CREATE TABLE `users` (
   `created_at` timestamp NULL DEFAULT NULL,
   `updated_at` timestamp NULL DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
-CREATE TABLE equipments (
-    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-
-    code VARCHAR(50) UNIQUE,
-    nom VARCHAR(100) NOT NULL,
-    categorie VARCHAR(50),
-
-    description TEXT,
-
-    created_at TIMESTAMP NULL,
-    updated_at TIMESTAMP NULL
-) ENGINE=InnoDB;
-
-CREATE TABLE room_equipments (
-    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-
-    room_id BIGINT UNSIGNED NOT NULL,
-    equipment_id BIGINT UNSIGNED NOT NULL,
-
-    quantite INT DEFAULT 1,
-
-    statut ENUM(
-        'BON',
-        'EN_PANNE',
-        'REMPLACE',
-        'HORS_SERVICE'
-    ) DEFAULT 'BON',
-
-    created_at TIMESTAMP NULL,
-    updated_at TIMESTAMP NULL,
-
-    CONSTRAINT fk_room_equipment_room
-        FOREIGN KEY (room_id)
-        REFERENCES rooms(id)
-        ON DELETE CASCADE,
-
-    CONSTRAINT fk_room_equipment_equipment
-        FOREIGN KEY (equipment_id)
-        REFERENCES equipments(id)
-        ON DELETE CASCADE
-) ENGINE=InnoDB;
-
-CREATE TABLE room_maintenance (
-    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-
-    room_id BIGINT UNSIGNED NOT NULL,
-
-    equipment_id BIGINT UNSIGNED NULL,
-
-    type_intervention ENUM(
-        'PREVENTIVE',
-        'CORRECTIVE',
-        'URGENCE'
-    ) NOT NULL,
-
-    description TEXT,
-
-    statut ENUM(
-        'OUVERT',
-        'EN_COURS',
-        'TERMINE',
-        'ANNULE'
-    ) DEFAULT 'OUVERT',
-
-    date_declaration DATETIME NOT NULL,
-
-    date_resolution DATETIME NULL,
-
-    cout BIGINT DEFAULT 0,
-
-    created_by BIGINT UNSIGNED NULL,
-
-    created_at TIMESTAMP NULL,
-    updated_at TIMESTAMP NULL,
-
-    FOREIGN KEY (room_id)
-        REFERENCES rooms(id),
-
-    FOREIGN KEY (equipment_id)
-        REFERENCES equipments(id),
-
-    FOREIGN KEY (created_by)
-        REFERENCES users(id)
-) ENGINE=InnoDB;
-
-CREATE TABLE room_minibar (
-    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-
-    room_id BIGINT UNSIGNED NOT NULL,
-
-    product_id BIGINT UNSIGNED NOT NULL,
-
-    quantite INT NOT NULL DEFAULT 0,
-
-    seuil_alerte INT DEFAULT 1,
-
-    created_at TIMESTAMP NULL,
-    updated_at TIMESTAMP NULL,
-
-    FOREIGN KEY (room_id)
-        REFERENCES rooms(id)
-        ON DELETE CASCADE,
-
-    FOREIGN KEY (product_id)
-        REFERENCES products(id)
-) ENGINE=InnoDB;
-
-CREATE TABLE minibar_consumptions (
-    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-
-    room_id BIGINT UNSIGNED NOT NULL,
-
-    client_id BIGINT UNSIGNED NOT NULL,
-
-    product_id BIGINT UNSIGNED NOT NULL,
-
-    quantite INT NOT NULL,
-
-    prix_unitaire BIGINT NOT NULL,
-
-    montant BIGINT NOT NULL,
-
-    facturee TINYINT(1) DEFAULT 0,
-
-    consumed_at DATETIME NOT NULL,
-
-    created_at TIMESTAMP NULL,
-
-    FOREIGN KEY (room_id)
-        REFERENCES rooms(id),
-
-    FOREIGN KEY (client_id)
-        REFERENCES clients(id),
-
-    FOREIGN KEY (product_id)
-        REFERENCES products(id)
-) ENGINE=InnoDB;
-
-CREATE TABLE housekeeping_tasks (
-    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-
-    room_id BIGINT UNSIGNED NOT NULL,
-
-    assigned_user_id BIGINT UNSIGNED NULL,
-
-    type_tache ENUM(
-        'NETTOYAGE',
-        'DESINFECTION',
-        'CHANGEMENT_DRAPS',
-        'CONTROLE'
-    ),
-
-    statut ENUM(
-        'A_FAIRE',
-        'EN_COURS',
-        'TERMINE'
-    ) DEFAULT 'A_FAIRE',
-
-    commentaire TEXT,
-
-    planned_at DATETIME,
-
-    completed_at DATETIME NULL,
-
-    created_at TIMESTAMP NULL,
-    updated_at TIMESTAMP NULL,
-
-    FOREIGN KEY (room_id)
-        REFERENCES rooms(id),
-
-    FOREIGN KEY (assigned_user_id)
-        REFERENCES users(id)
-) ENGINE=InnoDB;
-
-CREATE TABLE lost_and_found (
-    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-
-    room_id BIGINT UNSIGNED,
-
-    client_id BIGINT UNSIGNED NULL,
-
-    objet VARCHAR(255),
-
-    description TEXT,
-
-    date_trouvee DATETIME,
-
-    statut ENUM(
-        'TROUVE',
-        'RESTITUE',
-        'DETRUIT'
-    ) DEFAULT 'TROUVE',
-
-    date_restitution DATETIME NULL,
-
-    created_at TIMESTAMP NULL,
-
-    FOREIGN KEY (room_id)
-        REFERENCES rooms(id),
-
-    FOREIGN KEY (client_id)
-        REFERENCES clients(id)
-) ENGINE=InnoDB;
-
-CREATE TABLE reservation_guests (
-    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-
-    reservation_id BIGINT UNSIGNED NOT NULL,
-
-    nom VARCHAR(100) NOT NULL,
-
-    prenom VARCHAR(100),
-
-    date_naissance DATE NULL,
-
-    type_piece VARCHAR(50),
-
-    numero_piece VARCHAR(100),
-
-    created_at TIMESTAMP NULL,
-
-    FOREIGN KEY (reservation_id)
-        REFERENCES reservations(id)
-        ON DELETE CASCADE
-) ENGINE=InnoDB;
-
-CREATE TABLE room_status_history (
-    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-
-    room_id BIGINT UNSIGNED NOT NULL,
-
-    ancien_statut VARCHAR(30),
-
-    nouveau_statut VARCHAR(30),
-
-    commentaire TEXT,
-
-    changed_by BIGINT UNSIGNED,
-
-    changed_at DATETIME NOT NULL,
-
-    FOREIGN KEY (room_id)
-        REFERENCES rooms(id),
-
-    FOREIGN KEY (changed_by)
-        REFERENCES users(id)
-) ENGINE=InnoDB;
-
-
 
 --
 -- Index pour les tables déchargées
@@ -786,12 +811,27 @@ ALTER TABLE `client_accounts`
   ADD KEY `client_id` (`client_id`);
 
 --
+-- Index pour la table `equipments`
+--
+ALTER TABLE `equipments`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `code` (`code`);
+
+--
 -- Index pour la table `financial_transactions`
 --
 ALTER TABLE `financial_transactions`
   ADD PRIMARY KEY (`id`),
   ADD KEY `client_id` (`client_id`),
   ADD KEY `idx_financial_module` (`module`);
+
+--
+-- Index pour la table `housekeeping_tasks`
+--
+ALTER TABLE `housekeeping_tasks`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `room_id` (`room_id`),
+  ADD KEY `assigned_user_id` (`assigned_user_id`);
 
 --
 -- Index pour la table `invoices`
@@ -808,11 +848,28 @@ ALTER TABLE `invoice_items`
   ADD KEY `invoice_id` (`invoice_id`);
 
 --
+-- Index pour la table `lost_and_found`
+--
+ALTER TABLE `lost_and_found`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `room_id` (`room_id`),
+  ADD KEY `client_id` (`client_id`);
+
+--
 -- Index pour la table `loyalty_points`
 --
 ALTER TABLE `loyalty_points`
   ADD PRIMARY KEY (`id`),
   ADD KEY `client_id` (`client_id`);
+
+--
+-- Index pour la table `minibar_consumptions`
+--
+ALTER TABLE `minibar_consumptions`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `room_id` (`room_id`),
+  ADD KEY `client_id` (`client_id`),
+  ADD KEY `product_id` (`product_id`);
 
 --
 -- Index pour la table `notifications`
@@ -867,6 +924,21 @@ ALTER TABLE `purchase_items`
   ADD KEY `product_id` (`product_id`);
 
 --
+-- Index pour la table `recipes`
+--
+ALTER TABLE `recipes`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `product_id` (`product_id`);
+
+--
+-- Index pour la table `recipe_items`
+--
+ALTER TABLE `recipe_items`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `recipe_id` (`recipe_id`),
+  ADD KEY `ingredient_id` (`ingredient_id`);
+
+--
 -- Index pour la table `reservations`
 --
 ALTER TABLE `reservations`
@@ -875,12 +947,52 @@ ALTER TABLE `reservations`
   ADD KEY `room_id` (`room_id`);
 
 --
+-- Index pour la table `reservation_guests`
+--
+ALTER TABLE `reservation_guests`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `reservation_id` (`reservation_id`);
+
+--
 -- Index pour la table `rooms`
 --
 ALTER TABLE `rooms`
   ADD PRIMARY KEY (`id`),
   ADD UNIQUE KEY `numero` (`numero`),
   ADD KEY `room_type_id` (`room_type_id`);
+
+--
+-- Index pour la table `room_equipments`
+--
+ALTER TABLE `room_equipments`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `fk_room_equipment_room` (`room_id`),
+  ADD KEY `fk_room_equipment_equipment` (`equipment_id`);
+
+--
+-- Index pour la table `room_maintenance`
+--
+ALTER TABLE `room_maintenance`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `room_id` (`room_id`),
+  ADD KEY `equipment_id` (`equipment_id`),
+  ADD KEY `created_by` (`created_by`);
+
+--
+-- Index pour la table `room_minibar`
+--
+ALTER TABLE `room_minibar`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `room_id` (`room_id`),
+  ADD KEY `product_id` (`product_id`);
+
+--
+-- Index pour la table `room_status_history`
+--
+ALTER TABLE `room_status_history`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `room_id` (`room_id`),
+  ADD KEY `changed_by` (`changed_by`);
 
 --
 -- Index pour la table `room_types`
@@ -927,6 +1039,12 @@ ALTER TABLE `suppliers`
 -- Index pour la table `tables_restaurant`
 --
 ALTER TABLE `tables_restaurant`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Index pour la table `units`
+--
+ALTER TABLE `units`
   ADD PRIMARY KEY (`id`);
 
 --
@@ -1019,9 +1137,21 @@ ALTER TABLE `client_accounts`
   MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
+-- AUTO_INCREMENT pour la table `equipments`
+--
+ALTER TABLE `equipments`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
 -- AUTO_INCREMENT pour la table `financial_transactions`
 --
 ALTER TABLE `financial_transactions`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT pour la table `housekeeping_tasks`
+--
+ALTER TABLE `housekeeping_tasks`
   MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
@@ -1037,9 +1167,21 @@ ALTER TABLE `invoice_items`
   MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
+-- AUTO_INCREMENT pour la table `lost_and_found`
+--
+ALTER TABLE `lost_and_found`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
 -- AUTO_INCREMENT pour la table `loyalty_points`
 --
 ALTER TABLE `loyalty_points`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT pour la table `minibar_consumptions`
+--
+ALTER TABLE `minibar_consumptions`
   MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
@@ -1085,15 +1227,57 @@ ALTER TABLE `purchase_items`
   MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
+-- AUTO_INCREMENT pour la table `recipes`
+--
+ALTER TABLE `recipes`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT pour la table `recipe_items`
+--
+ALTER TABLE `recipe_items`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
 -- AUTO_INCREMENT pour la table `reservations`
 --
 ALTER TABLE `reservations`
   MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
+-- AUTO_INCREMENT pour la table `reservation_guests`
+--
+ALTER TABLE `reservation_guests`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
 -- AUTO_INCREMENT pour la table `rooms`
 --
 ALTER TABLE `rooms`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT pour la table `room_equipments`
+--
+ALTER TABLE `room_equipments`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT pour la table `room_maintenance`
+--
+ALTER TABLE `room_maintenance`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT pour la table `room_minibar`
+--
+ALTER TABLE `room_minibar`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT pour la table `room_status_history`
+--
+ALTER TABLE `room_status_history`
   MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
@@ -1136,6 +1320,12 @@ ALTER TABLE `suppliers`
 -- AUTO_INCREMENT pour la table `tables_restaurant`
 --
 ALTER TABLE `tables_restaurant`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT pour la table `units`
+--
+ALTER TABLE `units`
   MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
@@ -1218,6 +1408,13 @@ ALTER TABLE `financial_transactions`
   ADD CONSTRAINT `financial_transactions_ibfk_1` FOREIGN KEY (`client_id`) REFERENCES `clients` (`id`);
 
 --
+-- Contraintes pour la table `housekeeping_tasks`
+--
+ALTER TABLE `housekeeping_tasks`
+  ADD CONSTRAINT `housekeeping_tasks_ibfk_1` FOREIGN KEY (`room_id`) REFERENCES `rooms` (`id`),
+  ADD CONSTRAINT `housekeeping_tasks_ibfk_2` FOREIGN KEY (`assigned_user_id`) REFERENCES `users` (`id`);
+
+--
 -- Contraintes pour la table `invoices`
 --
 ALTER TABLE `invoices`
@@ -1230,10 +1427,25 @@ ALTER TABLE `invoice_items`
   ADD CONSTRAINT `invoice_items_ibfk_1` FOREIGN KEY (`invoice_id`) REFERENCES `invoices` (`id`);
 
 --
+-- Contraintes pour la table `lost_and_found`
+--
+ALTER TABLE `lost_and_found`
+  ADD CONSTRAINT `lost_and_found_ibfk_1` FOREIGN KEY (`room_id`) REFERENCES `rooms` (`id`),
+  ADD CONSTRAINT `lost_and_found_ibfk_2` FOREIGN KEY (`client_id`) REFERENCES `clients` (`id`);
+
+--
 -- Contraintes pour la table `loyalty_points`
 --
 ALTER TABLE `loyalty_points`
   ADD CONSTRAINT `loyalty_points_ibfk_1` FOREIGN KEY (`client_id`) REFERENCES `clients` (`id`);
+
+--
+-- Contraintes pour la table `minibar_consumptions`
+--
+ALTER TABLE `minibar_consumptions`
+  ADD CONSTRAINT `minibar_consumptions_ibfk_1` FOREIGN KEY (`room_id`) REFERENCES `rooms` (`id`),
+  ADD CONSTRAINT `minibar_consumptions_ibfk_2` FOREIGN KEY (`client_id`) REFERENCES `clients` (`id`),
+  ADD CONSTRAINT `minibar_consumptions_ibfk_3` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`);
 
 --
 -- Contraintes pour la table `orders`
@@ -1275,6 +1487,19 @@ ALTER TABLE `purchase_items`
   ADD CONSTRAINT `purchase_items_ibfk_2` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`);
 
 --
+-- Contraintes pour la table `recipes`
+--
+ALTER TABLE `recipes`
+  ADD CONSTRAINT `recipes_ibfk_1` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`);
+
+--
+-- Contraintes pour la table `recipe_items`
+--
+ALTER TABLE `recipe_items`
+  ADD CONSTRAINT `recipe_items_ibfk_1` FOREIGN KEY (`recipe_id`) REFERENCES `recipes` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `recipe_items_ibfk_2` FOREIGN KEY (`ingredient_id`) REFERENCES `products` (`id`);
+
+--
 -- Contraintes pour la table `reservations`
 --
 ALTER TABLE `reservations`
@@ -1282,10 +1507,45 @@ ALTER TABLE `reservations`
   ADD CONSTRAINT `reservations_ibfk_2` FOREIGN KEY (`room_id`) REFERENCES `rooms` (`id`);
 
 --
+-- Contraintes pour la table `reservation_guests`
+--
+ALTER TABLE `reservation_guests`
+  ADD CONSTRAINT `reservation_guests_ibfk_1` FOREIGN KEY (`reservation_id`) REFERENCES `reservations` (`id`) ON DELETE CASCADE;
+
+--
 -- Contraintes pour la table `rooms`
 --
 ALTER TABLE `rooms`
   ADD CONSTRAINT `rooms_ibfk_1` FOREIGN KEY (`room_type_id`) REFERENCES `room_types` (`id`);
+
+--
+-- Contraintes pour la table `room_equipments`
+--
+ALTER TABLE `room_equipments`
+  ADD CONSTRAINT `fk_room_equipment_equipment` FOREIGN KEY (`equipment_id`) REFERENCES `equipments` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `fk_room_equipment_room` FOREIGN KEY (`room_id`) REFERENCES `rooms` (`id`) ON DELETE CASCADE;
+
+--
+-- Contraintes pour la table `room_maintenance`
+--
+ALTER TABLE `room_maintenance`
+  ADD CONSTRAINT `room_maintenance_ibfk_1` FOREIGN KEY (`room_id`) REFERENCES `rooms` (`id`),
+  ADD CONSTRAINT `room_maintenance_ibfk_2` FOREIGN KEY (`equipment_id`) REFERENCES `equipments` (`id`),
+  ADD CONSTRAINT `room_maintenance_ibfk_3` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`);
+
+--
+-- Contraintes pour la table `room_minibar`
+--
+ALTER TABLE `room_minibar`
+  ADD CONSTRAINT `room_minibar_ibfk_1` FOREIGN KEY (`room_id`) REFERENCES `rooms` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `room_minibar_ibfk_2` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`);
+
+--
+-- Contraintes pour la table `room_status_history`
+--
+ALTER TABLE `room_status_history`
+  ADD CONSTRAINT `room_status_history_ibfk_1` FOREIGN KEY (`room_id`) REFERENCES `rooms` (`id`),
+  ADD CONSTRAINT `room_status_history_ibfk_2` FOREIGN KEY (`changed_by`) REFERENCES `users` (`id`);
 
 --
 -- Contraintes pour la table `stays`
