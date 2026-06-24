@@ -1,38 +1,34 @@
-const mysql = require('mysql2');
+// src/Config/connectDatabase.js
+const mysql = require('mysql2/promise');
 require('dotenv').config();
 
+// Configuration de la connexion
 const pool = mysql.createPool({
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
+    host: process.env.DB_HOST || 'localhost',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME || 'hda',
     port: process.env.DB_PORT || 3306,
     waitForConnections: true,
     connectionLimit: 10,
-    queueLimit: 0
+    queueLimit: 0,
+    charset: 'utf8mb4'
 });
 
-const db = pool.promise();
-
-const connectDatabase = async () => {
+// Fonction pour tester la connexion
+async function testConnection() {
     try {
-        const [result] = await db.query('SELECT 1');
-
-        console.log('✅ Base de données connectée');
-        console.log(`📂 Database : ${process.env.DB_NAME}`);
-
-        return {
-            status: 'success',
-            message: 'Connexion MySQL établie',
-            database: process.env.DB_NAME
-        };
+        const connection = await pool.getConnection();
+        console.log('✅ Connecté à la base de données MySQL');
+        connection.release();
+        return true;
     } catch (error) {
-        console.error('❌ Erreur de connexion MySQL :', error.message);
-        process.exit(1);
+        console.error('❌ Erreur de connexion à la base de données:', error.message);
+        return false;
     }
-};
+}
 
 module.exports = {
-    connectDatabase,
-    db
+    pool,
+    testConnection
 };
