@@ -1,12 +1,12 @@
 {
   "name": "hda-backend",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "HDA Platform Backend API",
+  "main": "src/server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node src/server.js",
-    "dev": "nodemon src/server.js"
+    "dev": "nodemon src/server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
     "type": "git",
@@ -31,6 +31,6 @@
     "mysql2": "^3.22.5"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14"
+    "nodemon": "^3.0.1"
   }
 }

@@ -28,6 +28,7 @@ async function testConnection() {
     }
 }
 
+// Exporter correctement avec module.exports
 module.exports = {
     pool,
     testConnection
