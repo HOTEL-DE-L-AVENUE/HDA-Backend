@@ -23,6 +23,15 @@ class AdminController {
         });
       }
 
+      // Validation du rôle
+      const validRoles = ['admin', 'manager', 'receptioniste', 'caisse', 'water', 'housekeeping'];
+      if (role && !validRoles.includes(role)) {
+        return res.status(400).json({
+          success: false,
+          error: `Rôle invalide. Utilisez: ${validRoles.join(', ')}`
+        });
+      }
+
       // Vérifier si l'email existe déjà
       const [existing] = await pool.query(
         'SELECT id_admin FROM admin WHERE email = ?',
@@ -177,6 +186,17 @@ class AdminController {
           success: false,
           error: 'Administrateur non trouvé'
         });
+      }
+
+      // Validation du rôle si fourni
+      if (role) {
+        const validRoles = ['admin', 'manager', 'receptioniste', 'caisse', 'water', 'housekeeping'];
+        if (!validRoles.includes(role)) {
+          return res.status(400).json({
+            success: false,
+            error: `Rôle invalide. Utilisez: ${validRoles.join(', ')}`
+          });
+        }
       }
 
       // Vérifier si l'email est déjà utilisé par un autre admin
@@ -442,6 +462,55 @@ class AdminController {
       return res.status(500).json({
         success: false,
         error: 'Erreur lors de la vérification des administrateurs'
+      });
+    }
+  }
+
+  /**
+   * Récupérer les admins par rôle
+   * GET /api/admin/role/:role
+   * Requiert un token admin
+   */
+  async getAdminsByRole(req, res) {
+    try {
+      const { role } = req.params;
+      
+      // Validation du rôle
+      const validRoles = ['admin', 'manager', 'receptioniste', 'caisse', 'water', 'housekeeping'];
+      if (!validRoles.includes(role)) {
+        return res.status(400).json({
+          success: false,
+          error: `Rôle invalide. Utilisez: ${validRoles.join(', ')}`
+        });
+      }
+
+      const [rows] = await pool.query(
+        `SELECT 
+          id_admin, 
+          nom, 
+          prenom, 
+          email, 
+          role, 
+          statut,
+          date_creation,
+          DATE_FORMAT(date_creation, '%Y-%m-%d %H:%i:%s') as date_creation_formatted
+        FROM admin 
+        WHERE role = ?
+        ORDER BY date_creation DESC`,
+        [role]
+      );
+
+      return res.json({
+        success: true,
+        data: rows,
+        count: rows.length,
+        role: role
+      });
+    } catch (error) {
+      console.error('Get admins by role error:', error);
+      return res.status(500).json({
+        success: false,
+        error: 'Erreur lors de la récupération des administrateurs par rôle'
       });
     }
   }
