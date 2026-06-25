@@ -1,4 +1,3 @@
-// src/server.js
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -6,118 +5,382 @@ const { testConnection } = require('./Config/connectDatabase');
 
 // Import des routes
 const authRoutes = require('./Routes/auth.routes');
-const adminRoutes = require('./Routes/admin.routes');
+const roomRoutes = require('./Routes/room.routes');
+const roomTypeRoutes = require('./Routes/roomType.routes');
+const reservationRoutes = require('./Routes/reservation.routes');
+const clientRoutes = require('./Routes/client.routes');
+const equipmentRoutes = require('./Routes/equipment.routes'); // <-- Catalogue équipements
+
+// Import des nouvelles routes
+const maintenanceRoutes = require('./Routes/roomMaintenance.routes');
+const roomEquipmentRoutes = require('./Routes/roomEquipment.routes'); // <-- Renommé pour éviter conflit
+const minibarRoutes = require('./Routes/roomMinibar.routes');
+const housekeepingRoutes = require('./Routes/housekeepingTask.routes');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-// ==================== MIDDLEWARES ====================
-
-// CORS
+// =============================================
+// 1. CORS
+// =============================================
 app.use(cors({
-    origin: process.env.CORS_ORIGINS || 'http://localhost:3000',
+    origin: '*',
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// Parser JSON
+// =============================================
+// 2. MIDDLEWARE MANUEL POUR PARSER LE BODY
+// =============================================
+app.use((req, res, next) => {
+    if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
+        let body = '';
+        
+        req.on('data', (chunk) => {
+            body += chunk.toString();
+        });
+        
+        req.on('end', () => {
+            try {
+                if (body) {
+                    req.body = JSON.parse(body);
+                    console.log('✅ [MANUAL PARSER] Body parsé avec succès:', req.body);
+                } else {
+                    req.body = {};
+                    console.log('⚠️ [MANUAL PARSER] Body vide');
+                }
+                next();
+            } catch (error) {
+                console.error('❌ [MANUAL PARSER] Erreur de parsing:', error.message);
+                return res.status(400).json({
+                    success: false,
+                    message: 'JSON invalide',
+                    error: error.message
+                });
+            }
+        });
+    } else {
+        next();
+    }
+});
+
+// =============================================
+// 3. Parser JSON
+// =============================================
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Logger
+// =============================================
+// 4. Logger
+// =============================================
 app.use((req, res, next) => {
-    console.log(`📝 ${req.method} ${req.url}`);
+    console.log(`\n📝 ${req.method} ${req.url}`);
+    console.log('📥 Headers Content-Type:', req.headers['content-type']);
+    console.log('📥 Body reçu:', req.body);
     next();
 });
 
-// ==================== ROUTES ====================
+// =============================================
+// 5. Route de test
+// =============================================
+app.post('/api/test-body', (req, res) => {
+    console.log('🧪 [TEST] Body reçu:', req.body);
+    res.json({
+        success: true,
+        message: 'Body reçu avec succès !',
+        data: req.body
+    });
+});
 
-// Routes publiques
+// =============================================
+// 6. ROUTES
+// =============================================
+
+// Routes d'authentification
 app.use('/api/auth', authRoutes);
 
+// Routes Hébergement - Base
+app.use('/api/rooms', roomRoutes);
+app.use('/api/room-types', roomTypeRoutes);
+app.use('/api/reservations', reservationRoutes);
+app.use('/api/clients', clientRoutes);
+
+// Routes Hébergement - Modules supplémentaires
+app.use('/api/equipments', equipmentRoutes); // <-- Catalogue des équipements
+app.use('/api/maintenances', maintenanceRoutes);
+app.use('/api/room-equipments', roomEquipmentRoutes); // <-- Équipements de chambre
+app.use('/api/minibars', minibarRoutes);
+app.use('/api/housekeeping', housekeepingRoutes);
 // Routes protégées
 app.use('/api/admin', adminRoutes);
 app.use('/api/restaurant', require('./Routes/restaurant.routes'));
 
-// Route de test
+// =============================================
+// 7. Health check
+// =============================================
 app.get('/api/health', (req, res) => {
     res.json({
         success: true,
-        message: 'API Finance Pour Tous est opérationnelle',
+        message: 'API HDA est opérationnelle',
         timestamp: new Date().toISOString(),
         env: process.env.NODE_ENV
     });
 });
 
-// Route 404
+// =============================================
+// 8. Route racine
+// =============================================
+app.get('/', (req, res) => {
+    res.json({
+        success: true,
+        message: 'Bienvenue sur l\'API HDA Platform',
+        version: '1.0.0',
+        endpoints: {
+            auth: {
+                login: 'POST /api/auth/login',
+                register: 'POST /api/auth/register',
+                profile: 'GET /api/auth/profile',
+                logout: 'POST /api/auth/logout',
+                'verify-token': 'GET /api/auth/verify-token',
+                'refresh-token': 'POST /api/auth/refresh-token',
+                'change-password': 'POST /api/auth/change-password'
+            },
+            equipments: {
+                list: 'GET /api/equipments',
+                create: 'POST /api/equipments',
+                getOne: 'GET /api/equipments/:id',
+                getByCode: 'GET /api/equipments/code/:code',
+                update: 'PUT /api/equipments/:id',
+                delete: 'DELETE /api/equipments/:id',
+                categories: 'GET /api/equipments/categories',
+                stats: 'GET /api/equipments/stats'
+            },
+            rooms: {
+                list: 'GET /api/rooms',
+                create: 'POST /api/rooms',
+                getOne: 'GET /api/rooms/:id',
+                update: 'PUT /api/rooms/:id',
+                delete: 'DELETE /api/rooms/:id',
+                status: 'PUT /api/rooms/:id/status',
+                available: 'GET /api/rooms/available',
+                stats: 'GET /api/rooms/stats',
+                checkAvailability: 'GET /api/rooms/:id/availability'
+            },
+            roomTypes: {
+                list: 'GET /api/room-types',
+                create: 'POST /api/room-types',
+                getOne: 'GET /api/room-types/:id',
+                update: 'PUT /api/room-types/:id',
+                delete: 'DELETE /api/room-types/:id'
+            },
+            reservations: {
+                list: 'GET /api/reservations',
+                create: 'POST /api/reservations',
+                getOne: 'GET /api/reservations/:id',
+                update: 'PUT /api/reservations/:id',
+                delete: 'DELETE /api/reservations/:id',
+                status: 'PUT /api/reservations/:id/status',
+                stats: 'GET /api/reservations/stats'
+            },
+            clients: {
+                list: 'GET /api/clients',
+                create: 'POST /api/clients',
+                getOne: 'GET /api/clients/:id',
+                update: 'PUT /api/clients/:id',
+                delete: 'DELETE /api/clients/:id'
+            },
+            maintenances: {
+                list: 'GET /api/maintenances',
+                create: 'POST /api/maintenances',
+                getOne: 'GET /api/maintenances/:id',
+                update: 'PUT /api/maintenances/:id',
+                delete: 'DELETE /api/maintenances/:id',
+                status: 'PUT /api/maintenances/:id/status',
+                stats: 'GET /api/maintenances/stats'
+            },
+            roomEquipments: {
+                list: 'GET /api/room-equipments',
+                create: 'POST /api/room-equipments',
+                getOne: 'GET /api/room-equipments/:id',
+                update: 'PUT /api/room-equipments/:id',
+                delete: 'DELETE /api/room-equipments/:id',
+                status: 'PUT /api/room-equipments/:id/status',
+                byRoom: 'GET /api/room-equipments/room/:roomId',
+                stats: 'GET /api/room-equipments/stats'
+            },
+            minibars: {
+                list: 'GET /api/minibars',
+                create: 'POST /api/minibars',
+                getOne: 'GET /api/minibars/:id',
+                update: 'PUT /api/minibars/:id',
+                delete: 'DELETE /api/minibars/:id',
+                quantity: 'PUT /api/minibars/:id/quantity',
+                byRoom: 'GET /api/minibars/room/:roomId',
+                alerts: 'GET /api/minibars/alerts',
+                stats: 'GET /api/minibars/stats'
+            },
+            housekeeping: {
+                list: 'GET /api/housekeeping',
+                create: 'POST /api/housekeeping',
+                getOne: 'GET /api/housekeeping/:id',
+                update: 'PUT /api/housekeeping/:id',
+                delete: 'DELETE /api/housekeeping/:id',
+                status: 'PUT /api/housekeeping/:id/status',
+                byRoom: 'GET /api/housekeeping/room/:roomId',
+                byUser: 'GET /api/housekeeping/user/:userId',
+                stats: 'GET /api/housekeeping/stats'
+            },
+            health: 'GET /api/health',
+            test: 'POST /api/test-body'
+        }
+    });
+});
+
+// =============================================
+// 9. 404 et erreurs
+// =============================================
 app.use((req, res) => {
     res.status(404).json({
         success: false,
-        error: 'Route non trouvée'
+        message: 'Route non trouvée',
+        path: req.originalUrl
     });
 });
 
-// Middleware de gestion d'erreurs
 app.use((err, req, res, next) => {
     console.error('❌ Erreur:', err.message);
+    console.error('📚 Stack:', err.stack);
     res.status(500).json({
         success: false,
-        error: 'Erreur interne du serveur',
-        message: process.env.NODE_ENV === 'development' ? err.message : undefined
+        message: 'Erreur interne du serveur',
+        error: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
 });
 
-// ==================== DÉMARRAGE DU SERVEUR ====================
-
+// =============================================
+// 10. Démarrage
+// =============================================
 async function startServer() {
     try {
-        // Tester la connexion à la base de données
-        const dbConnected = await testConnection();
-        
-        if (!dbConnected) {
-            console.warn('⚠️  Le serveur démarre mais la base de données est inaccessible');
-        }
+        await testConnection();
+        console.log('✅ Base de données connectée');
 
-        // Démarrer le serveur
         app.listen(PORT, () => {
+            console.log('='.repeat(70));
             console.log(`🚀 Serveur démarré sur http://localhost:${PORT}`);
             console.log(`📊 Environnement: ${process.env.NODE_ENV || 'development'}`);
-            console.log(`🔗 Base de données: ${dbConnected ? '✅ Connectée' : '❌ Déconnectée'}`);
-            console.log(`\n📋 Routes disponibles:`);
-            console.log(`\n🔐 Routes publiques:`);
-            console.log(`   POST   /api/auth/login`);
-            console.log(`   GET    /api/health`);
-            console.log(`\n🔒 Routes protégées (Admin):`);
-            console.log(`   GET    /api/admin`);
-            console.log(`   GET    /api/admin/:id`);
-            console.log(`   POST   /api/admin`);
-            console.log(`   PUT    /api/admin/:id`);
-            console.log(`   DELETE /api/admin/:id`);
-            console.log(`   PATCH  /api/admin/:id/status`);
-            console.log(`   POST   /api/admin/:id/reset-password`);
-            console.log(`\n🔒 Routes protégées (Auth):`);
-            console.log(`   POST   /api/auth/logout`);
-            console.log(`   POST   /api/auth/refresh-token`);
-            console.log(`   POST   /api/auth/change-password`);
-            console.log(`   GET    /api/auth/verify-token`);
-            console.log(`   GET    /api/auth/profile`);
+            console.log(`🔗 Base de données: ✅ Connectée`);
+            console.log('='.repeat(70));
+            
+            console.log('\n📋 Routes disponibles:');
+            
+            console.log('\n📦 Équipements (Catalogue):');
+            console.log('   GET    /api/equipments               - Liste des équipements');
+            console.log('   POST   /api/equipments               - Créer un équipement');
+            console.log('   GET    /api/equipments/:id           - Détails d\'un équipement');
+            console.log('   GET    /api/equipments/code/:code    - Recherche par code');
+            console.log('   PUT    /api/equipments/:id           - Modifier un équipement');
+            console.log('   DELETE /api/equipments/:id           - Supprimer un équipement');
+            console.log('   GET    /api/equipments/categories    - Liste des catégories');
+            console.log('   GET    /api/equipments/stats         - Statistiques');
+            
+            console.log('\n🏠 Chambres:');
+            console.log('   GET    /api/rooms                    - Liste des chambres');
+            console.log('   POST   /api/rooms                    - Créer une chambre');
+            console.log('   GET    /api/rooms/:id                - Détails d\'une chambre');
+            console.log('   PUT    /api/rooms/:id                - Modifier une chambre');
+            console.log('   DELETE /api/rooms/:id                - Supprimer une chambre');
+            console.log('   PUT    /api/rooms/:id/status         - Changer statut');
+            console.log('   GET    /api/rooms/available          - Chambres disponibles');
+            console.log('   GET    /api/rooms/stats              - Statistiques');
+            console.log('   GET    /api/rooms/:id/availability   - Vérifier disponibilité');
+            
+            console.log('\n📐 Types de chambres:');
+            console.log('   GET    /api/room-types               - Liste des types');
+            console.log('   POST   /api/room-types               - Créer un type');
+            console.log('   GET    /api/room-types/:id           - Détails d\'un type');
+            console.log('   PUT    /api/room-types/:id           - Modifier un type');
+            console.log('   DELETE /api/room-types/:id           - Supprimer un type');
+            
+            console.log('\n📅 Réservations:');
+            console.log('   GET    /api/reservations             - Liste des réservations');
+            console.log('   POST   /api/reservations             - Créer une réservation');
+            console.log('   GET    /api/reservations/:id         - Détails d\'une réservation');
+            console.log('   PUT    /api/reservations/:id         - Modifier une réservation');
+            console.log('   DELETE /api/reservations/:id         - Supprimer une réservation');
+            console.log('   PUT    /api/reservations/:id/status  - Changer statut');
+            console.log('   GET    /api/reservations/stats       - Statistiques');
+            
+            console.log('\n👤 Clients:');
+            console.log('   GET    /api/clients                  - Liste des clients');
+            console.log('   POST   /api/clients                  - Créer un client');
+            console.log('   GET    /api/clients/:id              - Détails d\'un client');
+            console.log('   PUT    /api/clients/:id              - Modifier un client');
+            console.log('   DELETE /api/clients/:id              - Supprimer un client');
+            
+            console.log('\n🔧 Maintenances:');
+            console.log('   GET    /api/maintenances             - Liste des maintenances');
+            console.log('   POST   /api/maintenances             - Créer une maintenance');
+            console.log('   GET    /api/maintenances/:id         - Détails d\'une maintenance');
+            console.log('   PUT    /api/maintenances/:id         - Modifier une maintenance');
+            console.log('   DELETE /api/maintenances/:id         - Supprimer une maintenance');
+            console.log('   PUT    /api/maintenances/:id/status  - Changer statut');
+            console.log('   GET    /api/maintenances/stats       - Statistiques');
+            
+            console.log('\n🛋️ Équipements de chambre:');
+            console.log('   GET    /api/room-equipments          - Liste des équipements');
+            console.log('   POST   /api/room-equipments          - Ajouter un équipement');
+            console.log('   GET    /api/room-equipments/:id      - Détails d\'un équipement');
+            console.log('   PUT    /api/room-equipments/:id      - Modifier un équipement');
+            console.log('   DELETE /api/room-equipments/:id      - Supprimer un équipement');
+            console.log('   PUT    /api/room-equipments/:id/status - Changer statut');
+            console.log('   GET    /api/room-equipments/room/:roomId - Équipements d\'une chambre');
+            console.log('   GET    /api/room-equipments/stats    - Statistiques');
+            
+            console.log('\n🍾 Minibars:');
+            console.log('   GET    /api/minibars                 - Liste des minibars');
+            console.log('   POST   /api/minibars                 - Ajouter un produit');
+            console.log('   GET    /api/minibars/:id             - Détails d\'un produit');
+            console.log('   PUT    /api/minibars/:id             - Modifier un produit');
+            console.log('   DELETE /api/minibars/:id             - Supprimer un produit');
+            console.log('   PUT    /api/minibars/:id/quantity    - Mettre à jour quantité');
+            console.log('   GET    /api/minibars/room/:roomId    - Minibar d\'une chambre');
+            console.log('   GET    /api/minibars/alerts          - Alertes stock');
+            console.log('   GET    /api/minibars/stats           - Statistiques');
+            
+            console.log('\n🧹 Housekeeping:');
+            console.log('   GET    /api/housekeeping             - Liste des tâches');
+            console.log('   POST   /api/housekeeping             - Créer une tâche');
+            console.log('   GET    /api/housekeeping/:id         - Détails d\'une tâche');
+            console.log('   PUT    /api/housekeeping/:id         - Modifier une tâche');
+            console.log('   DELETE /api/housekeeping/:id         - Supprimer une tâche');
+            console.log('   PUT    /api/housekeeping/:id/status  - Changer statut');
+            console.log('   GET    /api/housekeeping/room/:roomId - Tâches d\'une chambre');
+            console.log('   GET    /api/housekeeping/user/:userId - Tâches d\'un utilisateur');
+            console.log('   GET    /api/housekeeping/stats       - Statistiques');
+            
+            console.log('\n🔐 Authentification:');
+            console.log('   POST   /api/auth/login               - Connexion');
+            console.log('   POST   /api/auth/register            - Inscription');
+            console.log('   GET    /api/auth/profile             - Profil');
+            console.log('   POST   /api/auth/logout              - Déconnexion');
+            console.log('   GET    /api/auth/verify-token        - Vérifier token');
+            console.log('   POST   /api/auth/refresh-token       - Rafraîchir token');
+            console.log('   POST   /api/auth/change-password     - Changer mot de passe');
+            
+            console.log('\n🧪 Tests:');
+            console.log('   POST   /api/test-body                - Tester le body');
+            console.log('   GET    /api/health                   - Health check');
+            console.log('   GET    /                             - Liste des endpoints');
+            console.log('='.repeat(70));
         });
     } catch (error) {
-        console.error('❌ Erreur lors du démarrage du serveur:', error.message);
+        console.error('❌ Erreur de démarrage:', error.message);
         process.exit(1);
     }
 }
 
 startServer();
 
-// Gestion des arrêts propre
-process.on('SIGINT', () => {
-    console.log('🛑 Arrêt du serveur...');
-    process.exit(0);
-});
-
-process.on('SIGTERM', () => {
-    console.log('🛑 Arrêt du serveur...');
-    process.exit(0);
-});
+module.exports = app;

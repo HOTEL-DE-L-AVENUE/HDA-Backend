@@ -1,29 +1,8 @@
-const { getPool } = require('../Config/connectDatabase');
+const { pool } = require('../Config/connectDatabase');
 
 class Room {
-  static async create(roomData) {
-    const pool = getPool();
-    const { room_type_id, numero, capacite, prix_nuit, statut = 'disponible', type = 'Standard' } = roomData;
-    
-    const query = `
-      INSERT INTO rooms (room_type_id, numero, capacite, prix_nuit, statut, type) 
-      VALUES (?, ?, ?, ?, ?, ?)
-    `;
-    
-    const [result] = await pool.execute(query, [
-      room_type_id || null,
-      numero,
-      capacite,
-      prix_nuit,
-      statut,
-      type
-    ]);
-    
-    return result.insertId;
-  }
-
+  // Récupérer toutes les chambres
   static async findAll(filters = {}) {
-    const pool = getPool();
     let query = `
       SELECT 
         r.*,
@@ -34,196 +13,276 @@ class Room {
       WHERE 1=1
     `;
     const values = [];
-    
+
     if (filters.statut) {
       query += ' AND r.statut = ?';
       values.push(filters.statut);
     }
-    
+
     if (filters.room_type_id) {
       query += ' AND r.room_type_id = ?';
       values.push(filters.room_type_id);
     }
-    
+
     if (filters.min_price) {
       query += ' AND r.prix_nuit >= ?';
       values.push(filters.min_price);
     }
-    
+
     if (filters.max_price) {
       query += ' AND r.prix_nuit <= ?';
       values.push(filters.max_price);
     }
-    
-    if (filters.capacite_min) {
+
+    if (filters.capacite) {
       query += ' AND r.capacite >= ?';
-      values.push(filters.capacite_min);
+      values.push(filters.capacite);
     }
-    
+
     query += ' ORDER BY r.numero ASC';
-    
-    const [rows] = await pool.execute(query, values);
-    return rows;
+
+    try {
+      const [rows] = await pool.query(query, values);
+      return rows;
+    } catch (error) {
+      console.error('❌ Erreur SQL findAll:', error);
+      throw error;
+    }
   }
 
+  // Récupérer une chambre par ID
   static async findById(id) {
-    const pool = getPool();
-    const query = `
-      SELECT 
-        r.*,
-        rt.nom as room_type_nom,
-        rt.description as room_type_description
-      FROM rooms r
-      LEFT JOIN room_types rt ON r.room_type_id = rt.id
-      WHERE r.id = ?
-    `;
-    const [rows] = await pool.execute(query, [id]);
-    return rows[0] || null;
+    try {
+      const [rows] = await pool.query(`
+        SELECT 
+          r.*,
+          rt.nom as room_type_nom,
+          rt.description as room_type_description
+        FROM rooms r
+        LEFT JOIN room_types rt ON r.room_type_id = rt.id
+        WHERE r.id = ?
+      `, [id]);
+      return rows[0] || null;
+    } catch (error) {
+      console.error(`❌ Erreur SQL findById ${id}:`, error);
+      throw error;
+    }
   }
 
-  static async update(id, roomData) {
-    const pool = getPool();
-    const updates = [];
-    const values = [];
-    
-    const allowedFields = ['room_type_id', 'numero', 'capacite', 'prix_nuit', 'statut', 'type'];
-    
-    for (const field of allowedFields) {
-      if (roomData[field] !== undefined) {
-        updates.push(`${field} = ?`);
-        values.push(roomData[field]);
+  // Récupérer une chambre par numéro
+  static async findByNumero(numero) {
+    try {
+      const [rows] = await pool.query(`
+        SELECT 
+          r.*,
+          rt.nom as room_type_nom,
+          rt.description as room_type_description
+        FROM rooms r
+        LEFT JOIN room_types rt ON r.room_type_id = rt.id
+        WHERE r.numero = ?
+      `, [numero]);
+      return rows[0] || null;
+    } catch (error) {
+      console.error(`❌ Erreur SQL findByNumero ${numero}:`, error);
+      throw error;
+    }
+  }
+
+  // Créer une chambre
+  static async create(data) {
+    try {
+      const { room_type_id, numero, capacite, prix_nuit, statut = 'LIBRE' } = data;
+
+      const [result] = await pool.query(
+        `INSERT INTO rooms (room_type_id, numero, capacite, prix_nuit, statut)
+         VALUES (?, ?, ?, ?, ?)`,
+        [room_type_id || null, numero, capacite, prix_nuit, statut]
+      );
+
+      return result.insertId;
+    } catch (error) {
+      console.error('❌ Erreur SQL create:', error);
+      throw error;
+    }
+  }
+
+  // Mettre à jour une chambre
+  static async update(id, data) {
+    try {
+      const updates = [];
+      const values = [];
+
+      const allowedFields = ['room_type_id', 'numero', 'capacite', 'prix_nuit', 'statut'];
+
+      for (const field of allowedFields) {
+        if (data[field] !== undefined) {
+          updates.push(`${field} = ?`);
+          values.push(data[field]);
+        }
       }
+
+      if (updates.length === 0) return false;
+
+      values.push(id);
+
+      const [result] = await pool.query(
+        `UPDATE rooms SET ${updates.join(', ')} WHERE id = ?`,
+        values
+      );
+
+      return result.affectedRows > 0;
+    } catch (error) {
+      console.error(`❌ Erreur SQL update ${id}:`, error);
+      throw error;
     }
-    
-    if (updates.length === 0) return false;
-    
-    values.push(id);
-    const query = `UPDATE rooms SET ${updates.join(', ')} WHERE id = ?`;
-    
-    const [result] = await pool.execute(query, values);
-    return result.affectedRows > 0;
   }
 
+  // Mettre à jour statut
   static async updateStatus(id, statut) {
-    const pool = getPool();
-    const query = 'UPDATE rooms SET statut = ? WHERE id = ?';
-    const [result] = await pool.execute(query, [statut, id]);
-    return result.affectedRows > 0;
+    try {
+      const [result] = await pool.query(
+        'UPDATE rooms SET statut = ? WHERE id = ?',
+        [statut, id]
+      );
+      return result.affectedRows > 0;
+    } catch (error) {
+      console.error(`❌ Erreur SQL updateStatus ${id}:`, error);
+      throw error;
+    }
   }
 
+  // Supprimer
   static async delete(id) {
-    const pool = getPool();
-    const query = 'DELETE FROM rooms WHERE id = ?';
-    const [result] = await pool.execute(query, [id]);
-    return result.affectedRows > 0;
+    try {
+      const [result] = await pool.query(
+        'DELETE FROM rooms WHERE id = ?',
+        [id]
+      );
+      return result.affectedRows > 0;
+    } catch (error) {
+      console.error(`❌ Erreur SQL delete ${id}:`, error);
+      throw error;
+    }
   }
 
+  // Existe ?
   static async exists(id) {
-    const pool = getPool();
-    const query = 'SELECT COUNT(*) as count FROM rooms WHERE id = ?';
-    const [rows] = await pool.execute(query, [id]);
-    return rows[0].count > 0;
+    try {
+      const [rows] = await pool.query(
+        'SELECT COUNT(*) as count FROM rooms WHERE id = ?',
+        [id]
+      );
+      return rows[0].count > 0;
+    } catch (error) {
+      console.error(`❌ Erreur SQL exists ${id}:`, error);
+      throw error;
+    }
   }
 
+  // Numéro existe ?
   static async numeroExists(numero, excludeId = null) {
-    const pool = getPool();
-    let query = 'SELECT COUNT(*) as count FROM rooms WHERE numero = ?';
-    const values = [numero];
-    
-    if (excludeId) {
-      query += ' AND id != ?';
-      values.push(excludeId);
+    try {
+      let query = 'SELECT COUNT(*) as count FROM rooms WHERE numero = ?';
+      const values = [numero];
+
+      if (excludeId) {
+        query += ' AND id != ?';
+        values.push(excludeId);
+      }
+
+      const [rows] = await pool.query(query, values);
+      return rows[0].count > 0;
+    } catch (error) {
+      console.error(`❌ Erreur SQL numeroExists ${numero}:`, error);
+      throw error;
     }
-    
-    const [rows] = await pool.execute(query, values);
-    return rows[0].count > 0;
   }
 
-  /**
-   * Vérifier si une chambre est disponible pour une période donnée
-   */
+  // Disponibilité chambre
   static async isAvailable(roomId, dateArrivee, dateDepart) {
-    const pool = getPool();
-    const query = `
-      SELECT COUNT(*) as count 
-      FROM reservations 
-      WHERE room_id = ? 
-        AND statut NOT IN ('annulee', 'terminee')
-        AND (
-          (date_arrivee <= ? AND date_depart >= ?)
-          OR (date_arrivee <= ? AND date_depart >= ?)
-          OR (date_arrivee >= ? AND date_depart <= ?)
-        )
-    `;
-    
-    const [rows] = await pool.execute(query, [
-      roomId, 
-      dateArrivee, dateArrivee, 
-      dateDepart, dateDepart, 
-      dateArrivee, dateDepart
-    ]);
-    
-    return rows[0].count === 0;
+    try {
+      const [rows] = await pool.query(`
+        SELECT COUNT(*) as count
+        FROM reservations
+        WHERE room_id = ?
+          AND statut NOT IN ('ANNULEE', 'TERMINEE')
+          AND (
+            (date_arrivee <= ? AND date_depart >= ?)
+            OR (date_arrivee <= ? AND date_depart >= ?)
+            OR (date_arrivee >= ? AND date_depart <= ?)
+          )
+      `, [roomId, dateArrivee, dateArrivee, dateDepart, dateDepart, dateArrivee, dateDepart]);
+
+      return rows[0].count === 0;
+    } catch (error) {
+      console.error(`❌ Erreur SQL isAvailable ${roomId}:`, error);
+      throw error;
+    }
   }
 
-  /**
-   * Récupérer les chambres disponibles pour une période
-   */
+  // Chambres disponibles
   static async findAvailable(dateArrivee, dateDepart, capacite = null, roomTypeId = null) {
-    const pool = getPool();
-    let query = `
-      SELECT 
-        r.*,
-        rt.nom as room_type_nom
-      FROM rooms r
-      LEFT JOIN room_types rt ON r.room_type_id = rt.id
-      WHERE r.statut = 'disponible'
+    try {
+      let query = `
+        SELECT r.*, rt.nom as room_type_nom
+        FROM rooms r
+        LEFT JOIN room_types rt ON r.room_type_id = rt.id
+        WHERE r.statut = 'LIBRE'
         AND NOT EXISTS (
-          SELECT 1 FROM reservations res 
-          WHERE res.room_id = r.id 
-            AND res.statut NOT IN ('annulee', 'terminee')
-            AND (
-              (res.date_arrivee <= ? AND res.date_depart >= ?)
-              OR (res.date_arrivee <= ? AND res.date_depart >= ?)
-              OR (res.date_arrivee >= ? AND res.date_depart <= ?)
-            )
+          SELECT 1 FROM reservations res
+          WHERE res.room_id = r.id
+          AND res.statut NOT IN ('ANNULEE', 'TERMINEE')
+          AND (
+            (res.date_arrivee <= ? AND res.date_depart >= ?)
+            OR (res.date_arrivee <= ? AND res.date_depart >= ?)
+            OR (res.date_arrivee >= ? AND res.date_depart <= ?)
+          )
         )
-    `;
-    
-    const values = [dateArrivee, dateArrivee, dateDepart, dateDepart, dateArrivee, dateDepart];
-    
-    if (capacite) {
-      query += ' AND r.capacite >= ?';
-      values.push(capacite);
+      `;
+
+      const values = [dateArrivee, dateArrivee, dateDepart, dateDepart, dateArrivee, dateDepart];
+
+      if (capacite) {
+        query += ' AND r.capacite >= ?';
+        values.push(capacite);
+      }
+
+      if (roomTypeId) {
+        query += ' AND r.room_type_id = ?';
+        values.push(roomTypeId);
+      }
+
+      query += ' ORDER BY r.numero ASC';
+
+      const [rows] = await pool.query(query, values);
+      return rows;
+    } catch (error) {
+      console.error('❌ Erreur SQL findAvailable:', error);
+      throw error;
     }
-    
-    if (roomTypeId) {
-      query += ' AND r.room_type_id = ?';
-      values.push(roomTypeId);
-    }
-    
-    query += ' ORDER BY r.numero ASC';
-    
-    const [rows] = await pool.execute(query, values);
-    return rows;
   }
 
+  // Stats
   static async getStats() {
-    const pool = getPool();
-    const query = `
-      SELECT 
-        COUNT(*) as total,
-        SUM(CASE WHEN statut = 'disponible' THEN 1 ELSE 0 END) as disponibles,
-        SUM(CASE WHEN statut = 'occupee' THEN 1 ELSE 0 END) as occupees,
-        SUM(CASE WHEN statut = 'reservée' THEN 1 ELSE 0 END) as reservees,
-        SUM(CASE WHEN statut = 'maintenance' THEN 1 ELSE 0 END) as maintenance,
-        AVG(prix_nuit) as prix_moyen,
-        SUM(capacite) as capacite_totale
-      FROM rooms
-    `;
-    
-    const [rows] = await pool.execute(query);
-    return rows[0];
+    try {
+      const [rows] = await pool.query(`
+        SELECT 
+          COUNT(*) as total,
+          SUM(CASE WHEN statut = 'LIBRE' THEN 1 ELSE 0 END) as libres,
+          SUM(CASE WHEN statut = 'OCCUPEE' THEN 1 ELSE 0 END) as occupees,
+          SUM(CASE WHEN statut = 'RESERVEE' THEN 1 ELSE 0 END) as reservees,
+          SUM(CASE WHEN statut = 'NETTOYAGE' THEN 1 ELSE 0 END) as nettoyage,
+          SUM(CASE WHEN statut = 'MAINTENANCE' THEN 1 ELSE 0 END) as maintenance,
+          SUM(CASE WHEN statut = 'HORS_SERVICE' THEN 1 ELSE 0 END) as hors_service,
+          AVG(prix_nuit) as prix_moyen,
+          SUM(capacite) as capacite_totale
+        FROM rooms
+      `);
+      return rows[0];
+    } catch (error) {
+      console.error('❌ Erreur SQL getStats:', error);
+      throw error;
+    }
   }
 }
 

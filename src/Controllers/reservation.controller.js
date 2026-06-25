@@ -1,82 +1,17 @@
-const Reservation = require('../Models/Reservation');
-const Room = require('../Models/Room');
-
-// Créer une réservation
-const createReservation = async (req, res) => {
-  try {
-    console.log('📥 Création réservation - Données reçues:', req.body);
-
-    const { 
-      client_id, room_id, date_arrivee, date_depart, 
-      montant_total, statut, notes 
-    } = req.body;
-
-    // Validation
-    if (!client_id || !room_id || !date_arrivee || !date_depart || !montant_total) {
-      return res.status(400).json({
-        success: false,
-        message: 'Champs requis: client_id, room_id, date_arrivee, date_depart, montant_total'
-      });
-    }
-
-    // Vérifier si la chambre existe
-    const roomExists = await Room.exists(room_id);
-    if (!roomExists) {
-      return res.status(404).json({
-        success: false,
-        message: 'Chambre non trouvée'
-      });
-    }
-
-    // Vérifier la disponibilité de la chambre
-    const availableRooms = await Room.findAvailable(date_arrivee, date_depart);
-    const isAvailable = availableRooms.some(r => r.id === parseInt(room_id));
-    if (!isAvailable) {
-      return res.status(400).json({
-        success: false,
-        message: 'La chambre n\'est pas disponible pour ces dates'
-      });
-    }
-
-    const reservationId = await Reservation.create({
-      client_id,
-      room_id,
-      date_arrivee,
-      date_depart,
-      montant_total,
-      statut: statut || 'confirmee',
-      notes
-    });
-
-    // Mettre à jour le statut de la chambre
-    await Room.updateStatus(room_id, 'reservée');
-
-    const newReservation = await Reservation.findById(reservationId);
-
-    res.status(201).json({
-      success: true,
-      message: 'Réservation créée avec succès',
-      data: newReservation
-    });
-  } catch (error) {
-    console.error('❌ Erreur lors de la création de la réservation:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erreur lors de la création de la réservation',
-      error: error.message
-    });
-  }
-};
+const Client = require('../Models/Client.model');
+const Reservation = require('../Models/reservation.model');
+const Room = require('../Models/room.model');
+const Stay = require('../Models/Stay.model');
 
 // Récupérer toutes les réservations
 const getReservations = async (req, res) => {
   try {
-    const { statut, room_id, client_id, date_arrivee, date_depart } = req.query;
+    const { statut, client_id, room_id, date_arrivee, date_depart } = req.query;
     
     const filters = {};
     if (statut) filters.statut = statut;
-    if (room_id) filters.room_id = parseInt(room_id);
     if (client_id) filters.client_id = parseInt(client_id);
+    if (room_id) filters.room_id = parseInt(room_id);
     if (date_arrivee) filters.date_arrivee = date_arrivee;
     if (date_depart) filters.date_depart = date_depart;
 
@@ -88,10 +23,11 @@ const getReservations = async (req, res) => {
       data: reservations
     });
   } catch (error) {
-    console.error('❌ Erreur:', error);
+    console.error('❌ Erreur getReservations:', error);
     res.status(500).json({
       success: false,
-      message: 'Erreur lors de la récupération des réservations'
+      message: 'Erreur lors de la récupération des réservations',
+      error: error.message
     });
   }
 };
@@ -100,8 +36,8 @@ const getReservations = async (req, res) => {
 const getReservationById = async (req, res) => {
   try {
     const { id } = req.params;
-    const reservation = await Reservation.findById(parseInt(id));
-    
+    const reservation = await Reservation.findById(id);
+
     if (!reservation) {
       return res.status(404).json({
         success: false,
@@ -114,10 +50,84 @@ const getReservationById = async (req, res) => {
       data: reservation
     });
   } catch (error) {
-    console.error('❌ Erreur:', error);
+    console.error('❌ Erreur getReservationById:', error);
     res.status(500).json({
       success: false,
-      message: 'Erreur lors de la récupération de la réservation'
+      message: 'Erreur lors de la récupération de la réservation',
+      error: error.message
+    });
+  }
+};
+
+// Créer une réservation
+const createReservation = async (req, res) => {
+  try {
+    const { 
+      client_id, room_id, date_arrivee, date_depart, 
+      montant_total, statut 
+    } = req.body;
+
+    // Validation des champs requis
+    if (!client_id || !room_id || !date_arrivee || !date_depart || !montant_total) {
+      return res.status(400).json({
+        success: false,
+        message: 'Champs requis : client_id, room_id, date_arrivee, date_depart, montant_total'
+      });
+    }
+
+    // Vérifier si le client existe
+    const client = await Client.findById(client_id);
+    if (!client) {
+      return res.status(404).json({
+        success: false,
+        message: 'Client non trouvé'
+      });
+    }
+
+    // Vérifier si la chambre existe
+    const room = await Room.findById(room_id);
+    if (!room) {
+      return res.status(404).json({
+        success: false,
+        message: 'Chambre non trouvée'
+      });
+    }
+
+    // Vérifier la disponibilité de la chambre
+    const isAvailable = await Room.isAvailable(room_id, date_arrivee, date_depart);
+    if (!isAvailable) {
+      return res.status(400).json({
+        success: false,
+        message: 'La chambre n\'est pas disponible pour ces dates'
+      });
+    }
+
+    // Créer la réservation
+    const reservationId = await Reservation.create({
+      client_id,
+      room_id,
+      date_arrivee,
+      date_depart,
+      montant_total,
+      statut: statut || 'CONFIRMEE'
+    });
+
+    // Mettre à jour le statut de la chambre
+    await Room.updateStatus(room_id, 'RESERVEE');
+
+    const newReservation = await Reservation.findById(reservationId);
+
+    res.status(201).json({
+      success: true,
+      message: 'Réservation créée avec succès',
+      data: newReservation
+    });
+  } catch (error) {
+    console.error('❌ Erreur createReservation:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la création de la réservation',
+      error: error.message
     });
   }
 };
@@ -126,8 +136,8 @@ const getReservationById = async (req, res) => {
 const updateReservation = async (req, res) => {
   try {
     const { id } = req.params;
-    
-    const reservationExists = await Reservation.exists(parseInt(id));
+
+    const reservationExists = await Reservation.exists(id);
     if (!reservationExists) {
       return res.status(404).json({
         success: false,
@@ -135,7 +145,7 @@ const updateReservation = async (req, res) => {
       });
     }
 
-    const updated = await Reservation.update(parseInt(id), req.body);
+    const updated = await Reservation.update(id, req.body);
     if (!updated) {
       return res.status(400).json({
         success: false,
@@ -143,7 +153,7 @@ const updateReservation = async (req, res) => {
       });
     }
 
-    const updatedReservation = await Reservation.findById(parseInt(id));
+    const updatedReservation = await Reservation.findById(id);
 
     res.status(200).json({
       success: true,
@@ -151,10 +161,11 @@ const updateReservation = async (req, res) => {
       data: updatedReservation
     });
   } catch (error) {
-    console.error('❌ Erreur:', error);
+    console.error('❌ Erreur updateReservation:', error);
     res.status(500).json({
       success: false,
-      message: 'Erreur lors de la mise à jour de la réservation'
+      message: 'Erreur lors de la mise à jour de la réservation',
+      error: error.message
     });
   }
 };
@@ -172,7 +183,7 @@ const updateReservationStatus = async (req, res) => {
       });
     }
 
-    const validStatus = ['confirmee', 'en_cours', 'terminee', 'annulee'];
+    const validStatus = ['CONFIRMEE', 'EN_COURS', 'TERMINEE', 'ANNULEE'];
     if (!validStatus.includes(statut)) {
       return res.status(400).json({
         success: false,
@@ -180,7 +191,7 @@ const updateReservationStatus = async (req, res) => {
       });
     }
 
-    const reservation = await Reservation.findById(parseInt(id));
+    const reservation = await Reservation.findById(id);
     if (!reservation) {
       return res.status(404).json({
         success: false,
@@ -188,7 +199,7 @@ const updateReservationStatus = async (req, res) => {
       });
     }
 
-    const updated = await Reservation.updateStatus(parseInt(id), statut);
+    const updated = await Reservation.updateStatus(id, statut);
     if (!updated) {
       return res.status(400).json({
         success: false,
@@ -197,13 +208,20 @@ const updateReservationStatus = async (req, res) => {
     }
 
     // Mettre à jour le statut de la chambre
-    if (statut === 'en_cours') {
-      await Room.updateStatus(reservation.room_id, 'occupee');
-    } else if (statut === 'terminee' || statut === 'annulee') {
-      await Room.updateStatus(reservation.room_id, 'disponible');
+    if (statut === 'EN_COURS') {
+      await Room.updateStatus(reservation.room_id, 'OCCUPEE');
+      // Créer le séjour
+      await Stay.create({ reservation_id: id, checkin_at: new Date() });
+    } else if (statut === 'TERMINEE' || statut === 'ANNULEE') {
+      await Room.updateStatus(reservation.room_id, 'LIBRE');
+      // Mettre à jour le séjour
+      const stays = await Stay.findAll({ reservation_id: id });
+      if (stays.length > 0) {
+        await Stay.checkout(stays[0].id, new Date());
+      }
     }
 
-    const updatedReservation = await Reservation.findById(parseInt(id));
+    const updatedReservation = await Reservation.findById(id);
 
     res.status(200).json({
       success: true,
@@ -211,10 +229,11 @@ const updateReservationStatus = async (req, res) => {
       data: updatedReservation
     });
   } catch (error) {
-    console.error('❌ Erreur:', error);
+    console.error('❌ Erreur updateReservationStatus:', error);
     res.status(500).json({
       success: false,
-      message: 'Erreur lors de la mise à jour du statut'
+      message: 'Erreur lors de la mise à jour du statut',
+      error: error.message
     });
   }
 };
@@ -223,8 +242,8 @@ const updateReservationStatus = async (req, res) => {
 const deleteReservation = async (req, res) => {
   try {
     const { id } = req.params;
-    
-    const reservationExists = await Reservation.exists(parseInt(id));
+
+    const reservationExists = await Reservation.exists(id);
     if (!reservationExists) {
       return res.status(404).json({
         success: false,
@@ -232,9 +251,9 @@ const deleteReservation = async (req, res) => {
       });
     }
 
-    const reservation = await Reservation.findById(parseInt(id));
-    const deleted = await Reservation.delete(parseInt(id));
-    
+    const reservation = await Reservation.findById(id);
+    const deleted = await Reservation.delete(id);
+
     if (!deleted) {
       return res.status(400).json({
         success: false,
@@ -245,8 +264,8 @@ const deleteReservation = async (req, res) => {
     // Rendre la chambre disponible
     if (reservation && reservation.room_id) {
       const room = await Room.findById(reservation.room_id);
-      if (room && (room.statut === 'reservée' || room.statut === 'occupee')) {
-        await Room.updateStatus(reservation.room_id, 'disponible');
+      if (room && (room.statut === 'RESERVEE' || room.statut === 'OCCUPEE')) {
+        await Room.updateStatus(reservation.room_id, 'LIBRE');
       }
     }
 
@@ -255,10 +274,11 @@ const deleteReservation = async (req, res) => {
       message: 'Réservation supprimée avec succès'
     });
   } catch (error) {
-    console.error('❌ Erreur:', error);
+    console.error('❌ Erreur deleteReservation:', error);
     res.status(500).json({
       success: false,
-      message: 'Erreur lors de la suppression de la réservation'
+      message: 'Erreur lors de la suppression de la réservation',
+      error: error.message
     });
   }
 };
@@ -267,23 +287,25 @@ const deleteReservation = async (req, res) => {
 const getReservationStats = async (req, res) => {
   try {
     const stats = await Reservation.getStats();
+
     res.status(200).json({
       success: true,
       data: stats
     });
   } catch (error) {
-    console.error('❌ Erreur:', error);
+    console.error('❌ Erreur getReservationStats:', error);
     res.status(500).json({
       success: false,
-      message: 'Erreur lors de la récupération des statistiques'
+      message: 'Erreur lors de la récupération des statistiques',
+      error: error.message
     });
   }
 };
 
 module.exports = {
-  createReservation,
   getReservations,
   getReservationById,
+  createReservation,
   updateReservation,
   updateReservationStatus,
   deleteReservation,

@@ -62,6 +62,8 @@ CREATE TABLE `casino_cashiers` (
   `room_id` bigint(20) UNSIGNED DEFAULT NULL,
   `nom` varchar(100) DEFAULT NULL,
   `statut` varchar(30) DEFAULT NULL
+  
+  
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -518,6 +520,7 @@ CREATE TABLE `rooms` (
   `numero` varchar(20) DEFAULT NULL,
   `capacite` int(11) DEFAULT NULL,
   `prix_nuit` bigint(20) DEFAULT NULL,
+    
   `statut` enum('LIBRE','OCCUPEE','RESERVEE','NETTOYAGE','MAINTENANCE','HORS_SERVICE') DEFAULT 'LIBRE'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
