@@ -716,6 +716,41 @@ CREATE TABLE `users` (
 -- Index pour les tables déchargées
 --
 
+CREATE TABLE restaurant_cashiers (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+
+    nom VARCHAR(100),
+
+    statut ENUM(
+        'OUVERTE',
+        'FERMEE'
+    )
+);
+
+CREATE TABLE restaurant_sessions (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+
+    cashier_id BIGINT UNSIGNED,
+
+    user_id BIGINT UNSIGNED,
+
+    ouverture_at DATETIME,
+
+    fermeture_at DATETIME,
+
+    fond_initial BIGINT,
+
+    fond_final BIGINT,
+
+    ecart BIGINT,
+
+    FOREIGN KEY(cashier_id)
+        REFERENCES restaurant_cashiers(id),
+
+    FOREIGN KEY(user_id)
+        REFERENCES users(id)
+);
+
 --
 -- Index pour la table `audit_logs`
 --
