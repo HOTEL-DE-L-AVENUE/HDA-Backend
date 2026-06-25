@@ -8,11 +8,6 @@ const { testConnection } = require('./Config/connectDatabase');
 const authRoutes = require('./Routes/auth.routes');
 const adminRoutes = require('./Routes/admin.routes');
 
-// Import des routes
-const authRoutes = require('./Routes/authRoutes');
-const roomRoutes = require('./Routes/roomRoutes');
-const reservationRoutes = require('./Routes/reservationRoutes');
-
 const app = express();
 const PORT = process.env.PORT || 4000;
 
