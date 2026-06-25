@@ -36,7 +36,7 @@ async function authenticateToken(req, res, next) {
           role, 
           statut,
           date_creation
-        FROM admin 
+        FROM users 
         WHERE id_admin = ?`,
         [parseInt(decoded.userId)]
       );
