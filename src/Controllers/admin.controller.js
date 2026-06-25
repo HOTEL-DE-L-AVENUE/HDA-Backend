@@ -23,9 +23,18 @@ class AdminController {
         });
       }
 
+      // Validation du rôle
+      const validRoles = ['admin', 'manager', 'receptioniste', 'caisse', 'water', 'housekeeping'];
+      if (role && !validRoles.includes(role)) {
+        return res.status(400).json({
+          success: false,
+          error: `Rôle invalide. Utilisez: ${validRoles.join(', ')}`
+        });
+      }
+
       // Vérifier si l'email existe déjà
       const [existing] = await pool.query(
-        'SELECT id_admin FROM admin WHERE email = ?',
+        'SELECT id_admin FROM users WHERE email = ?',
         [email]
       );
 
@@ -39,10 +48,10 @@ class AdminController {
       // Hasher le mot de passe
       const hashedPassword = await bcrypt.hash(mot_de_passe, 10);
 
-      // Insérer le nouvel admin
+      // Insérer le nouvel utilisateur dans la table users
       const [result] = await pool.query(
-        `INSERT INTO admin (nom, prenom, email, mot_de_passe, role, statut) 
-         VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO users (nom, prenom, email, mot_de_passe, role, statut, date_creation) 
+         VALUES (?, ?, ?, ?, ?, ?, NOW())`,
         [nom, prenom, email, hashedPassword, role, statut]
       );
 
@@ -57,7 +66,7 @@ class AdminController {
           statut,
           date_creation,
           DATE_FORMAT(date_creation, '%Y-%m-%d %H:%i:%s') as date_creation_formatted
-        FROM admin 
+        FROM users 
         WHERE id_admin = ?`,
         [result.insertId]
       );
@@ -94,7 +103,7 @@ class AdminController {
           statut,
           date_creation,
           DATE_FORMAT(date_creation, '%Y-%m-%d %H:%i:%s') as date_creation_formatted
-        FROM admin 
+        FROM users 
         ORDER BY date_creation DESC`
       );
 
@@ -131,7 +140,7 @@ class AdminController {
           statut,
           date_creation,
           DATE_FORMAT(date_creation, '%Y-%m-%d %H:%i:%s') as date_creation_formatted
-        FROM admin 
+        FROM users 
         WHERE id_admin = ?`,
         [id]
       );
@@ -168,7 +177,7 @@ class AdminController {
 
       // Vérifier si l'admin existe
       const [existing] = await pool.query(
-        'SELECT * FROM admin WHERE id_admin = ?',
+        'SELECT * FROM users WHERE id_admin = ?',
         [id]
       );
 
@@ -179,10 +188,21 @@ class AdminController {
         });
       }
 
+      // Validation du rôle si fourni
+      if (role) {
+        const validRoles = ['admin', 'manager', 'receptioniste', 'caisse', 'water', 'housekeeping'];
+        if (!validRoles.includes(role)) {
+          return res.status(400).json({
+            success: false,
+            error: `Rôle invalide. Utilisez: ${validRoles.join(', ')}`
+          });
+        }
+      }
+
       // Vérifier si l'email est déjà utilisé par un autre admin
       if (email) {
         const [emailCheck] = await pool.query(
-          'SELECT id_admin FROM admin WHERE email = ? AND id_admin != ?',
+          'SELECT id_admin FROM users WHERE email = ? AND id_admin != ?',
           [email, id]
         );
         if (emailCheck.length > 0) {
@@ -231,7 +251,7 @@ class AdminController {
       }
 
       values.push(id);
-      const query = `UPDATE admin SET ${updateFields.join(', ')} WHERE id_admin = ?`;
+      const query = `UPDATE users SET ${updateFields.join(', ')} WHERE id_admin = ?`;
       await pool.query(query, values);
 
       // Récupérer l'admin mis à jour
@@ -245,7 +265,7 @@ class AdminController {
           statut,
           date_creation,
           DATE_FORMAT(date_creation, '%Y-%m-%d %H:%i:%s') as date_creation_formatted
-        FROM admin 
+        FROM users 
         WHERE id_admin = ?`,
         [id]
       );
@@ -276,7 +296,7 @@ class AdminController {
 
       // Vérifier si l'admin existe
       const [existing] = await pool.query(
-        'SELECT id_admin FROM admin WHERE id_admin = ?',
+        'SELECT id_admin FROM users WHERE id_admin = ?',
         [id]
       );
 
@@ -296,7 +316,7 @@ class AdminController {
       }
 
       await pool.query(
-        'DELETE FROM admin WHERE id_admin = ?',
+        'DELETE FROM users WHERE id_admin = ?',
         [id]
       );
 
@@ -333,7 +353,7 @@ class AdminController {
 
       // Vérifier si l'admin existe
       const [existing] = await pool.query(
-        'SELECT id_admin FROM admin WHERE id_admin = ?',
+        'SELECT id_admin FROM users WHERE id_admin = ?',
         [id]
       );
 
@@ -353,7 +373,7 @@ class AdminController {
       }
 
       await pool.query(
-        'UPDATE admin SET statut = ? WHERE id_admin = ?',
+        'UPDATE users SET statut = ? WHERE id_admin = ?',
         [statut, id]
       );
 
@@ -390,7 +410,7 @@ class AdminController {
 
       // Vérifier si l'admin existe
       const [existing] = await pool.query(
-        'SELECT id_admin FROM admin WHERE id_admin = ?',
+        'SELECT id_admin FROM users WHERE id_admin = ?',
         [id]
       );
 
@@ -405,7 +425,7 @@ class AdminController {
       const hashedPassword = await bcrypt.hash(newPassword, 10);
 
       await pool.query(
-        'UPDATE admin SET mot_de_passe = ? WHERE id_admin = ?',
+        'UPDATE users SET mot_de_passe = ? WHERE id_admin = ?',
         [hashedPassword, id]
       );
 
@@ -430,7 +450,7 @@ class AdminController {
    */
   async checkAdminsExist(req, res) {
     try {
-      const [rows] = await pool.query('SELECT COUNT(*) as count FROM admin');
+      const [rows] = await pool.query('SELECT COUNT(*) as count FROM users');
       
       return res.json({
         success: true,
@@ -442,6 +462,55 @@ class AdminController {
       return res.status(500).json({
         success: false,
         error: 'Erreur lors de la vérification des administrateurs'
+      });
+    }
+  }
+
+  /**
+   * Récupérer les admins par rôle
+   * GET /api/admin/role/:role
+   * Requiert un token admin
+   */
+  async getAdminsByRole(req, res) {
+    try {
+      const { role } = req.params;
+      
+      // Validation du rôle
+      const validRoles = ['admin', 'manager', 'receptioniste', 'caisse', 'water', 'housekeeping'];
+      if (!validRoles.includes(role)) {
+        return res.status(400).json({
+          success: false,
+          error: `Rôle invalide. Utilisez: ${validRoles.join(', ')}`
+        });
+      }
+
+      const [rows] = await pool.query(
+        `SELECT 
+          id_admin, 
+          nom, 
+          prenom, 
+          email, 
+          role, 
+          statut,
+          date_creation,
+          DATE_FORMAT(date_creation, '%Y-%m-%d %H:%i:%s') as date_creation_formatted
+        FROM users 
+        WHERE role = ?
+        ORDER BY date_creation DESC`,
+        [role]
+      );
+
+      return res.json({
+        success: true,
+        data: rows,
+        count: rows.length,
+        role: role
+      });
+    } catch (error) {
+      console.error('Get admins by role error:', error);
+      return res.status(500).json({
+        success: false,
+        error: 'Erreur lors de la récupération des administrateurs par rôle'
       });
     }
   }

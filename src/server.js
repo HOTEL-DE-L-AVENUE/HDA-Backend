@@ -112,6 +112,9 @@ app.use('/api/maintenances', maintenanceRoutes);
 app.use('/api/room-equipments', roomEquipmentRoutes); // <-- Équipements de chambre
 app.use('/api/minibars', minibarRoutes);
 app.use('/api/housekeeping', housekeepingRoutes);
+// Routes protégées
+app.use('/api/admin', adminRoutes);
+app.use('/api/restaurant', require('./Routes/restaurant.routes'));
 
 // =============================================
 // 7. Health check

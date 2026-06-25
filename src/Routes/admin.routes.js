@@ -8,26 +8,33 @@ const { authenticateToken, requireRole } = require('../Middleware/auth.middlewar
 // ROUTES PUBLIQUES (Pas de token requis)
 // =============================================
 
-// Créer un administrateur - PUBLIC (pas de token requis)
+// Créer un administrateur - PUBLIC
 router.post('/', adminController.createAdmin);
 
 // Vérifier si des admins existent - PUBLIC
 router.get('/check', adminController.checkAdminsExist);
 
 // =============================================
-// ROUTES PROTÉGÉES (Token admin requis)
+// ROUTES PROTÉGÉES (Token requis)
 // =============================================
 
 // Appliquer les middlewares pour toutes les routes suivantes
 router.use(authenticateToken);
-router.use(requireRole(['admin', 'super_admin']));
 
-// Routes protégées
+// TOUS les rôles peuvent accéder (admin, manager, receptioniste, caisse, water, housekeeping)
+router.use(requireRole(['admin', 'manager', 'receptioniste', 'caisse', 'water', 'housekeeping']));
+
+// Routes CRUD
 router.get('/', adminController.getAllAdmins);
 router.get('/:id', adminController.getAdminById);
 router.put('/:id', adminController.updateAdmin);
 router.delete('/:id', adminController.deleteAdmin);
+
+// Routes spécifiques
 router.patch('/:id/status', adminController.changeAdminStatus);
 router.post('/:id/reset-password', adminController.resetPassword);
+
+// Route pour récupérer les admins par rôle
+router.get('/role/:role', adminController.getAdminsByRole);
 
 module.exports = router;

@@ -702,22 +702,63 @@ CREATE TABLE `units` (
 --
 -- Structure de la table `users`
 --
+-- Cette table remplace l'ancienne table admin
+-- L'ancienne table users a été supprimée
 
+DROP TABLE IF EXISTS `users`;
+
+-- =============================================
+-- 2. Créer la table users
+-- =============================================
 CREATE TABLE `users` (
-  `id` bigint(20) UNSIGNED NOT NULL,
+  `id_admin` int(11) NOT NULL AUTO_INCREMENT,
   `nom` varchar(100) NOT NULL,
-  `prenom` varchar(100) DEFAULT NULL,
-  `email` varchar(150) DEFAULT NULL,
-  `password` varchar(255) DEFAULT NULL,
-  `role` varchar(50) NOT NULL,
-  `actif` tinyint(1) DEFAULT 1,
-  `created_at` timestamp NULL DEFAULT NULL,
-  `updated_at` timestamp NULL DEFAULT NULL
+  `prenom` varchar(100) NOT NULL,
+  `email` varchar(150) NOT NULL,
+  `mot_de_passe` varchar(255) NOT NULL,
+  `role` enum('admin','manager','receptioniste','caisse','water','housekeeping') NOT NULL DEFAULT 'admin',
+  `statut` enum('actif','inactif') NOT NULL DEFAULT 'actif',
+  `date_creation` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_admin`),
+  UNIQUE KEY `email` (`email`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Index pour la table `users`
+--
+-- Note: La clé UNIQUE est déjà définie dans CREATE TABLE ci-dessus
+-- Ne pas ajouter de ALTER TABLE supplémentaire pour éviter l'erreur #1061
+
+--
+-- AUTO_INCREMENT pour la table `users`
+--
+ALTER TABLE `users`
+  MODIFY `id_admin` int(11) NOT NULL AUTO_INCREMENT;
+
+-- --------------------------------------------------------
 
 --
 -- Index pour les tables déchargées
 --
+
+CREATE TABLE restaurant_cashiers (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    nom VARCHAR(100),
+    statut ENUM('OUVERTE','FERMEE')
+);
+
+CREATE TABLE restaurant_sessions (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    cashier_id BIGINT UNSIGNED,
+    user_id BIGINT UNSIGNED,
+    ouverture_at DATETIME,
+    fermeture_at DATETIME,
+    fond_initial BIGINT,
+    fond_final BIGINT,
+    ecart BIGINT,
+    FOREIGN KEY(cashier_id) REFERENCES restaurant_cashiers(id),
+    FOREIGN KEY(user_id) REFERENCES users(id_admin)
+);
 
 --
 -- Index pour la table `audit_logs`
@@ -1054,7 +1095,7 @@ ALTER TABLE `units`
 -- Index pour la table `users`
 --
 ALTER TABLE `users`
-  ADD PRIMARY KEY (`id`),
+  ADD PRIMARY KEY (`id_admin`),
   ADD UNIQUE KEY `email` (`email`);
 
 --
@@ -1335,7 +1376,7 @@ ALTER TABLE `units`
 -- AUTO_INCREMENT pour la table `users`
 --
 ALTER TABLE `users`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+  MODIFY `id_admin` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- Contraintes pour les tables déchargées
@@ -1345,7 +1386,7 @@ ALTER TABLE `users`
 -- Contraintes pour la table `audit_logs`
 --
 ALTER TABLE `audit_logs`
-  ADD CONSTRAINT `audit_logs_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`);
+  ADD CONSTRAINT `audit_logs_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id_admin`);
 
 --
 -- Contraintes pour la table `casino_cards`
@@ -1382,7 +1423,7 @@ ALTER TABLE `casino_scores`
 --
 ALTER TABLE `casino_sessions`
   ADD CONSTRAINT `casino_sessions_ibfk_1` FOREIGN KEY (`cashier_id`) REFERENCES `casino_cashiers` (`id`),
-  ADD CONSTRAINT `casino_sessions_ibfk_2` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`);
+  ADD CONSTRAINT `casino_sessions_ibfk_2` FOREIGN KEY (`user_id`) REFERENCES `users` (`id_admin`);
 
 --
 -- Contraintes pour la table `casino_transactions`
@@ -1415,7 +1456,7 @@ ALTER TABLE `financial_transactions`
 --
 ALTER TABLE `housekeeping_tasks`
   ADD CONSTRAINT `housekeeping_tasks_ibfk_1` FOREIGN KEY (`room_id`) REFERENCES `rooms` (`id`),
-  ADD CONSTRAINT `housekeeping_tasks_ibfk_2` FOREIGN KEY (`assigned_user_id`) REFERENCES `users` (`id`);
+  ADD CONSTRAINT `housekeeping_tasks_ibfk_2` FOREIGN KEY (`assigned_user_id`) REFERENCES `users` (`id_admin`);
 
 --
 -- Contraintes pour la table `invoices`
@@ -1534,7 +1575,7 @@ ALTER TABLE `room_equipments`
 ALTER TABLE `room_maintenance`
   ADD CONSTRAINT `room_maintenance_ibfk_1` FOREIGN KEY (`room_id`) REFERENCES `rooms` (`id`),
   ADD CONSTRAINT `room_maintenance_ibfk_2` FOREIGN KEY (`equipment_id`) REFERENCES `equipments` (`id`),
-  ADD CONSTRAINT `room_maintenance_ibfk_3` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`);
+  ADD CONSTRAINT `room_maintenance_ibfk_3` FOREIGN KEY (`created_by`) REFERENCES `users` (`id_admin`);
 
 --
 -- Contraintes pour la table `room_minibar`
@@ -1548,7 +1589,7 @@ ALTER TABLE `room_minibar`
 --
 ALTER TABLE `room_status_history`
   ADD CONSTRAINT `room_status_history_ibfk_1` FOREIGN KEY (`room_id`) REFERENCES `rooms` (`id`),
-  ADD CONSTRAINT `room_status_history_ibfk_2` FOREIGN KEY (`changed_by`) REFERENCES `users` (`id`);
+  ADD CONSTRAINT `room_status_history_ibfk_2` FOREIGN KEY (`changed_by`) REFERENCES `users` (`id_admin`);
 
 --
 -- Contraintes pour la table `stays`
@@ -1569,6 +1610,7 @@ ALTER TABLE `stocks`
 ALTER TABLE `stock_movements`
   ADD CONSTRAINT `stock_movements_ibfk_1` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`),
   ADD CONSTRAINT `stock_movements_ibfk_2` FOREIGN KEY (`location_id`) REFERENCES `stock_locations` (`id`);
+
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

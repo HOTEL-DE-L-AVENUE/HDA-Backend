@@ -125,7 +125,7 @@ class AuthController {
       
       if (req.user.type === 'admin') {
         const [rows] = await pool.query(
-          'SELECT id_admin as id, nom, prenom, email, role, statut, date_creation FROM admin WHERE id_admin = ?',
+          'SELECT id_admin as id, nom, prenom, email, role, statut, date_creation FROM users WHERE id_admin = ?',
           [req.user.id]
         );
         user = rows[0];
@@ -220,11 +220,11 @@ class AuthController {
       
       if (req.user.type === 'admin') {
         const [rows] = await pool.query(
-          'SELECT * FROM admin WHERE id_admin = ?',
+          'SELECT * FROM users WHERE id_admin = ?',
           [req.user.id]
         );
         user = rows[0];
-        tableName = 'admin';
+        tableName = 'users';
       } else if (req.user.type === 'client') {
         const [rows] = await pool.query(
           'SELECT * FROM clients WHERE id = ?',
@@ -261,7 +261,7 @@ class AuthController {
       const hashedPassword = await bcrypt.hash(newPassword, 10);
 
       // Mettre à jour le mot de passe
-      const idField = req.user.type === 'admin' ? 'id_admin' : 'id';
+      const idField = req.user.type === 'users' ? 'id_admin' : 'id';
       await pool.query(
         `UPDATE ${tableName} SET mot_de_passe = ? WHERE ${idField} = ?`,
         [hashedPassword, req.user.id]
@@ -286,9 +286,9 @@ class AuthController {
    * Recherche un utilisateur par email dans toutes les tables
    */
   async findUserByEmail(email) {
-    // Chercher dans admin
+    // Chercher dans users
     const [admins] = await pool.query(
-      'SELECT * FROM admin WHERE email = ?',
+      'SELECT * FROM users WHERE email = ?',
       [email]
     );
     if (admins.length > 0) {
