@@ -5,15 +5,16 @@ const { testConnection } = require('./Config/connectDatabase');
 
 // Import des routes
 const authRoutes = require('./Routes/auth.routes');
+const adminRoutes = require('./Routes/admin.routes'); // <-- AJOUTER CETTE LIGNE
 const roomRoutes = require('./Routes/room.routes');
 const roomTypeRoutes = require('./Routes/roomType.routes');
 const reservationRoutes = require('./Routes/reservation.routes');
 const clientRoutes = require('./Routes/client.routes');
-const equipmentRoutes = require('./Routes/equipment.routes'); // <-- Catalogue équipements
+const equipmentRoutes = require('./Routes/equipment.routes');
 
 // Import des nouvelles routes
 const maintenanceRoutes = require('./Routes/roomMaintenance.routes');
-const roomEquipmentRoutes = require('./Routes/roomEquipment.routes'); // <-- Renommé pour éviter conflit
+const roomEquipmentRoutes = require('./Routes/roomEquipment.routes');
 const minibarRoutes = require('./Routes/roomMinibar.routes');
 const housekeepingRoutes = require('./Routes/housekeepingTask.routes');
 
@@ -100,6 +101,9 @@ app.post('/api/test-body', (req, res) => {
 // Routes d'authentification
 app.use('/api/auth', authRoutes);
 
+// Routes Admin
+app.use('/api/admin', adminRoutes); // <-- Cette ligne est maintenant correcte
+
 // Routes Hébergement - Base
 app.use('/api/rooms', roomRoutes);
 app.use('/api/room-types', roomTypeRoutes);
@@ -107,13 +111,13 @@ app.use('/api/reservations', reservationRoutes);
 app.use('/api/clients', clientRoutes);
 
 // Routes Hébergement - Modules supplémentaires
-app.use('/api/equipments', equipmentRoutes); // <-- Catalogue des équipements
+app.use('/api/equipments', equipmentRoutes);
 app.use('/api/maintenances', maintenanceRoutes);
-app.use('/api/room-equipments', roomEquipmentRoutes); // <-- Équipements de chambre
+app.use('/api/room-equipments', roomEquipmentRoutes);
 app.use('/api/minibars', minibarRoutes);
 app.use('/api/housekeeping', housekeepingRoutes);
-// Routes protégées
-app.use('/api/admin', adminRoutes);
+
+// Routes Restaurant
 app.use('/api/restaurant', require('./Routes/restaurant.routes'));
 
 // =============================================
@@ -145,6 +149,17 @@ app.get('/', (req, res) => {
                 'verify-token': 'GET /api/auth/verify-token',
                 'refresh-token': 'POST /api/auth/refresh-token',
                 'change-password': 'POST /api/auth/change-password'
+            },
+            admin: {
+                list: 'GET /api/admin',
+                create: 'POST /api/admin',
+                getOne: 'GET /api/admin/:id',
+                update: 'PUT /api/admin/:id',
+                delete: 'DELETE /api/admin/:id',
+                status: 'PATCH /api/admin/:id/status',
+                'reset-password': 'POST /api/admin/:id/reset-password',
+                'by-role': 'GET /api/admin/role/:role',
+                check: 'GET /api/admin/check'
             },
             equipments: {
                 list: 'GET /api/equipments',
@@ -231,6 +246,11 @@ app.get('/', (req, res) => {
                 byUser: 'GET /api/housekeeping/user/:userId',
                 stats: 'GET /api/housekeeping/stats'
             },
+            restaurant: {
+                list: 'GET /api/restaurant',
+                create: 'POST /api/restaurant',
+                // ... autres endpoints restaurant
+            },
             health: 'GET /api/health',
             test: 'POST /api/test-body'
         }
@@ -274,6 +294,26 @@ async function startServer() {
             console.log('='.repeat(70));
             
             console.log('\n📋 Routes disponibles:');
+            
+            console.log('\n🔐 Authentification:');
+            console.log('   POST   /api/auth/login               - Connexion');
+            console.log('   POST   /api/auth/register            - Inscription');
+            console.log('   GET    /api/auth/profile             - Profil');
+            console.log('   POST   /api/auth/logout              - Déconnexion');
+            console.log('   GET    /api/auth/verify-token        - Vérifier token');
+            console.log('   POST   /api/auth/refresh-token       - Rafraîchir token');
+            console.log('   POST   /api/auth/change-password     - Changer mot de passe');
+            
+            console.log('\n👥 Administrateurs:');
+            console.log('   POST   /api/admin                    - Créer un admin (public)');
+            console.log('   GET    /api/admin/check              - Vérifier si des admins existent');
+            console.log('   GET    /api/admin                    - Liste des admins');
+            console.log('   GET    /api/admin/:id                - Détails d\'un admin');
+            console.log('   PUT    /api/admin/:id                - Modifier un admin');
+            console.log('   DELETE /api/admin/:id                - Supprimer un admin');
+            console.log('   PATCH  /api/admin/:id/status         - Changer statut');
+            console.log('   POST   /api/admin/:id/reset-password - Réinitialiser mot de passe');
+            console.log('   GET    /api/admin/role/:role         - Admins par rôle');
             
             console.log('\n📦 Équipements (Catalogue):');
             console.log('   GET    /api/equipments               - Liste des équipements');
@@ -360,14 +400,8 @@ async function startServer() {
             console.log('   GET    /api/housekeeping/user/:userId - Tâches d\'un utilisateur');
             console.log('   GET    /api/housekeeping/stats       - Statistiques');
             
-            console.log('\n🔐 Authentification:');
-            console.log('   POST   /api/auth/login               - Connexion');
-            console.log('   POST   /api/auth/register            - Inscription');
-            console.log('   GET    /api/auth/profile             - Profil');
-            console.log('   POST   /api/auth/logout              - Déconnexion');
-            console.log('   GET    /api/auth/verify-token        - Vérifier token');
-            console.log('   POST   /api/auth/refresh-token       - Rafraîchir token');
-            console.log('   POST   /api/auth/change-password     - Changer mot de passe');
+            console.log('\n🍽️ Restaurant:');
+            console.log('   GET    /api/restaurant               - Routes restaurant');
             
             console.log('\n🧪 Tests:');
             console.log('   POST   /api/test-body                - Tester le body');
