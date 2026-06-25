@@ -38,6 +38,7 @@ app.use('/api/auth', authRoutes);
 
 // Routes protégées
 app.use('/api/admin', adminRoutes);
+app.use('/api/restaurant', require('./Routes/restaurant.routes'));
 
 // Route de test
 app.get('/api/health', (req, res) => {
