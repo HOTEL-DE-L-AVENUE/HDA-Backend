@@ -23,7 +23,7 @@ router.post('/login', async (req, res) => {
 
     // Vérifier dans la table admin
     const [admins] = await pool.query(
-      'SELECT * FROM admin WHERE email = ?',
+      'SELECT * FROM users WHERE email = ?',
       [email]
     );
 
@@ -208,7 +208,7 @@ router.get('/profile', authenticateToken, async (req, res) => {
     
     if (req.user.type === 'admin') {
       const [rows] = await pool.query(
-        'SELECT id_admin as id, nom, prenom, email, role, statut, date_creation FROM admin WHERE id_admin = ?',
+        'SELECT id_admin as id, nom, prenom, email, role, statut, date_creation FROM users WHERE id_admin = ?',
         [req.user.id]
       );
       user = rows[0];
@@ -297,11 +297,11 @@ router.post('/change-password', authenticateToken, async (req, res) => {
     
     if (req.user.type === 'admin') {
       const [rows] = await pool.query(
-        'SELECT * FROM admin WHERE id_admin = ?',
+        'SELECT * FROM users WHERE id_admin = ?',
         [req.user.id]
       );
       user = rows[0];
-      tableName = 'admin';
+      tableName = 'users';
     } else if (req.user.type === 'client') {
       const [rows] = await pool.query(
         'SELECT * FROM clients WHERE id = ?',
