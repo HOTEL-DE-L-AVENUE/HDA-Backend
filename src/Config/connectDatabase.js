@@ -1,38 +1,59 @@
-const mysql = require('mysql2');
-require('dotenv').config();
+const mysql = require('mysql2/promise');
 
-const pool = mysql.createPool({
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-    port: process.env.DB_PORT || 3306,
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0
-});
-
-const db = pool.promise();
+let pool = null;
 
 const connectDatabase = async () => {
-    try {
-        const [result] = await db.query('SELECT 1');
+  try {
+    console.log('📡 Tentative de connexion à la base de données...');
+    console.log(`   Host: ${process.env.DB_HOST || 'localhost'}`);
+    console.log(`   Database: ${process.env.DB_NAME || 'hda'}`);
+    console.log(`   User: ${process.env.DB_USER || 'root'}`);
 
-        console.log('✅ Base de données connectée');
-        console.log(`📂 Database : ${process.env.DB_NAME}`);
+    pool = mysql.createPool({
+      host: process.env.DB_HOST || 'localhost',
+      user: process.env.DB_USER || 'root',
+      password: process.env.DB_PASSWORD || '',
+      database: process.env.DB_NAME || 'hda',
+      port: parseInt(process.env.DB_PORT) || 3306,
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0,
+      enableKeepAlive: true,
+      keepAliveInitialDelay: 0
+    });
 
-        return {
-            status: 'success',
-            message: 'Connexion MySQL établie',
-            database: process.env.DB_NAME
-        };
-    } catch (error) {
-        console.error('❌ Erreur de connexion MySQL :', error.message);
-        process.exit(1);
-    }
+    // Tester la connexion
+    const connection = await pool.getConnection();
+    console.log('✅ Connexion à la base de données établie avec succès');
+    connection.release();
+
+    return pool;
+  } catch (error) {
+    console.error('❌ Erreur de connexion à la base de données:', error);
+    throw error;
+  }
 };
 
+// Fonction pour obtenir le pool - CORRECTEMENT EXPORTÉE
+function getPool() {
+  if (!pool) {
+    throw new Error('La base de données n\'est pas connectée. Appelez connectDatabase() d\'abord.');
+  }
+  return pool;
+}
+
+// Fonction pour fermer la connexion
+const closeDatabase = async () => {
+  if (pool) {
+    await pool.end();
+    console.log('✅ Connexion à la base de données fermée');
+    pool = null;
+  }
+};
+
+// Exporter correctement avec module.exports
 module.exports = {
-    connectDatabase,
-    db
+  connectDatabase,
+  getPool,
+  closeDatabase
 };
