@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Hôte : 127.0.0.1
--- Généré le : mer. 24 juin 2026 à 07:43
+-- Généré le : jeu. 25 juin 2026 à 13:22
 -- Version du serveur : 10.4.32-MariaDB
 -- Version de PHP : 8.2.12
 
@@ -62,8 +62,6 @@ CREATE TABLE `casino_cashiers` (
   `room_id` bigint(20) UNSIGNED DEFAULT NULL,
   `nom` varchar(100) DEFAULT NULL,
   `statut` varchar(30) DEFAULT NULL
-  
-  
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -511,6 +509,35 @@ CREATE TABLE `reservation_guests` (
 -- --------------------------------------------------------
 
 --
+-- Structure de la table `restaurant_cashiers`
+--
+
+CREATE TABLE `restaurant_cashiers` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `nom` varchar(100) DEFAULT NULL,
+  `statut` enum('OUVERTE','FERMEE') DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Structure de la table `restaurant_sessions`
+--
+
+CREATE TABLE `restaurant_sessions` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `cashier_id` bigint(20) UNSIGNED DEFAULT NULL,
+  `user_id` bigint(20) UNSIGNED DEFAULT NULL,
+  `ouverture_at` datetime DEFAULT NULL,
+  `fermeture_at` datetime DEFAULT NULL,
+  `fond_initial` bigint(20) DEFAULT NULL,
+  `fond_final` bigint(20) DEFAULT NULL,
+  `ecart` bigint(20) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Structure de la table `rooms`
 --
 
@@ -520,7 +547,6 @@ CREATE TABLE `rooms` (
   `numero` varchar(20) DEFAULT NULL,
   `capacite` int(11) DEFAULT NULL,
   `prix_nuit` bigint(20) DEFAULT NULL,
-    
   `statut` enum('LIBRE','OCCUPEE','RESERVEE','NETTOYAGE','MAINTENANCE','HORS_SERVICE') DEFAULT 'LIBRE'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
@@ -702,63 +728,21 @@ CREATE TABLE `units` (
 --
 -- Structure de la table `users`
 --
--- Cette table remplace l'ancienne table admin
--- L'ancienne table users a été supprimée
 
-DROP TABLE IF EXISTS `users`;
-
--- =============================================
--- 2. Créer la table users
--- =============================================
 CREATE TABLE `users` (
-  `id_admin` int(11) NOT NULL AUTO_INCREMENT,
+  `id_admin` bigint(20) UNSIGNED NOT NULL,
   `nom` varchar(100) NOT NULL,
   `prenom` varchar(100) NOT NULL,
   `email` varchar(150) NOT NULL,
   `mot_de_passe` varchar(255) NOT NULL,
   `role` enum('admin','manager','receptioniste','caisse','water','housekeeping') NOT NULL DEFAULT 'admin',
   `statut` enum('actif','inactif') NOT NULL DEFAULT 'actif',
-  `date_creation` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id_admin`),
-  UNIQUE KEY `email` (`email`)
+  `date_creation` datetime NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
---
--- Index pour la table `users`
---
--- Note: La clé UNIQUE est déjà définie dans CREATE TABLE ci-dessus
--- Ne pas ajouter de ALTER TABLE supplémentaire pour éviter l'erreur #1061
-
---
--- AUTO_INCREMENT pour la table `users`
---
-ALTER TABLE `users`
-  MODIFY `id_admin` int(11) NOT NULL AUTO_INCREMENT;
-
--- --------------------------------------------------------
 
 --
 -- Index pour les tables déchargées
 --
-
-CREATE TABLE restaurant_cashiers (
-    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    nom VARCHAR(100),
-    statut ENUM('OUVERTE','FERMEE')
-);
-
-CREATE TABLE restaurant_sessions (
-    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    cashier_id BIGINT UNSIGNED,
-    user_id BIGINT UNSIGNED,
-    ouverture_at DATETIME,
-    fermeture_at DATETIME,
-    fond_initial BIGINT,
-    fond_final BIGINT,
-    ecart BIGINT,
-    FOREIGN KEY(cashier_id) REFERENCES restaurant_cashiers(id),
-    FOREIGN KEY(user_id) REFERENCES users(id_admin)
-);
 
 --
 -- Index pour la table `audit_logs`
@@ -996,6 +980,20 @@ ALTER TABLE `reservations`
 ALTER TABLE `reservation_guests`
   ADD PRIMARY KEY (`id`),
   ADD KEY `reservation_id` (`reservation_id`);
+
+--
+-- Index pour la table `restaurant_cashiers`
+--
+ALTER TABLE `restaurant_cashiers`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Index pour la table `restaurant_sessions`
+--
+ALTER TABLE `restaurant_sessions`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `cashier_id` (`cashier_id`),
+  ADD KEY `user_id` (`user_id`);
 
 --
 -- Index pour la table `rooms`
@@ -1295,6 +1293,18 @@ ALTER TABLE `reservation_guests`
   MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
+-- AUTO_INCREMENT pour la table `restaurant_cashiers`
+--
+ALTER TABLE `restaurant_cashiers`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT pour la table `restaurant_sessions`
+--
+ALTER TABLE `restaurant_sessions`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
 -- AUTO_INCREMENT pour la table `rooms`
 --
 ALTER TABLE `rooms`
@@ -1376,7 +1386,7 @@ ALTER TABLE `units`
 -- AUTO_INCREMENT pour la table `users`
 --
 ALTER TABLE `users`
-  MODIFY `id_admin` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id_admin` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- Contraintes pour les tables déchargées
@@ -1557,6 +1567,13 @@ ALTER TABLE `reservation_guests`
   ADD CONSTRAINT `reservation_guests_ibfk_1` FOREIGN KEY (`reservation_id`) REFERENCES `reservations` (`id`) ON DELETE CASCADE;
 
 --
+-- Contraintes pour la table `restaurant_sessions`
+--
+ALTER TABLE `restaurant_sessions`
+  ADD CONSTRAINT `restaurant_sessions_ibfk_1` FOREIGN KEY (`cashier_id`) REFERENCES `restaurant_cashiers` (`id`),
+  ADD CONSTRAINT `restaurant_sessions_ibfk_2` FOREIGN KEY (`user_id`) REFERENCES `users` (`id_admin`);
+
+--
 -- Contraintes pour la table `rooms`
 --
 ALTER TABLE `rooms`
@@ -1610,7 +1627,6 @@ ALTER TABLE `stocks`
 ALTER TABLE `stock_movements`
   ADD CONSTRAINT `stock_movements_ibfk_1` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`),
   ADD CONSTRAINT `stock_movements_ibfk_2` FOREIGN KEY (`location_id`) REFERENCES `stock_locations` (`id`);
-
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
