@@ -85,7 +85,7 @@ class SeedUser {
       for (const user of users) {
         // Vérifier si l'utilisateur existe déjà
         const [existing] = await pool.query(
-          'SELECT id_admin FROM admin WHERE email = ?',
+          'SELECT id_admin FROM users WHERE email = ?',
           [user.email]
         );
 
@@ -100,7 +100,7 @@ class SeedUser {
 
         // Insérer l'utilisateur
         await pool.query(
-          `INSERT INTO admin (nom, prenom, email, mot_de_passe, role, statut, date_creation) 
+          `INSERT INTO users (nom, prenom, email, mot_de_passe, role, statut, date_creation) 
            VALUES (?, ?, ?, ?, ?, ?, NOW())`,
           [user.nom, user.prenom, user.email, hashedPassword, user.role, user.statut]
         );
