@@ -1,8 +1,12 @@
+// src/server.js
 require('dotenv').config();
-
 const express = require('express');
 const cors = require('cors');
-const { connectDatabase } = require('./Config/connectDatabase');
+const { testConnection } = require('./Config/connectDatabase');
+
+// Import des routes
+const authRoutes = require('./Routes/auth.routes');
+const adminRoutes = require('./Routes/admin.routes');
 
 // Import des routes
 const authRoutes = require('./Routes/authRoutes');
@@ -12,120 +16,112 @@ const reservationRoutes = require('./Routes/reservationRoutes');
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-// ============================================
-// MIDDLEWARES - SOLUTION ULTIME
-// ============================================
+// ==================== MIDDLEWARES ====================
 
 // CORS
-app.use(cors());
+app.use(cors({
+    origin: process.env.CORS_ORIGINS || 'http://localhost:3000',
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
 
-// ⚠️⚠️⚠️ SOLUTION ULTIME - Middleware manuel pour parser le JSON ⚠️⚠️⚠️
+// Parser JSON
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Logger
 app.use((req, res, next) => {
-  if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
-    let body = '';
-    
-    req.on('data', (chunk) => {
-      body += chunk.toString();
-    });
-    
-    req.on('end', () => {
-      try {
-        if (body) {
-          req.body = JSON.parse(body);
-          console.log('✅ Body parsé manuellement:', req.body);
-        } else {
-          req.body = {};
-          console.log('⚠️ Body vide');
-        }
-        next();
-      } catch (error) {
-        console.error('❌ Erreur de parsing JSON:', error);
-        return res.status(400).json({
-          success: false,
-          message: 'JSON invalide',
-          error: error.message
-        });
-      }
-    });
-  } else {
+    console.log(`📝 ${req.method} ${req.url}`);
     next();
-  }
 });
 
-// Logging des requêtes
-app.use((req, res, next) => {
-  console.log(`📡 ${req.method} ${req.url}`);
-  if (req.body) {
-    console.log('📥 Body:', req.body);
-  }
-  next();
-});
+// ==================== ROUTES ====================
 
-// ============================================
-// ROUTES
-// ============================================
+// Routes publiques
 app.use('/api/auth', authRoutes);
-app.use('/api/rooms', roomRoutes);
-app.use('/api/reservations', reservationRoutes);
 
-// ============================================
-// ROUTE DE TEST
-// ============================================
-app.post('/api/test-body', (req, res) => {
-  console.log('🧪 Test body reçu:', req.body);
-  res.json({
-    success: true,
-    message: 'Body reçu avec succès !',
-    data: req.body
-  });
-});
+// Routes protégées
+app.use('/api/admin', adminRoutes);
 
+// Route de test
 app.get('/api/health', (req, res) => {
-  res.json({
-    success: true,
-    message: 'API HDA est en ligne',
-    timestamp: new Date().toISOString()
-  });
-});
-
-// ============================================
-// GESTION DES ERREURS
-// ============================================
-app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    message: 'Route non trouvée'
-  });
-});
-
-app.use((err, req, res, next) => {
-  console.error('❌ Erreur:', err);
-  res.status(500).json({
-    success: false,
-    message: 'Erreur interne du serveur',
-    error: process.env.NODE_ENV === 'development' ? err.message : undefined
-  });
-});
-
-// ============================================
-// DÉMARRAGE
-// ============================================
-const startServer = async () => {
-  try {
-    await connectDatabase();
-    app.listen(PORT, () => {
-      console.log('='.repeat(50));
-      console.log(`🚀 Serveur démarré sur le port ${PORT}`);
-      console.log(`🌐 http://localhost:${PORT}`);
-      console.log(`🧪 Test body: http://localhost:${PORT}/api/test-body`);
-      console.log('='.repeat(50));
+    res.json({
+        success: true,
+        message: 'API Finance Pour Tous est opérationnelle',
+        timestamp: new Date().toISOString(),
+        env: process.env.NODE_ENV
     });
-  } catch (error) {
-    console.error('❌ Erreur de démarrage:', error);
-    process.exit(1);
-  }
-};
+});
+
+// Route 404
+app.use((req, res) => {
+    res.status(404).json({
+        success: false,
+        error: 'Route non trouvée'
+    });
+});
+
+// Middleware de gestion d'erreurs
+app.use((err, req, res, next) => {
+    console.error('❌ Erreur:', err.message);
+    res.status(500).json({
+        success: false,
+        error: 'Erreur interne du serveur',
+        message: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+});
+
+// ==================== DÉMARRAGE DU SERVEUR ====================
+
+async function startServer() {
+    try {
+        // Tester la connexion à la base de données
+        const dbConnected = await testConnection();
+        
+        if (!dbConnected) {
+            console.warn('⚠️  Le serveur démarre mais la base de données est inaccessible');
+        }
+
+        // Démarrer le serveur
+        app.listen(PORT, () => {
+            console.log(`🚀 Serveur démarré sur http://localhost:${PORT}`);
+            console.log(`📊 Environnement: ${process.env.NODE_ENV || 'development'}`);
+            console.log(`🔗 Base de données: ${dbConnected ? '✅ Connectée' : '❌ Déconnectée'}`);
+            console.log(`\n📋 Routes disponibles:`);
+            console.log(`\n🔐 Routes publiques:`);
+            console.log(`   POST   /api/auth/login`);
+            console.log(`   GET    /api/health`);
+            console.log(`\n🔒 Routes protégées (Admin):`);
+            console.log(`   GET    /api/admin`);
+            console.log(`   GET    /api/admin/:id`);
+            console.log(`   POST   /api/admin`);
+            console.log(`   PUT    /api/admin/:id`);
+            console.log(`   DELETE /api/admin/:id`);
+            console.log(`   PATCH  /api/admin/:id/status`);
+            console.log(`   POST   /api/admin/:id/reset-password`);
+            console.log(`\n🔒 Routes protégées (Auth):`);
+            console.log(`   POST   /api/auth/logout`);
+            console.log(`   POST   /api/auth/refresh-token`);
+            console.log(`   POST   /api/auth/change-password`);
+            console.log(`   GET    /api/auth/verify-token`);
+            console.log(`   GET    /api/auth/profile`);
+        });
+    } catch (error) {
+        console.error('❌ Erreur lors du démarrage du serveur:', error.message);
+        process.exit(1);
+    }
+}
 
 startServer();
 
-module.exports = app;
+// Gestion des arrêts propre
+process.on('SIGINT', () => {
+    console.log('🛑 Arrêt du serveur...');
+    process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+    console.log('🛑 Arrêt du serveur...');
+    process.exit(0);
+});

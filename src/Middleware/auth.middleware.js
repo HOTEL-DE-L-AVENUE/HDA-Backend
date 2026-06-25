@@ -1,6 +1,6 @@
-// middleware/auth.middleware.js
+// src/Middleware/auth.middleware.js
 const jwt = require("jsonwebtoken");
-const pool = require('../config/database');
+const { pool } = require('../Config/connectDatabase');  // <-- CORRECTION ICI
 
 /**
  * Middleware d'authentification JWT
@@ -23,10 +23,38 @@ async function authenticateToken(req, res, next) {
     let user = null;
     let userType = null;
     let userRole = null;
-    let id_agence = null;
 
+    // Vérifier si l'utilisateur est un admin
+    if (decoded.type === 'admin') {
+      const [rows] = await pool.query(
+        `SELECT 
+          id_admin as id,
+          nom, 
+          prenom, 
+          email, 
+          mot_de_passe,
+          role, 
+          statut,
+          date_creation
+        FROM admin 
+        WHERE id_admin = ?`,
+        [parseInt(decoded.userId)]
+      );
+      
+      user = rows[0] || null;
+      userType = 'admin';
+      userRole = user ? user.role.toLowerCase() : null;
+      
+      // Vérifier si l'admin est actif
+      if (user && user.statut !== 'actif') {
+        return res.status(403).json({
+          success: false,
+          error: "Compte administrateur inactif"
+        });
+      }
+    } 
     // Vérifier si l'utilisateur est un client
-    if (decoded.type === 'client') {
+    else if (decoded.type === 'client') {
       const [rows] = await pool.query(
         `SELECT 
           id, 
@@ -56,7 +84,7 @@ async function authenticateToken(req, res, next) {
         });
       }
     } 
-    // Vérifier si l'utilisateur est un user (admin, manager, chauffeur, etc.)
+    // Vérifier si l'utilisateur est un user (employé)
     else if (decoded.type === 'user') {
       const [rows] = await pool.query(
         `SELECT 
@@ -101,8 +129,11 @@ async function authenticateToken(req, res, next) {
       email: user.email,
       type: userType,
       role: userRole,
-      id_agence: id_agence, // null par défaut car pas dans votre table
       // Ajouter des champs spécifiques selon le type
+      ...(userType === 'admin' && {
+        statut: user.statut,
+        date_creation: user.date_creation
+      }),
       ...(userType === 'client' && {
         code_client: user.code_client,
         telephone: user.telephone,
@@ -154,7 +185,7 @@ function requireRole(allowedRoles) {
     const normalizedUserRole = userRole ? userRole.toLowerCase() : '';
 
     // Admin a accès à tout
-    if (normalizedUserRole === 'admin') {
+    if (normalizedUserRole === 'admin' || normalizedUserRole === 'super_admin') {
       return next();
     }
 
@@ -168,6 +199,27 @@ function requireRole(allowedRoles) {
       error: 'Accès non autorisé. Rôle requis: ' + rolesArray.join(', ')
     });
   };
+}
+
+/**
+ * Middleware pour vérifier si l'utilisateur est un admin
+ */
+function requireAdmin(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      error: 'Authentification requise'
+    });
+  }
+
+  if (req.user.type !== 'admin') {
+    return res.status(403).json({
+      success: false,
+      error: 'Accès réservé aux administrateurs'
+    });
+  }
+
+  next();
 }
 
 /**
@@ -215,6 +267,7 @@ function requireUser(req, res, next) {
 module.exports = { 
   authenticateToken, 
   requireRole,
+  requireAdmin,
   requireClient,
   requireUser
 };
