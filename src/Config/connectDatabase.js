@@ -15,6 +15,8 @@ const pool = mysql.createPool({
     charset: 'utf8mb4'
 });
 
+const getPool = () => pool;
+
 // Fonction pour tester la connexion
 async function testConnection() {
     try {
@@ -31,5 +33,6 @@ async function testConnection() {
 // Exporter correctement avec module.exports
 module.exports = {
     pool,
-    testConnection
+    testConnection,
+    getPool
 };

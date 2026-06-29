@@ -77,4 +77,39 @@ router.get('/cashier/status', restaurantController.getCashierStatus);
 // GET /api/restaurant/stats - Statistiques
 router.get('/stats', restaurantController.getStats);
 
+// ==================== STOCK (complété) ====================
+router.get('/stock/locations', restaurantController.getStockLocations);
+router.get('/stock', restaurantController.getStocks);
+router.get('/stock/movements', restaurantController.getStockMovements);
+router.post('/stock/adjust', restaurantController.adjustStock);
+
+// ==================== PRODUITS ====================
+router.post('/products', restaurantController.createProduct);
+router.put('/products/:id', restaurantController.updateProduct);   // NOUVEAU
+
+// ==================== FOURNISSEURS ====================
+router.get('/suppliers', restaurantController.getSuppliers);       // NOUVEAU
+router.post('/suppliers', restaurantController.createSupplier);    // NOUVEAU
+
+// ==================== ACHATS ====================
+router.get('/purchases', restaurantController.getPurchases);       // NOUVEAU
+router.post('/purchases', restaurantController.createPurchase);    // NOUVEAU
+router.get('/purchases/:id', restaurantController.getPurchaseById); // NOUVEAU
+
+// ==================== RECETTES ====================
+router.post('/recipes', restaurantController.createRecipe);
+router.get('/recipes/:id', restaurantController.getRecipeById);
+router.get('/recipes', restaurantController.getAllRecipes);         // NOUVEAU
+router.put('/recipes/:id', restaurantController.updateRecipe);     // NOUVEAU
+router.delete('/recipes/:id', restaurantController.deleteRecipe);  // NOUVEAU
+
+// ==================== UNITÉS ====================
+router.get('/units', restaurantController.getUnits);               // NOUVEAU
+
+// ==================== TYPES DE PRODUITS ====================
+router.get('/product-types', restaurantController.getProductTypes);
+
+// ==================== CATÉGORIES ====================
+router.get('/categories', restaurantController.getCategories);
+
 module.exports = router;
