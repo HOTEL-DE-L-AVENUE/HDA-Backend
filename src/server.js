@@ -19,6 +19,11 @@ const minibarRoutes = require('./Routes/roomMinibar.routes');
 const consumptionRoutes = require('./Routes/consumption.routes'); // AJOUTER CETTE LIGNE
 const housekeepingRoutes = require('./Routes/housekeepingTask.routes');
 
+const casinoRoomRoutes = require('./Routes/casinoRoom.routes');
+const casinoCashierRoutes = require('./Routes/casinoCashier.routes');
+const casinoSessionRoutes = require('./Routes/casinoSession.routes');
+const casinoTransactionRoutes = require('./Routes/casinoTransaction.routes');
+
 const app = express();
 const PORT = process.env.PORT || 4000;
 
@@ -123,6 +128,12 @@ app.use('/api/housekeeping', housekeepingRoutes);
 
 // Routes Restaurant
 app.use('/api/restaurant', require('./Routes/restaurant.routes'));
+
+// Routes Casino
+app.use('/api/casino/rooms', casinoRoomRoutes);
+app.use('/api/casino/cashiers', casinoCashierRoutes);
+app.use('/api/casino/sessions', casinoSessionRoutes);
+app.use('/api/casino/transactions', casinoTransactionRoutes);
 
 // =============================================
 // 7. Health check
