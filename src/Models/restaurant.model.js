@@ -1,45 +1,45 @@
 // src/Models/restaurant.model.js
-const { getPool } = require('../Config/connectDatabase');
+const { getPool } = require("../Config/connectDatabase");
 
 class RestaurantModel {
   // ==================== TABLES RESTAURANT ====================
-  
+
   static async createTable(tableData) {
     const pool = getPool();
-    const { numero, capacite, statut = 'LIBRE' } = tableData;
-    
+    const { numero, capacite, statut = "LIBRE" } = tableData;
+
     const query = `
       INSERT INTO tables_restaurant (numero, capacite, statut) 
       VALUES (?, ?, ?)
     `;
-    
+
     const [result] = await pool.execute(query, [numero, capacite, statut]);
     return result.insertId;
   }
 
   static async findAllTables(filters = {}) {
     const pool = getPool();
-    let query = 'SELECT * FROM tables_restaurant WHERE 1=1';
+    let query = "SELECT * FROM tables_restaurant WHERE 1=1";
     const values = [];
 
     if (filters.statut) {
-      query += ' AND statut = ?';
+      query += " AND statut = ?";
       values.push(filters.statut);
     }
 
     if (filters.capacite_min) {
-      query += ' AND capacite >= ?';
+      query += " AND capacite >= ?";
       values.push(filters.capacite_min);
     }
 
-    query += ' ORDER BY numero ASC';
+    query += " ORDER BY numero ASC";
     const [rows] = await pool.execute(query, values);
     return rows;
   }
 
   static async findTableById(id) {
     const pool = getPool();
-    const query = 'SELECT * FROM tables_restaurant WHERE id = ?';
+    const query = "SELECT * FROM tables_restaurant WHERE id = ?";
     const [rows] = await pool.execute(query, [id]);
     return rows[0] || null;
   }
@@ -48,25 +48,25 @@ class RestaurantModel {
     const pool = getPool();
     const updates = [];
     const values = [];
-    
+
     for (const [key, value] of Object.entries(tableData)) {
-      if (['numero', 'capacite', 'statut'].includes(key)) {
+      if (["numero", "capacite", "statut"].includes(key)) {
         updates.push(`${key} = ?`);
         values.push(value);
       }
     }
-    
+
     if (updates.length === 0) return false;
-    
+
     values.push(id);
-    const query = `UPDATE tables_restaurant SET ${updates.join(', ')} WHERE id = ?`;
+    const query = `UPDATE tables_restaurant SET ${updates.join(", ")} WHERE id = ?`;
     const [result] = await pool.execute(query, values);
     return result.affectedRows > 0;
   }
 
   static async deleteTable(id) {
     const pool = getPool();
-    const query = 'DELETE FROM tables_restaurant WHERE id = ?';
+    const query = "DELETE FROM tables_restaurant WHERE id = ?";
     const [result] = await pool.execute(query, [id]);
     return result.affectedRows > 0;
   }
@@ -75,27 +75,41 @@ class RestaurantModel {
 
   static async createOrder(orderData) {
     const pool = getPool();
-    const { client_id, table_id, source_module = 'RESTAURANT', statut = 'EN_ATTENTE' } = orderData;
-    
+    const {
+      client_id,
+      table_id,
+      source_module = "RESTAURANT",
+      statut = "EN_ATTENTE",
+    } = orderData;
+
     const query = `
       INSERT INTO orders (client_id, source_module, montant_total, statut, created_at) 
       VALUES (?, ?, 0, ?, NOW())
     `;
-    
-    const [result] = await pool.execute(query, [client_id, source_module, statut]);
+
+    const [result] = await pool.execute(query, [
+      client_id,
+      source_module,
+      statut,
+    ]);
     return result.insertId;
   }
 
   static async addOrderItem(itemData) {
     const pool = getPool();
     const { order_id, product_id, quantite, prix_unitaire } = itemData;
-    
+
     const query = `
       INSERT INTO order_items (order_id, product_id, quantite, prix_unitaire) 
       VALUES (?, ?, ?, ?)
     `;
-    
-    const [result] = await pool.execute(query, [order_id, product_id, quantite, prix_unitaire]);
+
+    const [result] = await pool.execute(query, [
+      order_id,
+      product_id,
+      quantite,
+      prix_unitaire,
+    ]);
     return result.insertId;
   }
 
@@ -110,7 +124,7 @@ class RestaurantModel {
       )
       WHERE o.id = ?
     `;
-    
+
     const [result] = await pool.execute(query, [orderId]);
     return result.affectedRows > 0;
   }
@@ -127,9 +141,9 @@ class RestaurantModel {
       LEFT JOIN clients c ON o.client_id = c.id
       WHERE o.id = ?
     `;
-    
+
     const [rows] = await pool.execute(query, [orderId]);
-    
+
     if (rows[0]) {
       const itemsQuery = `
         SELECT 
@@ -144,7 +158,7 @@ class RestaurantModel {
       const [items] = await pool.execute(itemsQuery, [orderId]);
       rows[0].items = items;
     }
-    
+
     return rows[0] || null;
   }
 
@@ -162,29 +176,29 @@ class RestaurantModel {
     const values = [];
 
     if (filters.statut) {
-      query += ' AND o.statut = ?';
+      query += " AND o.statut = ?";
       values.push(filters.statut);
     }
 
     if (filters.client_id) {
-      query += ' AND o.client_id = ?';
+      query += " AND o.client_id = ?";
       values.push(filters.client_id);
     }
 
     if (filters.date_debut && filters.date_fin) {
-      query += ' AND o.created_at BETWEEN ? AND ?';
+      query += " AND o.created_at BETWEEN ? AND ?";
       values.push(filters.date_debut, filters.date_fin);
     }
 
-    query += ' ORDER BY o.created_at DESC';
-    
+    query += " ORDER BY o.created_at DESC";
+
     const [rows] = await pool.execute(query, values);
     return rows;
   }
 
   static async updateOrderStatus(orderId, statut) {
     const pool = getPool();
-    const query = 'UPDATE orders SET statut = ? WHERE id = ?';
+    const query = "UPDATE orders SET statut = ? WHERE id = ?";
     const [result] = await pool.execute(query, [statut, orderId]);
     return result.affectedRows > 0;
   }
@@ -207,22 +221,22 @@ class RestaurantModel {
     const values = [];
 
     if (filters.type_produit) {
-      query += ' AND p.type_produit = ?';
+      query += " AND p.type_produit = ?";
       values.push(filters.type_produit);
     }
 
     if (filters.category_id) {
-      query += ' AND p.category_id = ?';
+      query += " AND p.category_id = ?";
       values.push(filters.category_id);
     }
 
     if (filters.actif !== undefined) {
-      query += ' AND p.actif = ?';
+      query += " AND p.actif = ?";
       values.push(filters.actif);
     }
 
-    query += ' ORDER BY p.nom ASC';
-    
+    query += " ORDER BY p.nom ASC";
+
     const [rows] = await pool.execute(query, values);
     return rows;
   }
@@ -259,7 +273,7 @@ class RestaurantModel {
         AND p.actif = 1
       ORDER BY c.nom, p.nom
     `;
-    
+
     const [rows] = await pool.execute(query);
     return rows;
   }
@@ -269,12 +283,12 @@ class RestaurantModel {
   static async createRecipe(recipeData) {
     const pool = getPool();
     const { product_id, nom } = recipeData;
-    
+
     const query = `
       INSERT INTO recipes (product_id, nom, created_at, updated_at) 
       VALUES (?, ?, NOW(), NOW())
     `;
-    
+
     const [result] = await pool.execute(query, [product_id, nom]);
     return result.insertId;
   }
@@ -282,13 +296,17 @@ class RestaurantModel {
   static async addRecipeIngredient(ingredientData) {
     const pool = getPool();
     const { recipe_id, ingredient_id, quantite } = ingredientData;
-    
+
     const query = `
       INSERT INTO recipe_items (recipe_id, ingredient_id, quantite) 
       VALUES (?, ?, ?)
     `;
-    
-    const [result] = await pool.execute(query, [recipe_id, ingredient_id, quantite]);
+
+    const [result] = await pool.execute(query, [
+      recipe_id,
+      ingredient_id,
+      quantite,
+    ]);
     return result.insertId;
   }
 
@@ -300,9 +318,9 @@ class RestaurantModel {
       LEFT JOIN products p ON r.product_id = p.id
       WHERE r.id = ?
     `;
-    
+
     const [recipes] = await pool.execute(recipeQuery, [recipeId]);
-    
+
     if (recipes[0]) {
       const ingredientsQuery = `
         SELECT 
@@ -317,7 +335,7 @@ class RestaurantModel {
       const [ingredients] = await pool.execute(ingredientsQuery, [recipeId]);
       recipes[0].ingredients = ingredients;
     }
-    
+
     return recipes[0] || null;
   }
 
@@ -334,6 +352,35 @@ class RestaurantModel {
 
   // ==================== STOCK & DÉSTOCKAGE ====================
 
+  static async createProduct({
+    nom,
+    unite,
+    type_produit = "MATIERE_PREMIERE",
+    code,
+    prix_achat = 0,
+    prix_vente = 0,
+    category_id = null,
+  }) {
+    const pool = getPool();
+    if (!code) {
+      code = "PROD-" + Date.now(); // génération simple
+    }
+    const query = `
+      INSERT INTO products (code, nom, unite, prix_achat, prix_vente, actif, type_produit, category_id)
+      VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+    `;
+    const [result] = await pool.execute(query, [
+      code,
+      nom,
+      unite,
+      prix_achat,
+      prix_vente,
+      type_produit,
+      category_id,
+    ]);
+    return result.insertId;
+  }
+
   static async getStockByProduct(productId, locationId) {
     const pool = getPool();
     const query = `
@@ -346,23 +393,35 @@ class RestaurantModel {
 
   static async updateStock(stockId, quantite) {
     const pool = getPool();
-    const query = 'UPDATE stocks SET quantite = ? WHERE id = ?';
+    const query = "UPDATE stocks SET quantite = ? WHERE id = ?";
     const [result] = await pool.execute(query, [quantite, stockId]);
     return result.affectedRows > 0;
   }
 
   static async addStockMovement(movementData) {
     const pool = getPool();
-    const { product_id, location_id, type_mouvement, quantite, source_module, reference_id } = movementData;
-    
+    const {
+      product_id,
+      location_id,
+      type_mouvement,
+      quantite,
+      source_module,
+      reference_id,
+    } = movementData;
+
     const query = `
       INSERT INTO stock_movements 
         (product_id, location_id, type_mouvement, quantite, source_module, reference_id, created_at) 
       VALUES (?, ?, ?, ?, ?, ?, NOW())
     `;
-    
+
     const [result] = await pool.execute(query, [
-      product_id, location_id, type_mouvement, quantite, source_module, reference_id
+      product_id,
+      location_id,
+      type_mouvement,
+      quantite,
+      source_module,
+      reference_id,
     ]);
     return result.insertId;
   }
@@ -370,7 +429,7 @@ class RestaurantModel {
   static async deduireStock(orderId, locationId = 1) {
     const pool = getPool();
     const connection = await pool.getConnection();
-    
+
     try {
       await connection.beginTransaction();
 
@@ -380,14 +439,14 @@ class RestaurantModel {
          FROM order_items oi
          LEFT JOIN products p ON oi.product_id = p.id
          WHERE oi.order_id = ?`,
-        [orderId]
+        [orderId],
       );
 
       for (const item of orderItems) {
         // Chercher la recette du produit
         const [recipes] = await connection.execute(
-          'SELECT id FROM recipes WHERE product_id = ? LIMIT 1',
-          [item.product_id]
+          "SELECT id FROM recipes WHERE product_id = ? LIMIT 1",
+          [item.product_id],
         );
 
         if (recipes.length > 0) {
@@ -396,26 +455,26 @@ class RestaurantModel {
             `SELECT ri.* 
              FROM recipe_items ri 
              WHERE ri.recipe_id = ?`,
-            [recipes[0].id]
+            [recipes[0].id],
           );
 
           // Déduire chaque ingrédient du stock
           for (const ingredient of ingredients) {
             const quantiteNecessaire = ingredient.quantite * item.quantite;
-            
+
             // Vérifier le stock disponible
             const [stock] = await connection.execute(
-              'SELECT * FROM stocks WHERE product_id = ? AND location_id = ?',
-              [ingredient.ingredient_id, locationId]
+              "SELECT * FROM stocks WHERE product_id = ? AND location_id = ?",
+              [ingredient.ingredient_id, locationId],
             );
 
             if (stock.length > 0) {
               const nouvelleQuantite = stock[0].quantite - quantiteNecessaire;
-              
+
               // Mettre à jour le stock
               await connection.execute(
-                'UPDATE stocks SET quantite = ? WHERE id = ?',
-                [nouvelleQuantite, stock[0].id]
+                "UPDATE stocks SET quantite = ? WHERE id = ?",
+                [nouvelleQuantite, stock[0].id],
               );
 
               // Enregistrer le mouvement de stock
@@ -423,30 +482,35 @@ class RestaurantModel {
                 `INSERT INTO stock_movements 
                  (product_id, location_id, type_mouvement, quantite, source_module, reference_id, created_at) 
                  VALUES (?, ?, 'SORTIE', ?, 'RESTAURANT', ?, NOW())`,
-                [ingredient.ingredient_id, locationId, quantiteNecessaire, orderId]
+                [
+                  ingredient.ingredient_id,
+                  locationId,
+                  quantiteNecessaire,
+                  orderId,
+                ],
               );
             }
           }
         } else {
           // Si pas de recette, déduire directement le produit du stock
           const [stock] = await connection.execute(
-            'SELECT * FROM stocks WHERE product_id = ? AND location_id = ?',
-            [item.product_id, locationId]
+            "SELECT * FROM stocks WHERE product_id = ? AND location_id = ?",
+            [item.product_id, locationId],
           );
 
           if (stock.length > 0) {
             const nouvelleQuantite = stock[0].quantite - item.quantite;
-            
+
             await connection.execute(
-              'UPDATE stocks SET quantite = ? WHERE id = ?',
-              [nouvelleQuantite, stock[0].id]
+              "UPDATE stocks SET quantite = ? WHERE id = ?",
+              [nouvelleQuantite, stock[0].id],
             );
 
             await connection.execute(
               `INSERT INTO stock_movements 
                (product_id, location_id, type_mouvement, quantite, source_module, reference_id, created_at) 
                VALUES (?, ?, 'SORTIE', ?, 'RESTAURANT', ?, NOW())`,
-              [item.product_id, locationId, item.quantite, orderId]
+              [item.product_id, locationId, item.quantite, orderId],
             );
           }
         }
@@ -462,24 +526,171 @@ class RestaurantModel {
     }
   }
 
+  // Récupérer tous les emplacements de stock
+  static async getStockLocations() {
+    const pool = getPool();
+    const [rows] = await pool.query(
+      "SELECT * FROM stock_locations ORDER BY nom",
+    );
+    return rows;
+  }
+
+  // Récupérer les stocks actuels (jointure avec products et locations)
+  static async getStocks(filters = {}) {
+    const pool = getPool();
+    let query = `
+      SELECT s.*, p.nom AS product_nom, p.unite, p.code, p.type_produit,
+            l.nom AS location_nom
+      FROM stocks s
+      JOIN products p ON s.product_id = p.id
+      JOIN stock_locations l ON s.location_id = l.id
+      WHERE 1=1
+    `;
+    const values = [];
+
+    if (filters.location_id) {
+      query += " AND s.location_id = ?";
+      values.push(filters.location_id);
+    }
+    if (filters.product_id) {
+      query += " AND s.product_id = ?";
+      values.push(filters.product_id);
+    }
+    if (filters.type_produit) {
+      query += " AND p.type_produit = ?";
+      values.push(filters.type_produit);
+    }
+
+    query += " ORDER BY l.nom, p.nom";
+    const [rows] = await pool.execute(query, values);
+    return rows;
+  }
+
+  // Historique des mouvements
+  static async getStockMovements(filters = {}) {
+    const pool = getPool();
+    let query = `
+      SELECT sm.*, p.nom AS product_nom, p.unite, l.nom AS location_nom
+      FROM stock_movements sm
+      JOIN products p ON sm.product_id = p.id
+      JOIN stock_locations l ON sm.location_id = l.id
+      WHERE 1=1
+    `;
+    const values = [];
+
+    if (filters.location_id) {
+      query += " AND sm.location_id = ?";
+      values.push(filters.location_id);
+    }
+    if (filters.product_id) {
+      query += " AND sm.product_id = ?";
+      values.push(filters.product_id);
+    }
+    if (filters.type_mouvement) {
+      query += " AND sm.type_mouvement = ?";
+      values.push(filters.type_mouvement);
+    }
+    if (filters.date_debut && filters.date_fin) {
+      query += " AND sm.created_at BETWEEN ? AND ?";
+      values.push(filters.date_debut, filters.date_fin);
+    }
+
+    query += " ORDER BY sm.created_at DESC LIMIT 100";
+    const [rows] = await pool.execute(query, values);
+    return rows;
+  }
+
+  // Ajustement manuel de stock (entrée ou sortie)
+  static async adjustStock({
+    product_id,
+    location_id,
+    type_mouvement,
+    quantite,
+    source_module = "MANUEL",
+    reference_id = null,
+    commentaire = null,
+  }) {
+    const pool = getPool();
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+
+      // Vérifier / créer la ligne de stock
+      const [rows] = await conn.execute(
+        "SELECT * FROM stocks WHERE product_id = ? AND location_id = ?",
+        [product_id, location_id],
+      );
+
+      let stockId,
+        currentQty = 0;
+      if (rows.length > 0) {
+        stockId = rows[0].id;
+        currentQty = parseFloat(rows[0].quantite);
+      } else {
+        const [res] = await conn.execute(
+          "INSERT INTO stocks (product_id, location_id, quantite) VALUES (?, ?, 0)",
+          [product_id, location_id],
+        );
+        stockId = res.insertId;
+      }
+
+      const qtyNum = parseFloat(quantite);
+      let newQty;
+      if (type_mouvement === "ENTREE") {
+        newQty = currentQty + qtyNum;
+      } else if (type_mouvement === "SORTIE") {
+        newQty = currentQty - qtyNum;
+        if (newQty < 0) throw new Error("Stock insuffisant");
+      } else {
+        throw new Error("Type de mouvement invalide");
+      }
+
+      await conn.execute("UPDATE stocks SET quantite = ? WHERE id = ?", [
+        newQty,
+        stockId,
+      ]);
+
+      await conn.execute(
+        `INSERT INTO stock_movements (product_id, location_id, type_mouvement, quantite, source_module, reference_id, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+        [
+          product_id,
+          location_id,
+          type_mouvement,
+          qtyNum,
+          source_module,
+          reference_id,
+        ],
+      );
+
+      await conn.commit();
+      return { success: true, newQty, stockId };
+    } catch (err) {
+      await conn.rollback();
+      throw err;
+    } finally {
+      conn.release();
+    }
+  }
+
   // ==================== CAISSE ====================
 
   static async createCashier(cashierData) {
     const pool = getPool();
-    const { nom, statut = 'OUVERTE' } = cashierData;
-    
+    const { nom, statut = "OUVERTE" } = cashierData;
+
     const query = `
       INSERT INTO restaurant_cashiers (nom, statut) 
       VALUES (?, ?)
     `;
-    
+
     const [result] = await pool.execute(query, [nom, statut]);
     return result.insertId;
   }
 
   static async findAllCashiers() {
     const pool = getPool();
-    const query = 'SELECT * FROM restaurant_cashiers';
+    const query = "SELECT * FROM restaurant_cashiers";
     const [rows] = await pool.execute(query);
     return rows;
   }
@@ -487,24 +698,31 @@ class RestaurantModel {
   static async openSession(sessionData) {
     const pool = getPool();
     const { cashier_id, user_id, fond_initial } = sessionData;
-    
+
     const query = `
       INSERT INTO restaurant_sessions (cashier_id, user_id, ouverture_at, fond_initial) 
       VALUES (?, ?, NOW(), ?)
     `;
-    
-    const [result] = await pool.execute(query, [cashier_id, user_id, fond_initial]);
-    
+
+    const [result] = await pool.execute(query, [
+      cashier_id,
+      user_id,
+      fond_initial,
+    ]);
+
     // Mettre à jour le statut de la caisse
-    await pool.execute('UPDATE restaurant_cashiers SET statut = ? WHERE id = ?', ['OUVERTE', cashier_id]);
-    
+    await pool.execute(
+      "UPDATE restaurant_cashiers SET statut = ? WHERE id = ?",
+      ["OUVERTE", cashier_id],
+    );
+
     return result.insertId;
   }
 
   static async closeSession(sessionId, fond_final) {
     const pool = getPool();
     const connection = await pool.getConnection();
-    
+
     try {
       await connection.beginTransaction();
 
@@ -513,20 +731,20 @@ class RestaurantModel {
         `UPDATE restaurant_sessions 
          SET fermeture_at = NOW(), fond_final = ?, ecart = ? - fond_initial 
          WHERE id = ? AND fermeture_at IS NULL`,
-        [fond_final, fond_final, sessionId]
+        [fond_final, fond_final, sessionId],
       );
 
       if (result.affectedRows > 0) {
         // Récupérer la session pour avoir le cashier_id
         const [sessions] = await connection.execute(
-          'SELECT cashier_id FROM restaurant_sessions WHERE id = ?',
-          [sessionId]
+          "SELECT cashier_id FROM restaurant_sessions WHERE id = ?",
+          [sessionId],
         );
-        
+
         if (sessions.length > 0) {
           await connection.execute(
-            'UPDATE restaurant_cashiers SET statut = ? WHERE id = ?',
-            ['FERMEE', sessions[0].cashier_id]
+            "UPDATE restaurant_cashiers SET statut = ? WHERE id = ?",
+            ["FERMEE", sessions[0].cashier_id],
           );
         }
       }
@@ -549,7 +767,7 @@ class RestaurantModel {
       ORDER BY ouverture_at DESC 
       LIMIT 1
     `;
-    
+
     const [rows] = await pool.execute(query, [cashierId]);
     return rows[0] || null;
   }
@@ -576,7 +794,7 @@ class RestaurantModel {
       ) IS NULL
       AND o.source_module = 'RESTAURANT'
     `;
-    
+
     const [rows] = await pool.execute(query, [sessionId, sessionId]);
     return rows;
   }
@@ -586,13 +804,18 @@ class RestaurantModel {
   static async createPayment(paymentData) {
     const pool = getPool();
     const { client_id, invoice_id, montant, moyen_paiement } = paymentData;
-    
+
     const query = `
       INSERT INTO payments (client_id, invoice_id, montant, moyen_paiement) 
       VALUES (?, ?, ?, ?)
     `;
-    
-    const [result] = await pool.execute(query, [client_id, invoice_id || null, montant, moyen_paiement]);
+
+    const [result] = await pool.execute(query, [
+      client_id,
+      invoice_id || null,
+      montant,
+      moyen_paiement,
+    ]);
     return result.insertId;
   }
 
@@ -609,7 +832,7 @@ class RestaurantModel {
         WHERE ii.description LIKE CONCAT('%commande ', ?, '%')
       )
     `;
-    
+
     const [rows] = await pool.execute(query, [orderId]);
     return rows;
   }
@@ -619,18 +842,18 @@ class RestaurantModel {
   static async facturerChambre(orderId, roomId) {
     const pool = getPool();
     const connection = await pool.getConnection();
-    
+
     try {
       await connection.beginTransaction();
 
       // Récupérer la commande
       const [orders] = await connection.execute(
-        'SELECT * FROM orders WHERE id = ?',
-        [orderId]
+        "SELECT * FROM orders WHERE id = ?",
+        [orderId],
       );
 
       if (orders.length === 0) {
-        throw new Error('Commande non trouvée');
+        throw new Error("Commande non trouvée");
       }
 
       const order = orders[0];
@@ -643,26 +866,26 @@ class RestaurantModel {
          WHERE r.room_id = ? 
            AND s.checkout_at IS NULL
          LIMIT 1`,
-        [roomId]
+        [roomId],
       );
 
       if (stays.length === 0) {
-        throw new Error('Aucun séjour en cours pour cette chambre');
+        throw new Error("Aucun séjour en cours pour cette chambre");
       }
 
       // Créer ou récupérer une facture
       let invoiceId;
       const [invoices] = await connection.execute(
-        'SELECT * FROM invoices WHERE client_id = ? AND statut = ? LIMIT 1',
-        [stays[0].client_id, 'EN_ATTENTE']
+        "SELECT * FROM invoices WHERE client_id = ? AND statut = ? LIMIT 1",
+        [stays[0].client_id, "EN_ATTENTE"],
       );
 
       if (invoices.length > 0) {
         invoiceId = invoices[0].id;
       } else {
         const [newInvoice] = await connection.execute(
-          'INSERT INTO invoices (client_id, montant_total, statut) VALUES (?, ?, ?)',
-          [stays[0].client_id, 0, 'EN_ATTENTE']
+          "INSERT INTO invoices (client_id, montant_total, statut) VALUES (?, ?, ?)",
+          [stays[0].client_id, 0, "EN_ATTENTE"],
         );
         invoiceId = newInvoice.insertId;
       }
@@ -673,13 +896,17 @@ class RestaurantModel {
          FROM order_items oi
          LEFT JOIN products p ON oi.product_id = p.id
          WHERE oi.order_id = ?`,
-        [orderId]
+        [orderId],
       );
 
       for (const item of orderItems) {
         await connection.execute(
-          'INSERT INTO invoice_items (invoice_id, description, montant) VALUES (?, ?, ?)',
-          [invoiceId, `Commande ${orderId} - ${item.product_nom} x${item.quantite}`, item.quantite * item.prix_unitaire]
+          "INSERT INTO invoice_items (invoice_id, description, montant) VALUES (?, ?, ?)",
+          [
+            invoiceId,
+            `Commande ${orderId} - ${item.product_nom} x${item.quantite}`,
+            item.quantite * item.prix_unitaire,
+          ],
         );
       }
 
@@ -692,14 +919,14 @@ class RestaurantModel {
            WHERE invoice_id = ?
          )
          WHERE id = ?`,
-        [invoiceId, invoiceId]
+        [invoiceId, invoiceId],
       );
 
       // Marquer la commande comme facturée
-      await connection.execute(
-        'UPDATE orders SET statut = ? WHERE id = ?',
-        ['FACTUREE', orderId]
-      );
+      await connection.execute("UPDATE orders SET statut = ? WHERE id = ?", [
+        "FACTUREE",
+        orderId,
+      ]);
 
       await connection.commit();
       return invoiceId;
@@ -725,7 +952,7 @@ class RestaurantModel {
       WHERE o.source_module = 'RESTAURANT'
         AND o.created_at BETWEEN ? AND ?
     `;
-    
+
     const [rows] = await pool.execute(query, [dateDebut, dateFin]);
     return rows[0];
   }
@@ -749,8 +976,12 @@ class RestaurantModel {
       ORDER BY quantite_vendue DESC
       LIMIT ?
     `;
-    
-    const [rows] = await pool.execute(query, [dateDebut, dateFin, limit.toString()]);
+
+    const [rows] = await pool.execute(query, [
+      dateDebut,
+      dateFin,
+      limit.toString(),
+    ]);
     return rows;
   }
 
@@ -771,8 +1002,255 @@ class RestaurantModel {
       GROUP BY c.id, c.nom
       ORDER BY montant_total DESC
     `;
-    
+
     const [rows] = await pool.execute(query, [dateDebut, dateFin]);
+    return rows;
+  }
+
+  // ==================== PRODUITS ====================
+
+  static async updateProduct(id, data) {
+    const pool = getPool();
+    const allowed = [
+      "nom",
+      "unite",
+      "prix_achat",
+      "prix_vente",
+      "actif",
+      "type_produit",
+      "category_id",
+    ];
+    const updates = [];
+    const values = [];
+    for (const [key, value] of Object.entries(data)) {
+      if (allowed.includes(key)) {
+        updates.push(`${key} = ?`);
+        values.push(value);
+      }
+    }
+    if (updates.length === 0) return false;
+    values.push(id);
+    const [result] = await pool.execute(
+      `UPDATE products SET ${updates.join(", ")} WHERE id = ?`,
+      values,
+    );
+    return result.affectedRows > 0;
+  }
+
+  // ==================== FOURNISSEURS ====================
+
+  static async getSuppliers() {
+    const pool = getPool();
+    const [rows] = await pool.query("SELECT * FROM suppliers ORDER BY nom");
+    return rows;
+  }
+
+  static async createSupplier({ nom, telephone = null, email = null }) {
+    const pool = getPool();
+    const [result] = await pool.execute(
+      "INSERT INTO suppliers (nom, telephone, email) VALUES (?, ?, ?)",
+      [nom, telephone, email],
+    );
+    return result.insertId;
+  }
+
+  static async findSupplierById(id) {
+    const pool = getPool();
+    const [rows] = await pool.execute("SELECT * FROM suppliers WHERE id = ?", [
+      id,
+    ]);
+    return rows[0] || null;
+  }
+
+  // ==================== ACHATS ====================
+
+  static async createPurchase({ supplier_id, items }) {
+    const pool = getPool();
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+
+      // Créer l'achat
+      const [res] = await conn.execute(
+        "INSERT INTO purchases (supplier_id, montant_total, statut) VALUES (?, 0, ?)",
+        [supplier_id, "VALIDE"],
+      );
+      const purchaseId = res.insertId;
+
+      let montantTotal = 0;
+
+      for (const item of items) {
+        const { product_id, location_id, quantite, prix_unitaire } = item;
+        const montantItem = quantite * prix_unitaire;
+        montantTotal += montantItem;
+
+        // Enregistrer le purchase_item
+        await conn.execute(
+          "INSERT INTO purchase_items (purchase_id, product_id, quantite, prix_unitaire) VALUES (?, ?, ?, ?)",
+          [purchaseId, product_id, quantite, prix_unitaire],
+        );
+
+        // Mettre à jour le stock (ENTREE)
+        const [stockRows] = await conn.execute(
+          "SELECT * FROM stocks WHERE product_id = ? AND location_id = ?",
+          [product_id, location_id],
+        );
+
+        let stockId;
+        if (stockRows.length > 0) {
+          stockId = stockRows[0].id;
+          await conn.execute(
+            "UPDATE stocks SET quantite = quantite + ? WHERE id = ?",
+            [quantite, stockId],
+          );
+        } else {
+          const [ins] = await conn.execute(
+            "INSERT INTO stocks (product_id, location_id, quantite) VALUES (?, ?, ?)",
+            [product_id, location_id, quantite],
+          );
+          stockId = ins.insertId;
+        }
+
+        // Mouvement de stock
+        await conn.execute(
+          `INSERT INTO stock_movements (product_id, location_id, type_mouvement, quantite, source_module, reference_id, created_at)
+         VALUES (?, ?, 'ENTREE', ?, 'ACHAT', ?, NOW())`,
+          [product_id, location_id, quantite, purchaseId],
+        );
+      }
+
+      // Mettre à jour le montant total
+      await conn.execute(
+        "UPDATE purchases SET montant_total = ? WHERE id = ?",
+        [montantTotal, purchaseId],
+      );
+
+      await conn.commit();
+      return purchaseId;
+    } catch (err) {
+      await conn.rollback();
+      throw err;
+    } finally {
+      conn.release();
+    }
+  }
+
+  static async findAllPurchases() {
+    const pool = getPool();
+    const [rows] = await pool.execute(`
+    SELECT p.*, s.nom AS supplier_nom
+    FROM purchases p
+    LEFT JOIN suppliers s ON p.supplier_id = s.id
+    ORDER BY p.id DESC
+  `);
+    return rows;
+  }
+
+  static async findPurchaseById(id) {
+    const pool = getPool();
+    const [rows] = await pool.execute(
+      `
+    SELECT p.*, s.nom AS supplier_nom
+    FROM purchases p
+    LEFT JOIN suppliers s ON p.supplier_id = s.id
+    WHERE p.id = ?
+  `,
+      [id],
+    );
+    if (!rows[0]) return null;
+    const [items] = await pool.execute(
+      `
+    SELECT pi.*, pr.nom AS product_nom, pr.unite
+    FROM purchase_items pi
+    LEFT JOIN products pr ON pi.product_id = pr.id
+    WHERE pi.purchase_id = ?
+  `,
+      [id],
+    );
+    rows[0].items = items;
+    return rows[0];
+  }
+
+  // ==================== RECETTES ====================
+
+  static async getAllRecipes() {
+    const pool = getPool();
+    const [rows] = await pool.execute(`
+    SELECT r.*, p.nom AS product_nom
+    FROM recipes r
+    LEFT JOIN products p ON r.product_id = p.id
+    ORDER BY r.nom
+  `);
+    return rows;
+  }
+
+  static async updateRecipe(recipeId, { nom, ingredients }) {
+    const pool = getPool();
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+      if (nom) {
+        await conn.execute(
+          "UPDATE recipes SET nom = ?, updated_at = NOW() WHERE id = ?",
+          [nom, recipeId],
+        );
+      }
+      if (ingredients !== undefined) {
+        // Remplacer tous les ingrédients
+        await conn.execute("DELETE FROM recipe_items WHERE recipe_id = ?", [
+          recipeId,
+        ]);
+        for (const ing of ingredients) {
+          await conn.execute(
+            "INSERT INTO recipe_items (recipe_id, ingredient_id, quantite) VALUES (?, ?, ?)",
+            [recipeId, ing.ingredient_id, ing.quantite],
+          );
+        }
+      }
+      await conn.commit();
+      return true;
+    } catch (err) {
+      await conn.rollback();
+      throw err;
+    } finally {
+      conn.release();
+    }
+  }
+
+  static async deleteRecipe(recipeId) {
+    const pool = getPool();
+    // recipe_items supprimés par CASCADE
+    const [result] = await pool.execute("DELETE FROM recipes WHERE id = ?", [
+      recipeId,
+    ]);
+    return result.affectedRows > 0;
+  }
+
+  // ==================== UNITÉS ====================
+
+  static async getUnits() {
+    const pool = getPool();
+    const [rows] = await pool.query("SELECT * FROM units ORDER BY nom");
+    return rows;
+  }
+
+  // ==================== TYPES DE PRODUITS ====================
+
+  static async getProductTypes() {
+    const pool = getPool();
+    const [rows] = await pool.query(
+      "SELECT id, nom, description, actif FROM product_types WHERE actif = 1 ORDER BY nom",
+    );
+    return rows;
+  }
+
+  // ==================== CATÉGORIES ====================
+
+  static async getCategories() {
+    const pool = getPool();
+    const [rows] = await pool.query(
+      "SELECT id, nom FROM categories ORDER BY nom",
+    );
     return rows;
   }
 }

@@ -740,6 +740,20 @@ CREATE TABLE `users` (
   `date_creation` datetime NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+
+CREATE TABLE `product_types` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `nom` VARCHAR(100) NOT NULL,
+    `description` TEXT DEFAULT NULL,
+    `actif` TINYINT(1) NOT NULL DEFAULT 1,
+    `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_product_types_nom` (`nom`)
+) ENGINE=InnoDB
+DEFAULT CHARSET=utf8mb4
+COLLATE=utf8mb4_general_ci;
 --
 -- Index pour les tables déchargées
 --
