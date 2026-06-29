@@ -5,7 +5,7 @@ const { testConnection } = require('./Config/connectDatabase');
 
 // Import des routes
 const authRoutes = require('./Routes/auth.routes');
-const adminRoutes = require('./Routes/admin.routes'); // <-- AJOUTER CETTE LIGNE
+const adminRoutes = require('./Routes/admin.routes');
 const roomRoutes = require('./Routes/room.routes');
 const roomTypeRoutes = require('./Routes/roomType.routes');
 const reservationRoutes = require('./Routes/reservation.routes');
@@ -16,6 +16,7 @@ const equipmentRoutes = require('./Routes/equipment.routes');
 const maintenanceRoutes = require('./Routes/roomMaintenance.routes');
 const roomEquipmentRoutes = require('./Routes/roomEquipment.routes');
 const minibarRoutes = require('./Routes/roomMinibar.routes');
+const consumptionRoutes = require('./Routes/consumption.routes'); // AJOUTER CETTE LIGNE
 const housekeepingRoutes = require('./Routes/housekeepingTask.routes');
 
 const app = express();
@@ -102,7 +103,7 @@ app.post('/api/test-body', (req, res) => {
 app.use('/api/auth', authRoutes);
 
 // Routes Admin
-app.use('/api/admin', adminRoutes); // <-- Cette ligne est maintenant correcte
+app.use('/api/admin', adminRoutes);
 
 // Routes Hébergement - Base
 app.use('/api/rooms', roomRoutes);
@@ -114,7 +115,10 @@ app.use('/api/clients', clientRoutes);
 app.use('/api/equipments', equipmentRoutes);
 app.use('/api/maintenances', maintenanceRoutes);
 app.use('/api/room-equipments', roomEquipmentRoutes);
-app.use('/api/minibars', minibarRoutes);
+
+// IMPORTANT: Utiliser le même nom que le frontend
+app.use('/api/minibar', minibarRoutes); // Changé de 'minibars' à 'minibar'
+app.use('/api/consumptions', consumptionRoutes); // AJOUTER CETTE LIGNE
 app.use('/api/housekeeping', housekeepingRoutes);
 
 // Routes Restaurant
@@ -224,16 +228,25 @@ app.get('/', (req, res) => {
                 byRoom: 'GET /api/room-equipments/room/:roomId',
                 stats: 'GET /api/room-equipments/stats'
             },
-            minibars: {
-                list: 'GET /api/minibars',
-                create: 'POST /api/minibars',
-                getOne: 'GET /api/minibars/:id',
-                update: 'PUT /api/minibars/:id',
-                delete: 'DELETE /api/minibars/:id',
-                quantity: 'PUT /api/minibars/:id/quantity',
-                byRoom: 'GET /api/minibars/room/:roomId',
-                alerts: 'GET /api/minibars/alerts',
-                stats: 'GET /api/minibars/stats'
+            minibar: {
+                list: 'GET /api/minibar',
+                create: 'POST /api/minibar',
+                getOne: 'GET /api/minibar/:id',
+                update: 'PUT /api/minibar/:id',
+                delete: 'DELETE /api/minibar/:id',
+                quantity: 'PATCH /api/minibar/:id/quantity', // Changé de PUT à PATCH
+                byRoom: 'GET /api/minibar/room/:roomId',
+                alerts: 'GET /api/minibar/alerts',
+                stats: 'GET /api/minibar/stats'
+            },
+            consumptions: { // AJOUTER CETTE SECTION
+                list: 'GET /api/consumptions',
+                create: 'POST /api/consumptions',
+                getOne: 'GET /api/consumptions/:id',
+                byRoom: 'GET /api/consumptions/room/:roomId',
+                bill: 'PATCH /api/consumptions/:id/bill',
+                delete: 'DELETE /api/consumptions/:id',
+                stats: 'GET /api/consumptions/stats/room/:roomId'
             },
             housekeeping: {
                 list: 'GET /api/housekeeping',
@@ -378,16 +391,25 @@ async function startServer() {
             console.log('   GET    /api/room-equipments/room/:roomId - Équipements d\'une chambre');
             console.log('   GET    /api/room-equipments/stats    - Statistiques');
             
-            console.log('\n🍾 Minibars:');
-            console.log('   GET    /api/minibars                 - Liste des minibars');
-            console.log('   POST   /api/minibars                 - Ajouter un produit');
-            console.log('   GET    /api/minibars/:id             - Détails d\'un produit');
-            console.log('   PUT    /api/minibars/:id             - Modifier un produit');
-            console.log('   DELETE /api/minibars/:id             - Supprimer un produit');
-            console.log('   PUT    /api/minibars/:id/quantity    - Mettre à jour quantité');
-            console.log('   GET    /api/minibars/room/:roomId    - Minibar d\'une chambre');
-            console.log('   GET    /api/minibars/alerts          - Alertes stock');
-            console.log('   GET    /api/minibars/stats           - Statistiques');
+            console.log('\n🍾 Minibar:');
+            console.log('   GET    /api/minibar                  - Liste des minibars');
+            console.log('   POST   /api/minibar                  - Ajouter un produit');
+            console.log('   GET    /api/minibar/:id              - Détails d\'un produit');
+            console.log('   PUT    /api/minibar/:id              - Modifier un produit');
+            console.log('   DELETE /api/minibar/:id              - Supprimer un produit');
+            console.log('   PATCH  /api/minibar/:id/quantity     - Mettre à jour quantité');
+            console.log('   GET    /api/minibar/room/:roomId     - Minibar d\'une chambre');
+            console.log('   GET    /api/minibar/alerts           - Alertes stock');
+            console.log('   GET    /api/minibar/stats            - Statistiques');
+            
+            console.log('\n📊 Consommations:');
+            console.log('   GET    /api/consumptions             - Liste des consommations');
+            console.log('   POST   /api/consumptions             - Créer une consommation');
+            console.log('   GET    /api/consumptions/:id         - Détails d\'une consommation');
+            console.log('   GET    /api/consumptions/room/:roomId - Consommations d\'une chambre');
+            console.log('   PATCH  /api/consumptions/:id/bill    - Facturer une consommation');
+            console.log('   DELETE /api/consumptions/:id         - Supprimer une consommation');
+            console.log('   GET    /api/consumptions/stats/room/:roomId - Statistiques par chambre');
             
             console.log('\n🧹 Housekeeping:');
             console.log('   GET    /api/housekeeping             - Liste des tâches');

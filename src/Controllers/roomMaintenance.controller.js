@@ -1,9 +1,12 @@
+// backend/Controllers/maintenance.controller.js
 const RoomMaintenance = require('../Models/roomMaintenance.model');
-const Room = require('../Models/room.model');
 
 // Récupérer toutes les maintenances
 const getMaintenances = async (req, res) => {
   try {
+    console.log('📝 [GET] /api/maintenances');
+    console.log('📋 Query params:', req.query);
+    
     const { statut, room_id, type_intervention } = req.query;
     const filters = {};
     if (statut) filters.statut = statut;
@@ -18,11 +21,13 @@ const getMaintenances = async (req, res) => {
       data: maintenances
     });
   } catch (error) {
-    console.error('❌ Erreur getMaintenances:', error);
+    console.error('❌ [GET] /api/maintenances - Erreur:', error);
+    console.error('❌ Stack:', error.stack);
     res.status(500).json({
       success: false,
       message: 'Erreur lors de la récupération des maintenances',
-      error: error.message
+      error: error.message,
+      stack: error.stack
     });
   }
 };
@@ -31,6 +36,8 @@ const getMaintenances = async (req, res) => {
 const getMaintenanceById = async (req, res) => {
   try {
     const { id } = req.params;
+    console.log(`📝 [GET] /api/maintenances/${id}`);
+
     const maintenance = await RoomMaintenance.findById(id);
 
     if (!maintenance) {
@@ -45,7 +52,7 @@ const getMaintenanceById = async (req, res) => {
       data: maintenance
     });
   } catch (error) {
-    console.error('❌ Erreur getMaintenanceById:', error);
+    console.error(`❌ [GET] /api/maintenances/${id} - Erreur:`, error);
     res.status(500).json({
       success: false,
       message: 'Erreur lors de la récupération de la maintenance',
@@ -57,6 +64,9 @@ const getMaintenanceById = async (req, res) => {
 // Créer une maintenance
 const createMaintenance = async (req, res) => {
   try {
+    console.log('📝 [POST] /api/maintenances');
+    console.log('📋 Body:', req.body);
+
     const {
       room_id, equipment_id, type_intervention, description,
       statut, date_declaration, cout, created_by
@@ -69,24 +79,15 @@ const createMaintenance = async (req, res) => {
       });
     }
 
-    // Vérifier si la chambre existe
-    const room = await Room.findById(room_id);
-    if (!room) {
-      return res.status(404).json({
-        success: false,
-        message: `Chambre avec ID ${room_id} non trouvée`
-      });
-    }
-
     const maintenanceId = await RoomMaintenance.create({
       room_id,
-      equipment_id,
+      equipment_id: equipment_id || null,
       type_intervention,
-      description,
+      description: description || null,
       statut: statut || 'OUVERT',
       date_declaration: date_declaration || new Date(),
       cout: cout || 0,
-      created_by: created_by || req.user?.id || null
+      created_by: created_by || null
     });
 
     const newMaintenance = await RoomMaintenance.findById(maintenanceId);
@@ -97,7 +98,7 @@ const createMaintenance = async (req, res) => {
       data: newMaintenance
     });
   } catch (error) {
-    console.error('❌ Erreur createMaintenance:', error);
+    console.error('❌ [POST] /api/maintenances - Erreur:', error);
     res.status(500).json({
       success: false,
       message: 'Erreur lors de la création de la maintenance',
@@ -110,9 +111,11 @@ const createMaintenance = async (req, res) => {
 const updateMaintenance = async (req, res) => {
   try {
     const { id } = req.params;
+    console.log(`📝 [PUT] /api/maintenances/${id}`);
+    console.log('📋 Body:', req.body);
 
-    const maintenanceExists = await RoomMaintenance.exists ? await RoomMaintenance.exists(id) : true;
-    if (!maintenanceExists) {
+    const maintenance = await RoomMaintenance.findById(id);
+    if (!maintenance) {
       return res.status(404).json({
         success: false,
         message: 'Maintenance non trouvée'
@@ -135,7 +138,7 @@ const updateMaintenance = async (req, res) => {
       data: updatedMaintenance
     });
   } catch (error) {
-    console.error('❌ Erreur updateMaintenance:', error);
+    console.error(`❌ [PUT] /api/maintenances/${id} - Erreur:`, error);
     res.status(500).json({
       success: false,
       message: 'Erreur lors de la mise à jour de la maintenance',
@@ -144,11 +147,13 @@ const updateMaintenance = async (req, res) => {
   }
 };
 
-// Mettre à jour le statut d'une maintenance
+// Mettre à jour le statut
 const updateMaintenanceStatus = async (req, res) => {
   try {
     const { id } = req.params;
     const { statut } = req.body;
+    console.log(`📝 [PUT] /api/maintenances/${id}/status`);
+    console.log('📋 Body:', req.body);
 
     if (!statut) {
       return res.status(400).json({
@@ -165,17 +170,18 @@ const updateMaintenanceStatus = async (req, res) => {
       });
     }
 
-    const updated = await RoomMaintenance.updateStatus(id, statut);
-    if (!updated) {
-      return res.status(400).json({
+    const maintenance = await RoomMaintenance.findById(id);
+    if (!maintenance) {
+      return res.status(404).json({
         success: false,
-        message: 'Erreur lors de la mise à jour du statut'
+        message: 'Maintenance non trouvée'
       });
     }
 
-    // Si la maintenance est terminée, mettre à jour la date de résolution
     if (statut === 'TERMINE') {
       await RoomMaintenance.resolve(id);
+    } else {
+      await RoomMaintenance.updateStatus(id, statut);
     }
 
     const updatedMaintenance = await RoomMaintenance.findById(id);
@@ -186,11 +192,12 @@ const updateMaintenanceStatus = async (req, res) => {
       data: updatedMaintenance
     });
   } catch (error) {
-    console.error('❌ Erreur updateMaintenanceStatus:', error);
+    console.error(`❌ [PUT] /api/maintenances/${id}/status - Erreur:`, error);
     res.status(500).json({
       success: false,
       message: 'Erreur lors de la mise à jour du statut',
-      error: error.message    });
+      error: error.message
+    });
   }
 };
 
@@ -198,6 +205,15 @@ const updateMaintenanceStatus = async (req, res) => {
 const deleteMaintenance = async (req, res) => {
   try {
     const { id } = req.params;
+    console.log(`📝 [DELETE] /api/maintenances/${id}`);
+
+    const maintenance = await RoomMaintenance.findById(id);
+    if (!maintenance) {
+      return res.status(404).json({
+        success: false,
+        message: 'Maintenance non trouvée'
+      });
+    }
 
     const deleted = await RoomMaintenance.delete(id);
     if (!deleted) {
@@ -212,7 +228,7 @@ const deleteMaintenance = async (req, res) => {
       message: 'Maintenance supprimée avec succès'
     });
   } catch (error) {
-    console.error('❌ Erreur deleteMaintenance:', error);
+    console.error(`❌ [DELETE] /api/maintenances/${id} - Erreur:`, error);
     res.status(500).json({
       success: false,
       message: 'Erreur lors de la suppression de la maintenance',
@@ -221,9 +237,11 @@ const deleteMaintenance = async (req, res) => {
   }
 };
 
-// Statistiques des maintenances
+// Statistiques
 const getMaintenanceStats = async (req, res) => {
   try {
+    console.log('📝 [GET] /api/maintenances/stats');
+
     const stats = await RoomMaintenance.getStats();
 
     res.status(200).json({
@@ -231,7 +249,7 @@ const getMaintenanceStats = async (req, res) => {
       data: stats
     });
   } catch (error) {
-    console.error('❌ Erreur getMaintenanceStats:', error);
+    console.error('❌ [GET] /api/maintenances/stats - Erreur:', error);
     res.status(500).json({
       success: false,
       message: 'Erreur lors de la récupération des statistiques',
