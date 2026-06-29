@@ -1,10 +1,9 @@
-const RoomMinibar = require('../Models/roomMinibar.model');
-const Room = require('../Models/room.model');
-const Product = require('../Models/product.model');
+// controllers/minibar.controller.js
+const RoomMinibar = require('../models/roomMinibar.model');
+const Room = require('../models/room.model');
+const Product = require('../models/product.model');
 
-// =============================================
 // Récupérer tous les minibars
-// =============================================
 const getRoomMinibars = async (req, res) => {
   try {
     const { room_id, product_id, seuil_alerte } = req.query;
@@ -30,9 +29,7 @@ const getRoomMinibars = async (req, res) => {
   }
 };
 
-// =============================================
 // Récupérer un minibar par ID
-// =============================================
 const getRoomMinibarById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -59,9 +56,7 @@ const getRoomMinibarById = async (req, res) => {
   }
 };
 
-// =============================================
 // Récupérer le minibar d'une chambre
-// =============================================
 const getRoomMinibarByRoom = async (req, res) => {
   try {
     const { roomId } = req.params;
@@ -82,9 +77,7 @@ const getRoomMinibarByRoom = async (req, res) => {
   }
 };
 
-// =============================================
 // Récupérer les alertes stock
-// =============================================
 const getMinibarAlerts = async (req, res) => {
   try {
     const alerts = await RoomMinibar.getAlertItems();
@@ -104,9 +97,7 @@ const getMinibarAlerts = async (req, res) => {
   }
 };
 
-// =============================================
 // Créer un produit dans le minibar
-// =============================================
 const createRoomMinibar = async (req, res) => {
   try {
     const { room_id, product_id, quantite = 0, seuil_alerte = 1 } = req.body;
@@ -118,25 +109,6 @@ const createRoomMinibar = async (req, res) => {
       });
     }
 
-    // Vérifier si la chambre existe
-    const room = await Room.findById(room_id);
-    if (!room) {
-      return res.status(404).json({
-        success: false,
-        message: `Chambre avec ID ${room_id} non trouvée`
-      });
-    }
-
-    // Vérifier si le produit existe
-    const product = await Product.findById(product_id);
-    if (!product) {
-      return res.status(404).json({
-        success: false,
-        message: `Produit avec ID ${product_id} non trouvé`
-      });
-    }
-
-    // Vérifier si le produit existe déjà dans la chambre
     const exists = await RoomMinibar.exists(room_id, product_id);
     if (exists) {
       return res.status(400).json({
@@ -169,9 +141,7 @@ const createRoomMinibar = async (req, res) => {
   }
 };
 
-// =============================================
 // Mettre à jour un produit du minibar
-// =============================================
 const updateRoomMinibar = async (req, res) => {
   try {
     const { id } = req.params;
@@ -209,9 +179,7 @@ const updateRoomMinibar = async (req, res) => {
   }
 };
 
-// =============================================
 // Mettre à jour la quantité
-// =============================================
 const updateMinibarQuantity = async (req, res) => {
   try {
     const { id } = req.params;
@@ -264,9 +232,7 @@ const updateMinibarQuantity = async (req, res) => {
   }
 };
 
-// =============================================
 // Supprimer un produit du minibar
-// =============================================
 const deleteRoomMinibar = async (req, res) => {
   try {
     const { id } = req.params;
@@ -301,9 +267,7 @@ const deleteRoomMinibar = async (req, res) => {
   }
 };
 
-// =============================================
 // Statistiques
-// =============================================
 const getRoomMinibarStats = async (req, res) => {
   try {
     const stats = await RoomMinibar.getStats();
@@ -332,4 +296,4 @@ module.exports = {
   updateMinibarQuantity,
   deleteRoomMinibar,
   getRoomMinibarStats
-};  
+};

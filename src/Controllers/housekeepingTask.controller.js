@@ -1,12 +1,12 @@
+// backend/Controllers/housekeepingTask.controller.js
 const HousekeepingTask = require('../Models/housekeepingTask.model');
 const Room = require('../Models/room.model');
-const User = require('../Models/user.model');
 
-// =============================================
 // Récupérer toutes les tâches
-// =============================================
 const getTasks = async (req, res) => {
   try {
+    console.log('📝 GET /api/housekeeping');
+    
     const { statut, room_id, type_tache, assigned_user_id, planned_at } = req.query;
     const filters = {};
     if (statut) filters.statut = statut;
@@ -32,9 +32,7 @@ const getTasks = async (req, res) => {
   }
 };
 
-// =============================================
 // Récupérer une tâche par ID
-// =============================================
 const getTaskById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -61,9 +59,7 @@ const getTaskById = async (req, res) => {
   }
 };
 
-// =============================================
 // Récupérer les tâches d'une chambre
-// =============================================
 const getTasksByRoom = async (req, res) => {
   try {
     const { roomId } = req.params;
@@ -84,9 +80,7 @@ const getTasksByRoom = async (req, res) => {
   }
 };
 
-// =============================================
 // Récupérer les tâches d'un utilisateur
-// =============================================
 const getTasksByUser = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -107,9 +101,7 @@ const getTasksByUser = async (req, res) => {
   }
 };
 
-// =============================================
 // Créer une tâche
-// =============================================
 const createTask = async (req, res) => {
   try {
     const {
@@ -133,23 +125,12 @@ const createTask = async (req, res) => {
       });
     }
 
-    // Vérifier si l'utilisateur existe
-    if (assigned_user_id) {
-      const user = await User.findById(assigned_user_id);
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: `Utilisateur avec ID ${assigned_user_id} non trouvé`
-        });
-      }
-    }
-
     const taskId = await HousekeepingTask.create({
       room_id,
-      assigned_user_id,
+      assigned_user_id: assigned_user_id || null,
       type_tache,
       statut,
-      commentaire,
+      commentaire: commentaire || null,
       planned_at: planned_at || new Date()
     });
 
@@ -170,9 +151,7 @@ const createTask = async (req, res) => {
   }
 };
 
-// =============================================
 // Mettre à jour une tâche
-// =============================================
 const updateTask = async (req, res) => {
   try {
     const { id } = req.params;
@@ -210,9 +189,7 @@ const updateTask = async (req, res) => {
   }
 };
 
-// =============================================
 // Mettre à jour le statut d'une tâche
-// =============================================
 const updateTaskStatus = async (req, res) => {
   try {
     const { id } = req.params;
@@ -241,17 +218,10 @@ const updateTaskStatus = async (req, res) => {
       });
     }
 
-    const updated = await HousekeepingTask.updateStatus(id, statut);
-    if (!updated) {
-      return res.status(400).json({
-        success: false,
-        message: 'Erreur lors de la mise à jour du statut'
-      });
-    }
-
-    // Si la tâche est terminée, mettre à jour la date de completion
     if (statut === 'TERMINE') {
       await HousekeepingTask.complete(id);
+    } else {
+      await HousekeepingTask.updateStatus(id, statut);
     }
 
     const updatedTask = await HousekeepingTask.findById(id);
@@ -271,9 +241,7 @@ const updateTaskStatus = async (req, res) => {
   }
 };
 
-// =============================================
 // Supprimer une tâche
-// =============================================
 const deleteTask = async (req, res) => {
   try {
     const { id } = req.params;
@@ -308,9 +276,7 @@ const deleteTask = async (req, res) => {
   }
 };
 
-// =============================================
-// Statistiques des tâches
-// =============================================
+// Statistiques
 const getTaskStats = async (req, res) => {
   try {
     const stats = await HousekeepingTask.getStats();

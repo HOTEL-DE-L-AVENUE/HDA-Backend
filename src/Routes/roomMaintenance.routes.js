@@ -4,12 +4,12 @@ const maintenanceController = require('../Controllers/roomMaintenance.controller
 const { authenticateToken } = require('../Middleware/auth.middleware');
 
 // Routes protégées
-router.get('/', maintenanceController.getMaintenances);
-router.get('/stats', maintenanceController.getMaintenanceStats);
-router.get('/:id', maintenanceController.getMaintenanceById);
-router.post('/', maintenanceController.createMaintenance);
-router.put('/:id', maintenanceController.updateMaintenance);
-router.put('/:id/status', maintenanceController.updateMaintenanceStatus);
-router.delete('/:id', maintenanceController.deleteMaintenance);
+router.get('/', authenticateToken,maintenanceController.getMaintenances);
+router.get('/stats', authenticateToken,maintenanceController.getMaintenanceStats);
+router.get('/:id', authenticateToken,maintenanceController.getMaintenanceById);
+router.post('/', authenticateToken,maintenanceController.createMaintenance);
+router.put('/:id', authenticateToken,maintenanceController.updateMaintenance);
+router.put('/:id/status', authenticateToken,maintenanceController.updateMaintenanceStatus);
+router.delete('/:id', authenticateToken,maintenanceController.deleteMaintenance);
 
 module.exports = router;
