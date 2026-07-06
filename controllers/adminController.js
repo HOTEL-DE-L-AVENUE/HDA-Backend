@@ -44,7 +44,7 @@ async function login(req, res) {
     { expiresIn: process.env.JWT_EXPIRES_IN || '8h' }
   );
   await logAction({ userId: user.id_admin, action: 'LOGIN', entite: 'users', entiteId: user.id_admin });
-  return ok(res, { token, user: renderUser(user) });
+  return ok(res, {success : true, message: 'Connexion réussie', token, user: renderUser(user) });
 }
 
 async function me(req, res) {

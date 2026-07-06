@@ -323,16 +323,100 @@ Légende : 🔒 = authentification requise.
 |---|---|---|
 | GET | `/rooms/available?room_type_id=` | Chambres libres |
 | GET | `/rooms/availability?room_id=&date_arrivee=&date_depart=` | Disponibilité sur période |
-| CRUD | `/rooms[/​:id]`, `/room-types`, `/equipments`, `/room-equipments`, `/room-maintenance`, `/room-minibar`, `/room-status-history` | Référentiels |
+| GET | `/rooms/stats` | Statistiques agrégées (total, taux d'occupation, répartition par statut et par type) |
+| PUT | `/rooms/:id/status` | Changer uniquement le statut (journalisé dans `room_status_history`) |
+| CRUD | `/rooms[/​:id]`, `/room-types`, `/room-minibar`, `/room-status-history` | Référentiels |
+| GET | `/equipments/categories` | Liste des catégories distinctes |
+| GET | `/equipments/stats` | Statistiques agrégées (total, répartition par catégorie et par statut d'installation) |
+| GET | `/equipments/code/:code` | Récupérer un équipement par son code |
+| CRUD | `/equipments[/​:id]` | Référentiel |
+| PUT | `/room-equipments/:id/status` | Changer uniquement le statut d'un équipement installé en chambre |
+| CRUD | `/room-equipments[/​:id]` | Référentiel |
+| GET | `/room-maintenance/stats` | Statistiques agrégées (total, coût cumulé, répartition par statut / type d'intervention) |
+| PUT | `/room-maintenance/:id/status` | Changer uniquement le statut (`date_resolution` posée auto si TERMINE/ANNULE) |
+| CRUD | `/room-maintenance[/​:id]` | Référentiel |
 | POST | `/reservations` | Créer réservation + accompagnants (transaction, vérifie la disponibilité) |
+| GET | `/reservations/stats` | Statistiques agrégées (total, CA, montant moyen, répartition par statut) |
 | CRUD | `/reservations[/​:id]`, `/reservation-guests` | — |
 | POST | `/stays/check-in/:reservationId` | Check-in (chambre → OCCUPEE) |
 | POST | `/stays/check-out/:stayId` | Check-out (chambre → NETTOYAGE) |
-| CRUD | `/stays`, `/housekeeping`, `/lost-and-found`, `/minibar-consumptions` | — |
+| CRUD | `/stays` | — |
+| GET | `/housekeeping/stats` | Statistiques agrégées (total, répartition par statut et par type de tâche) |
+| PUT | `/housekeeping/:id/status` | Changer uniquement le statut (`completed_at` posée auto si TERMINE) |
+| CRUD | `/housekeeping`, `/lost-and-found`, `/minibar-consumptions` | — |
 
 ```json
 // réponse type GET /api/hebergement/rooms/availability?room_id=3&date_arrivee=2026-08-01&date_depart=2026-08-05
 { "success": true, "data": { "room_id": 3, "disponible": true } }
+```
+
+```json
+// réponse type GET /api/hebergement/rooms/stats
+{
+  "success": true,
+  "data": {
+    "total": 20,
+    "taux_occupation": 0.35,
+    "par_statut": [
+      { "statut": "LIBRE", "total": 9 },
+      { "statut": "RESERVEE", "total": 3 },
+      { "statut": "OCCUPEE", "total": 7 },
+      { "statut": "NETTOYAGE", "total": 1 }
+    ],
+    "par_type": [
+      { "room_type": "Standard", "total": 12 },
+      { "room_type": "Suite", "total": 5 },
+      { "room_type": "Familiale", "total": 3 }
+    ]
+  }
+}
+```
+
+```json
+// réponse type PUT /api/hebergement/rooms/3/status  { "statut": "NETTOYAGE" }
+{
+  "success": true,
+  "data": { "id": 3, "room_type_id": 1, "numero": "101", "capacite": 2, "prix_nuit": 120000, "statut": "NETTOYAGE" }
+}
+```
+
+```json
+// réponse type GET /api/hebergement/equipments/categories
+{ "success": true, "data": ["CLIMATISATION", "ELECTROMENAGER", "MOBILIER", "SANITAIRE"] }
+```
+
+```json
+// réponse type GET /api/hebergement/equipments/stats
+{
+  "success": true,
+  "data": {
+    "total_equipments": 18,
+    "par_categorie": [
+      { "categorie": "CLIMATISATION", "total": 4 },
+      { "categorie": "ELECTROMENAGER", "total": 6 },
+      { "categorie": "MOBILIER", "total": 8 }
+    ],
+    "installations_par_statut": [
+      { "statut": "BON", "total": 40 },
+      { "statut": "EN_PANNE", "total": 3 },
+      { "statut": "REMPLACE", "total": 2 },
+      { "statut": "HORS_SERVICE", "total": 1 }
+    ]
+  }
+}
+```
+
+```json
+// réponse type GET /api/hebergement/equipments/code/CLIM-001
+{ "success": true, "data": { "id": 2, "code": "CLIM-001", "nom": "Climatiseur split", "categorie": "CLIMATISATION" } }
+```
+
+```json
+// réponse type PUT /api/hebergement/room-equipments/7/status  { "statut": "EN_PANNE" }
+{
+  "success": true,
+  "data": { "id": 7, "room_id": 3, "equipment_id": 2, "quantite": 1, "statut": "EN_PANNE" }
+}
 ```
 
 ```json
@@ -343,6 +427,88 @@ Légende : 🔒 = authentification requise.
     "id": 12, "client_id": 1, "room_id": 3,
     "date_arrivee": "2026-08-01", "date_depart": "2026-08-05",
     "montant_total": 480000, "statut": "CONFIRMEE"
+  }
+}
+```
+
+```json
+// réponse type PUT /api/hebergement/room-maintenance/4/status  { "statut": "TERMINE" }
+{
+  "success": true,
+  "data": {
+    "id": 4, "room_id": 2, "type_intervention": "CORRECTIVE", "statut": "TERMINE",
+    "date_declaration": "2026-07-01", "date_resolution": "2026-07-06 10:42:00", "cout": 15000
+  }
+}
+```
+
+```json
+// réponse type GET /api/hebergement/room-maintenance/stats
+{
+  "success": true,
+  "data": {
+    "total": 12,
+    "cout_total": 185000,
+    "par_statut": [
+      { "statut": "OUVERT", "total": 3, "cout_total": 0 },
+      { "statut": "EN_COURS", "total": 2, "cout_total": 20000 },
+      { "statut": "TERMINE", "total": 7, "cout_total": 165000 }
+    ],
+    "par_type_intervention": [
+      { "type_intervention": "PREVENTIVE", "total": 5, "cout_total": 50000 },
+      { "type_intervention": "CORRECTIVE", "total": 6, "cout_total": 120000 },
+      { "type_intervention": "URGENCE", "total": 1, "cout_total": 15000 }
+    ]
+  }
+}
+```
+
+```json
+// réponse type GET /api/hebergement/reservations/stats
+{
+  "success": true,
+  "data": {
+    "total": 34,
+    "montant_total": 8560000,
+    "montant_moyen": 251764.7,
+    "par_statut": [
+      { "statut": "CONFIRMEE", "total": 10, "montant_total": 2400000 },
+      { "statut": "EN_COURS", "total": 6, "montant_total": 1560000 },
+      { "statut": "TERMINEE", "total": 15, "montant_total": 4100000 },
+      { "statut": "ANNULEE", "total": 3, "montant_total": 500000 }
+    ]
+  }
+}
+```
+
+```json
+// réponse type PUT /api/hebergement/housekeeping/9/status  { "statut": "TERMINE" }
+{
+  "success": true,
+  "data": {
+    "id": 9, "room_id": 5, "type_tache": "NETTOYAGE", "statut": "TERMINE",
+    "planned_at": "2026-07-06 08:00:00", "completed_at": "2026-07-06 08:24:00"
+  }
+}
+```
+
+```json
+// réponse type GET /api/hebergement/housekeeping/stats
+{
+  "success": true,
+  "data": {
+    "total": 25,
+    "par_statut": [
+      { "statut": "A_FAIRE", "total": 6 },
+      { "statut": "EN_COURS", "total": 3 },
+      { "statut": "TERMINE", "total": 16 }
+    ],
+    "par_type_tache": [
+      { "type_tache": "NETTOYAGE", "total": 14 },
+      { "type_tache": "CHANGEMENT_DRAPS", "total": 6 },
+      { "type_tache": "DESINFECTION", "total": 3 },
+      { "type_tache": "CONTROLE", "total": 2 }
+    ]
   }
 }
 ```

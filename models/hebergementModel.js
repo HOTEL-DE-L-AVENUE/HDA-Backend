@@ -159,6 +159,191 @@ async function checkOut(stayId) {
   });
 }
 
+// Met à jour uniquement le statut d'une maintenance.
+// Si le nouveau statut est TERMINE (ou ANNULE) et qu'aucune date_resolution
+// n'est encore renseignée, on la fixe automatiquement à NOW().
+async function updateMaintenanceStatus(id, statut) {
+  const [existing] = await pool.query('SELECT * FROM room_maintenance WHERE id = ?', [id]);
+  if (!existing[0]) throw new Error(`Maintenance #${id} introuvable`);
+
+  const shouldCloseNow = ['TERMINE', 'ANNULE'].includes(statut) && !existing[0].date_resolution;
+  if (shouldCloseNow) {
+    await pool.query(
+      'UPDATE room_maintenance SET statut = ?, date_resolution = NOW() WHERE id = ?',
+      [statut, id]
+    );
+  } else {
+    await pool.query('UPDATE room_maintenance SET statut = ? WHERE id = ?', [statut, id]);
+  }
+
+  const [updated] = await pool.query('SELECT * FROM room_maintenance WHERE id = ?', [id]);
+  return updated[0];
+}
+
+// Statistiques agrégées des maintenances : totaux, répartition par statut et par
+// type d'intervention, coût cumulé.
+async function getMaintenanceStats() {
+  const [totals] = await pool.query(
+    `SELECT COUNT(*) AS total, COALESCE(SUM(cout), 0) AS cout_total FROM room_maintenance`
+  );
+  const [parStatut] = await pool.query(
+    `SELECT statut, COUNT(*) AS total, COALESCE(SUM(cout), 0) AS cout_total
+     FROM room_maintenance GROUP BY statut`
+  );
+  const [parType] = await pool.query(
+    `SELECT type_intervention, COUNT(*) AS total, COALESCE(SUM(cout), 0) AS cout_total
+     FROM room_maintenance GROUP BY type_intervention`
+  );
+  return {
+    total: totals[0].total,
+    cout_total: totals[0].cout_total,
+    par_statut: parStatut,
+    par_type_intervention: parType,
+  };
+}
+
+// Statistiques agrégées des réservations : totaux, chiffre d'affaires, répartition
+// par statut.
+async function getReservationStats() {
+  const [totals] = await pool.query(
+    `SELECT COUNT(*) AS total, COALESCE(SUM(montant_total), 0) AS montant_total,
+            COALESCE(AVG(montant_total), 0) AS montant_moyen
+     FROM reservations`
+  );
+  const [parStatut] = await pool.query(
+    `SELECT statut, COUNT(*) AS total, COALESCE(SUM(montant_total), 0) AS montant_total
+     FROM reservations GROUP BY statut`
+  );
+  return {
+    total: totals[0].total,
+    montant_total: totals[0].montant_total,
+    montant_moyen: totals[0].montant_moyen,
+    par_statut: parStatut,
+  };
+}
+
+// Met à jour uniquement le statut d'une chambre, en journalisant le changement
+// dans room_status_history (comme le font déjà checkIn/checkOut).
+async function updateRoomStatus(id, statut) {
+  const [existing] = await pool.query('SELECT * FROM rooms WHERE id = ?', [id]);
+  if (!existing[0]) throw new Error(`Chambre #${id} introuvable`);
+  const ancienStatut = existing[0].statut;
+  if (ancienStatut === statut) return existing[0];
+
+  return withTransaction(async (conn) => {
+    await conn.query('UPDATE rooms SET statut = ? WHERE id = ?', [statut, id]);
+    await conn.query(
+      `INSERT INTO room_status_history (room_id, ancien_statut, nouveau_statut, changed_at)
+       VALUES (?, ?, ?, NOW())`,
+      [id, ancienStatut, statut]
+    );
+    const [updated] = await conn.query('SELECT * FROM rooms WHERE id = ?', [id]);
+    return updated[0];
+  });
+}
+
+// Récupère un équipement par son code (unique)
+async function getEquipmentByCode(code) {
+  const [rows] = await pool.query('SELECT * FROM equipments WHERE code = ?', [code]);
+  if (!rows[0]) throw new Error(`Équipement de code "${code}" introuvable`);
+  return rows[0];
+}
+
+// Liste des catégories d'équipements distinctes (pour peupler des filtres/selects)
+async function getEquipmentCategories() {
+  const [rows] = await pool.query(
+    `SELECT DISTINCT categorie FROM equipments
+     WHERE categorie IS NOT NULL AND categorie != '' ORDER BY categorie`
+  );
+  return rows.map((r) => r.categorie);
+}
+
+// Statistiques agrégées des équipements : total au référentiel, répartition par
+// catégorie, et répartition par statut des installations en chambre (room_equipments).
+async function getEquipmentStats() {
+  const [totals] = await pool.query('SELECT COUNT(*) AS total FROM equipments');
+  const [parCategorie] = await pool.query(
+    `SELECT COALESCE(categorie, 'NON_CATEGORISE') AS categorie, COUNT(*) AS total
+     FROM equipments GROUP BY categorie`
+  );
+  const [parStatutInstallation] = await pool.query(
+    `SELECT statut, COUNT(*) AS total FROM room_equipments GROUP BY statut`
+  );
+  return {
+    total_equipments: totals[0].total,
+    par_categorie: parCategorie,
+    installations_par_statut: parStatutInstallation,
+  };
+}
+
+// Met à jour uniquement le statut d'un équipement installé dans une chambre
+async function updateRoomEquipmentStatus(id, statut) {
+  const [existing] = await pool.query('SELECT * FROM room_equipments WHERE id = ?', [id]);
+  if (!existing[0]) throw new Error(`Équipement de chambre #${id} introuvable`);
+  await pool.query('UPDATE room_equipments SET statut = ? WHERE id = ?', [statut, id]);
+  const [updated] = await pool.query('SELECT * FROM room_equipments WHERE id = ?', [id]);
+  return updated[0];
+}
+
+// Statistiques agrégées sur le parc de chambres : total, répartition par statut,
+// taux d'occupation, répartition par type de chambre.
+async function getRoomStats() {
+  const [totals] = await pool.query('SELECT COUNT(*) AS total FROM rooms');
+  const [parStatut] = await pool.query('SELECT statut, COUNT(*) AS total FROM rooms GROUP BY statut');
+  const [parType] = await pool.query(
+    `SELECT rt.nom AS room_type, COUNT(r.id) AS total
+     FROM rooms r JOIN room_types rt ON rt.id = r.room_type_id
+     GROUP BY rt.nom`
+  );
+  const total = totals[0].total;
+  const occupees = parStatut.find((r) => r.statut === 'OCCUPEE')?.total || 0;
+  const tauxOccupation = total > 0 ? Number((occupees / total).toFixed(4)) : 0;
+  return {
+    total,
+    taux_occupation: tauxOccupation,
+    par_statut: parStatut,
+    par_type: parType,
+  };
+}
+
+// Met à jour uniquement le statut d'une tâche de housekeeping.
+// Si le nouveau statut est TERMINE et qu'aucune completed_at n'est encore posée,
+// on la fixe automatiquement à NOW().
+async function updateHousekeepingStatus(id, statut) {
+  const [existing] = await pool.query('SELECT * FROM housekeeping_tasks WHERE id = ?', [id]);
+  if (!existing[0]) throw new Error(`Tâche de housekeeping #${id} introuvable`);
+
+  const shouldCompleteNow = statut === 'TERMINE' && !existing[0].completed_at;
+  if (shouldCompleteNow) {
+    await pool.query(
+      'UPDATE housekeeping_tasks SET statut = ?, completed_at = NOW() WHERE id = ?',
+      [statut, id]
+    );
+  } else {
+    await pool.query('UPDATE housekeeping_tasks SET statut = ? WHERE id = ?', [statut, id]);
+  }
+
+  const [updated] = await pool.query('SELECT * FROM housekeeping_tasks WHERE id = ?', [id]);
+  return updated[0];
+}
+
+// Statistiques agrégées des tâches de housekeeping : total, répartition par
+// statut et par type de tâche.
+async function getHousekeepingStats() {
+  const [totals] = await pool.query('SELECT COUNT(*) AS total FROM housekeeping_tasks');
+  const [parStatut] = await pool.query(
+    'SELECT statut, COUNT(*) AS total FROM housekeeping_tasks GROUP BY statut'
+  );
+  const [parType] = await pool.query(
+    'SELECT type_tache, COUNT(*) AS total FROM housekeeping_tasks GROUP BY type_tache'
+  );
+  return {
+    total: totals[0].total,
+    par_statut: parStatut,
+    par_type_tache: parType,
+  };
+}
+
 async function availableRooms({ typeId } = {}) {
   let sql = `SELECT * FROM rooms WHERE statut = 'LIBRE'`;
   const params = [];
@@ -175,4 +360,7 @@ module.exports = {
   RoomStatusHistory, Reservations, ReservationGuests, Stays, HousekeepingTasks,
   LostAndFound, MinibarConsumptions,
   isRoomAvailable, createReservationWithGuests, checkIn, checkOut, availableRooms,
+  updateMaintenanceStatus, getMaintenanceStats, getReservationStats,
+  updateRoomStatus, getEquipmentByCode, getEquipmentCategories, getEquipmentStats,
+  updateRoomEquipmentStatus, getRoomStats, updateHousekeepingStatus, getHousekeepingStats,
 };
