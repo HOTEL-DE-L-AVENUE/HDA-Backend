@@ -65,9 +65,96 @@ async function checkOutHandler(req, res) {
   }
 }
 
+async function updateMaintenanceStatusHandler(req, res) {
+  const { statut } = req.body;
+  if (!statut) throw ApiError.badRequest('statut est requis');
+  try {
+    const maintenance = await heb.updateMaintenanceStatus(req.params.id, statut);
+    return ok(res, maintenance);
+  } catch (err) {
+    throw ApiError.badRequest(err.message);
+  }
+}
+
+async function maintenanceStatsHandler(req, res) {
+  const stats = await heb.getMaintenanceStats();
+  return ok(res, stats);
+}
+
+async function reservationStatsHandler(req, res) {
+  const stats = await heb.getReservationStats();
+  return ok(res, stats);
+}
+
+async function updateRoomStatusHandler(req, res) {
+  const { statut } = req.body;
+  if (!statut) throw ApiError.badRequest('statut est requis');
+  try {
+    const room = await heb.updateRoomStatus(req.params.id, statut);
+    return ok(res, room);
+  } catch (err) {
+    throw ApiError.badRequest(err.message);
+  }
+}
+
+async function equipmentByCodeHandler(req, res) {
+  try {
+    const equipment = await heb.getEquipmentByCode(req.params.code);
+    return ok(res, equipment);
+  } catch (err) {
+    throw ApiError.notFound(err.message);
+  }
+}
+
+async function equipmentCategoriesHandler(req, res) {
+  const categories = await heb.getEquipmentCategories();
+  return ok(res, categories);
+}
+
+async function equipmentStatsHandler(req, res) {
+  const stats = await heb.getEquipmentStats();
+  return ok(res, stats);
+}
+
+async function updateRoomEquipmentStatusHandler(req, res) {
+  const { statut } = req.body;
+  if (!statut) throw ApiError.badRequest('statut est requis');
+  try {
+    const roomEquipment = await heb.updateRoomEquipmentStatus(req.params.id, statut);
+    return ok(res, roomEquipment);
+  } catch (err) {
+    throw ApiError.badRequest(err.message);
+  }
+}
+
+async function roomStatsHandler(req, res) {
+  const stats = await heb.getRoomStats();
+  return ok(res, stats);
+}
+
+async function updateHousekeepingStatusHandler(req, res) {
+  const { statut } = req.body;
+  if (!statut) throw ApiError.badRequest('statut est requis');
+  try {
+    const task = await heb.updateHousekeepingStatus(req.params.id, statut);
+    return ok(res, task);
+  } catch (err) {
+    throw ApiError.badRequest(err.message);
+  }
+}
+
+async function housekeepingStatsHandler(req, res) {
+  const stats = await heb.getHousekeepingStats();
+  return ok(res, stats);
+}
+
 module.exports = {
   roomTypesCrud, roomsCrud, equipmentsCrud, roomEquipmentsCrud, roomMaintenanceCrud,
   roomMinibarCrud, roomStatusHistoryCrud, reservationsCrud, reservationGuestsCrud,
   staysCrud, housekeepingCrud, lostAndFoundCrud, minibarConsumptionsCrud,
   availabilityHandler, availableRoomsHandler, createReservationHandler, checkInHandler, checkOutHandler,
+  updateMaintenanceStatusHandler, maintenanceStatsHandler, reservationStatsHandler,
+  updateRoomStatusHandler, equipmentByCodeHandler, equipmentCategoriesHandler,
+  equipmentStatsHandler, updateRoomEquipmentStatusHandler,
+  roomStatsHandler, updateHousekeepingStatusHandler, housekeepingStatsHandler,
 };
