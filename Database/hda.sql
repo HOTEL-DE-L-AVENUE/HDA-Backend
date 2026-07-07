@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Hôte : 127.0.0.1
--- Généré le : lun. 06 juil. 2026 à 09:39
+-- Généré le : mar. 07 juil. 2026 à 10:34
 -- Version du serveur : 10.4.32-MariaDB
 -- Version de PHP : 8.2.12
 
@@ -66,11 +66,24 @@ INSERT INTO `audit_logs` (`id`, `user_id`, `action`, `entite`, `entite_id`, `pay
 
 CREATE TABLE `casino_cards` (
   `id` bigint(20) UNSIGNED NOT NULL,
-  `client_id` bigint(20) UNSIGNED DEFAULT NULL,
-  `numero_carte` varchar(100) DEFAULT NULL,
-  `niveau` varchar(30) DEFAULT NULL,
-  `points` bigint(20) DEFAULT 0
+  `client_id` bigint(20) UNSIGNED NOT NULL,
+  `numero_carte` varchar(100) NOT NULL,
+  `qr_code` varchar(150) NOT NULL COMMENT 'Valeur encodée dans le QR, scannée en caisse',
+  `niveau` enum('STANDARD','SILVER','GOLD','VIP') NOT NULL DEFAULT 'STANDARD',
+  `points` bigint(20) NOT NULL DEFAULT 0,
+  `plafond_credit` bigint(20) UNSIGNED DEFAULT NULL COMMENT 'Surcharge du plafond par défaut (direction)',
+  `statut` enum('ACTIVE','SUSPENDUE','PERDUE') NOT NULL DEFAULT 'ACTIVE',
+  `date_emission` date DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Déchargement des données de la table `casino_cards`
+--
+
+INSERT INTO `casino_cards` (`id`, `client_id`, `numero_carte`, `qr_code`, `niveau`, `points`, `plafond_credit`, `statut`, `date_emission`, `created_at`, `updated_at`) VALUES
+(1, 1, 'CARD-001', 'QR-CARD-001', 'STANDARD', 0, 1000000, 'ACTIVE', '2026-07-07', '2026-07-07 11:24:15', '2026-07-07 11:24:15');
 
 -- --------------------------------------------------------
 
@@ -80,19 +93,77 @@ CREATE TABLE `casino_cards` (
 
 CREATE TABLE `casino_cashiers` (
   `id` bigint(20) UNSIGNED NOT NULL,
-  `room_id` bigint(20) UNSIGNED DEFAULT NULL,
-  `nom` varchar(100) DEFAULT NULL,
-  `statut` varchar(30) DEFAULT NULL
+  `room_id` bigint(20) UNSIGNED NOT NULL,
+  `code` varchar(30) NOT NULL,
+  `nom` varchar(100) NOT NULL,
+  `statut` enum('OUVERTE','FERMEE','MAINTENANCE') NOT NULL DEFAULT 'FERMEE',
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
 -- Déchargement des données de la table `casino_cashiers`
 --
 
-INSERT INTO `casino_cashiers` (`id`, `room_id`, `nom`, `statut`) VALUES
-(1, 2, '1', 'OUVERTE'),
-(2, 1, 'Caisse 1', 'OUVERTE'),
-(3, 4, 'Caisse pour poker', 'OUVERTE');
+INSERT INTO `casino_cashiers` (`id`, `room_id`, `code`, `nom`, `statut`, `created_at`, `updated_at`) VALUES
+(1, 1, 'CAISSE-01', 'Caisse N-01', 'OUVERTE', '2026-07-07 11:18:30', '2026-07-07 11:18:30'),
+(2, 1, 'CAISSE-02', 'Caisse N-02', 'OUVERTE', '2026-07-07 11:19:07', '2026-07-07 11:19:07');
+
+-- --------------------------------------------------------
+
+--
+-- Structure de la table `casino_cashier_sessions`
+--
+
+CREATE TABLE `casino_cashier_sessions` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `cashier_id` bigint(20) UNSIGNED NOT NULL,
+  `user_id` bigint(20) UNSIGNED NOT NULL COMMENT 'Caissier connecté',
+  `ouverture_at` datetime NOT NULL,
+  `fermeture_at` datetime DEFAULT NULL,
+  `fond_initial` bigint(20) UNSIGNED NOT NULL DEFAULT 0,
+  `fond_final_declare` bigint(20) UNSIGNED DEFAULT NULL COMMENT 'Comptage physique à la fermeture',
+  `fond_final_theorique` bigint(20) DEFAULT NULL COMMENT 'fond_initial + entrées - sorties',
+  `ecart` bigint(20) DEFAULT NULL COMMENT 'déclaré - théorique',
+  `statut` enum('OUVERTE','FERMEE') NOT NULL DEFAULT 'OUVERTE',
+  `commentaire` text DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Déchargement des données de la table `casino_cashier_sessions`
+--
+
+INSERT INTO `casino_cashier_sessions` (`id`, `cashier_id`, `user_id`, `ouverture_at`, `fermeture_at`, `fond_initial`, `fond_final_declare`, `fond_final_theorique`, `ecart`, `statut`, `commentaire`, `created_at`) VALUES
+(1, 1, 1, '2026-07-07 11:20:03', NULL, 10000, NULL, NULL, NULL, 'OUVERTE', NULL, '2026-07-07 11:20:03');
+
+-- --------------------------------------------------------
+
+--
+-- Structure de la table `casino_cash_operations`
+--
+
+CREATE TABLE `casino_cash_operations` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `cashier_session_id` bigint(20) UNSIGNED NOT NULL,
+  `client_id` bigint(20) UNSIGNED DEFAULT NULL COMMENT 'NULL si aucune carte/aucun client sélectionné',
+  `client_libre` varchar(150) DEFAULT NULL COMMENT 'Nom libre si client non enregistré',
+  `type_operation` enum('BUY_IN','CASH_OUT','AVANCE_CREDIT','REMBOURSEMENT_CREDIT','DEPOT','AUTRE') NOT NULL,
+  `montant` bigint(20) UNSIGNED NOT NULL,
+  `moyen_paiement` enum('ESPECES','CARTE','MOBILE_MONEY','VIREMENT') NOT NULL DEFAULT 'ESPECES',
+  `credit_id` bigint(20) UNSIGNED DEFAULT NULL COMMENT 'Référence si AVANCE_CREDIT / REMBOURSEMENT_CREDIT',
+  `ref_flux_global` varchar(64) DEFAULT NULL COMMENT 'Référence de liaison vers financial_transactions',
+  `created_by` bigint(20) UNSIGNED NOT NULL COMMENT 'Caissier connecté',
+  `created_at` datetime DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Déchargement des données de la table `casino_cash_operations`
+--
+
+INSERT INTO `casino_cash_operations` (`id`, `cashier_session_id`, `client_id`, `client_libre`, `type_operation`, `montant`, `moyen_paiement`, `credit_id`, `ref_flux_global`, `created_by`, `created_at`) VALUES
+(1, 1, 1, NULL, 'BUY_IN', 10000, 'ESPECES', NULL, '832f139e-07d2-4c7e-aee3-7a0c50fe96c0', 1, '2026-07-07 11:20:58'),
+(2, 1, 1, NULL, 'BUY_IN', 10000, 'ESPECES', NULL, '194efdde-5228-475f-8e6b-3eaa1e848cd2', 1, '2026-07-07 11:21:18');
 
 -- --------------------------------------------------------
 
@@ -102,21 +173,53 @@ INSERT INTO `casino_cashiers` (`id`, `room_id`, `nom`, `statut`) VALUES
 
 CREATE TABLE `casino_chip_transactions` (
   `id` bigint(20) UNSIGNED NOT NULL,
+  `chip_type_id` bigint(20) UNSIGNED NOT NULL,
+  `cashier_session_id` bigint(20) UNSIGNED NOT NULL,
   `client_id` bigint(20) UNSIGNED DEFAULT NULL,
-  `session_id` bigint(20) UNSIGNED DEFAULT NULL,
-  `transaction_type` varchar(50) DEFAULT NULL,
-  `quantite` int(11) DEFAULT NULL,
-  `valeur_unitaire` bigint(20) UNSIGNED DEFAULT NULL,
-  `created_at` datetime DEFAULT NULL
+  `client_libre` varchar(150) DEFAULT NULL,
+  `type_operation` enum('ACHAT','REPRISE') NOT NULL COMMENT 'ACHAT = client prend des jetons, REPRISE = client rend des jetons',
+  `quantite` int(11) UNSIGNED NOT NULL,
+  `valeur_unitaire` bigint(20) UNSIGNED NOT NULL COMMENT 'Copie du prix du jeton au moment T',
+  `montant_total` bigint(20) UNSIGNED GENERATED ALWAYS AS (`quantite` * `valeur_unitaire`) STORED,
+  `moyen_paiement` enum('ESPECES','CARTE','MOBILE_MONEY','VIREMENT') NOT NULL DEFAULT 'ESPECES',
+  `ref_flux_global` varchar(64) DEFAULT NULL,
+  `created_by` bigint(20) UNSIGNED NOT NULL,
+  `created_at` datetime DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+-- --------------------------------------------------------
+
 --
--- Déchargement des données de la table `casino_chip_transactions`
+-- Structure de la table `casino_chip_types`
 --
 
-INSERT INTO `casino_chip_transactions` (`id`, `client_id`, `session_id`, `transaction_type`, `quantite`, `valeur_unitaire`, `created_at`) VALUES
-(1, 1, NULL, 'REPRISE', 100, 200, '2026-07-06 09:47:04'),
-(2, 1, NULL, 'ACHAT', 100, 1111, '2026-07-06 10:14:31');
+CREATE TABLE `casino_chip_types` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `code` varchar(30) NOT NULL,
+  `nom` varchar(100) NOT NULL,
+  `valeur_nominale` bigint(20) UNSIGNED NOT NULL COMMENT 'Prix / valeur du jeton en Ariary',
+  `couleur` varchar(30) DEFAULT NULL,
+  `statut` enum('ACTIF','INACTIF') NOT NULL DEFAULT 'ACTIF',
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Structure de la table `casino_client_profiles`
+--
+
+CREATE TABLE `casino_client_profiles` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `client_id` bigint(20) UNSIGNED NOT NULL,
+  `statut_special` enum('NORMAL','VIP','A_SURVEILLER','EXCLU','AUTO_EXCLU') NOT NULL DEFAULT 'NORMAL',
+  `motif` text DEFAULT NULL,
+  `date_effet` date DEFAULT NULL,
+  `decide_par` bigint(20) UNSIGNED DEFAULT NULL COMMENT 'user_id ayant validé la décision (toujours humaine)',
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
 
@@ -126,11 +229,54 @@ INSERT INTO `casino_chip_transactions` (`id`, `client_id`, `session_id`, `transa
 
 CREATE TABLE `casino_credits` (
   `id` bigint(20) UNSIGNED NOT NULL,
-  `client_id` bigint(20) UNSIGNED DEFAULT NULL,
-  `montant_accorde` bigint(20) UNSIGNED DEFAULT NULL,
-  `encours` bigint(20) UNSIGNED DEFAULT NULL,
+  `client_id` bigint(20) UNSIGNED NOT NULL,
+  `session_id` bigint(20) UNSIGNED DEFAULT NULL COMMENT 'Session de caisse à l''origine de l''octroi',
+  `montant_accorde` bigint(20) UNSIGNED NOT NULL,
+  `encours` bigint(20) UNSIGNED NOT NULL,
+  `date_octroi` datetime NOT NULL DEFAULT current_timestamp(),
   `echeance` date DEFAULT NULL,
-  `statut` varchar(30) DEFAULT NULL
+  `statut` enum('ACTIF','SOLDE','EN_RETARD','LITIGE') NOT NULL DEFAULT 'ACTIF',
+  `ref_flux_global` varchar(64) DEFAULT NULL,
+  `created_by` bigint(20) UNSIGNED DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Structure de la table `casino_credit_repayments`
+--
+
+CREATE TABLE `casino_credit_repayments` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `credit_id` bigint(20) UNSIGNED NOT NULL,
+  `montant` bigint(20) UNSIGNED NOT NULL,
+  `date_remboursement` datetime NOT NULL DEFAULT current_timestamp(),
+  `delai_jours` int(11) DEFAULT NULL COMMENT 'delta vs échéance, négatif = en avance',
+  `moyen_paiement` enum('ESPECES','CARTE','MOBILE_MONEY','VIREMENT') DEFAULT NULL,
+  `ref_flux_global` varchar(64) DEFAULT NULL,
+  `created_by` bigint(20) UNSIGNED DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Structure de la table `casino_incidents`
+--
+
+CREATE TABLE `casino_incidents` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `client_id` bigint(20) UNSIGNED NOT NULL,
+  `session_id` bigint(20) UNSIGNED DEFAULT NULL,
+  `type` enum('INCIDENT','LITIGE') NOT NULL,
+  `gravite` enum('FAIBLE','MOYENNE','ELEVEE') NOT NULL DEFAULT 'FAIBLE',
+  `description` text NOT NULL,
+  `statut` enum('OUVERT','EN_COURS','RESOLU') NOT NULL DEFAULT 'OUVERT',
+  `created_by` bigint(20) UNSIGNED DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp(),
+  `resolved_at` datetime DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -141,20 +287,20 @@ CREATE TABLE `casino_credits` (
 
 CREATE TABLE `casino_rooms` (
   `id` bigint(20) UNSIGNED NOT NULL,
-  `nom` varchar(100) DEFAULT NULL,
-  `type_salle` varchar(50) DEFAULT NULL,
-  `statut` varchar(30) DEFAULT NULL
+  `code` varchar(30) NOT NULL,
+  `nom` varchar(100) NOT NULL,
+  `type_salle` enum('VIP','POKER','MACHINES','TABLE_JEUX','AUTRE') NOT NULL DEFAULT 'AUTRE',
+  `statut` enum('OUVERTE','FERMEE','EN_TRAVAUX') NOT NULL DEFAULT 'OUVERTE',
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
 -- Déchargement des données de la table `casino_rooms`
 --
 
-INSERT INTO `casino_rooms` (`id`, `nom`, `type_salle`, `statut`) VALUES
-(1, '1', 'VIP', 'EN_TRAVAUX'),
-(2, 'V2', 'VIP', 'OUVERTE'),
-(3, 'V3', 'VIP', 'OUVERTE'),
-(4, 'Salle Pker', 'POKER', 'OUVERTE');
+INSERT INTO `casino_rooms` (`id`, `code`, `nom`, `type_salle`, `statut`, `created_at`, `updated_at`) VALUES
+(1, 'SALLES-VIP', 'salle VIP', 'VIP', 'OUVERTE', '2026-07-07 11:14:02', '2026-07-07 11:14:02');
 
 -- --------------------------------------------------------
 
@@ -164,61 +310,45 @@ INSERT INTO `casino_rooms` (`id`, `nom`, `type_salle`, `statut`) VALUES
 
 CREATE TABLE `casino_scores` (
   `id` bigint(20) UNSIGNED NOT NULL,
-  `client_id` bigint(20) UNSIGNED DEFAULT NULL,
-  `score` int(11) DEFAULT NULL,
-  `categorie` varchar(30) DEFAULT NULL,
-  `details` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`details`))
+  `client_id` bigint(20) UNSIGNED NOT NULL,
+  `score` decimal(5,2) NOT NULL,
+  `categorie` enum('BON','MOYEN','MAUVAIS') NOT NULL,
+  `facteurs` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL COMMENT 'Détail des facteurs et poids ayant produit le score (traçabilité)' CHECK (json_valid(`facteurs`)),
+  `calcule_le` datetime NOT NULL DEFAULT current_timestamp(),
+  `decision` enum('AUCUNE','VALIDEE','CONTESTEE','ANNULEE') NOT NULL DEFAULT 'AUCUNE' COMMENT 'Le score seul ne bloque jamais : toute conséquence lourde exige une décision humaine',
+  `decide_par` bigint(20) UNSIGNED DEFAULT NULL,
+  `decide_le` datetime DEFAULT NULL,
+  `commentaire_contestation` text DEFAULT NULL COMMENT 'Explication/contestation du client ou du staff'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
 
 --
--- Structure de la table `casino_sessions`
+-- Structure de la table `casino_scoring_config`
 --
 
-CREATE TABLE `casino_sessions` (
+CREATE TABLE `casino_scoring_config` (
   `id` bigint(20) UNSIGNED NOT NULL,
-  `cashier_id` bigint(20) UNSIGNED DEFAULT NULL,
-  `user_id` bigint(20) UNSIGNED DEFAULT NULL,
-  `ouverture_at` datetime DEFAULT NULL,
-  `fermeture_at` datetime DEFAULT NULL,
-  `fond_initial` bigint(20) UNSIGNED DEFAULT NULL,
-  `fond_final` bigint(20) UNSIGNED DEFAULT NULL,
-  `ecart` bigint(20) DEFAULT NULL
+  `cle` varchar(80) NOT NULL COMMENT 'ex: plafond_credit_defaut, poids_ratio_remboursement, seuil_bon_payeur',
+  `valeur` varchar(255) NOT NULL,
+  `description` varchar(255) DEFAULT NULL,
+  `updated_by` bigint(20) UNSIGNED DEFAULT NULL,
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
--- Déchargement des données de la table `casino_sessions`
+-- Déchargement des données de la table `casino_scoring_config`
 --
 
-INSERT INTO `casino_sessions` (`id`, `cashier_id`, `user_id`, `ouverture_at`, `fermeture_at`, `fond_initial`, `fond_final`, `ecart`) VALUES
-(1, 1, 1, '2026-07-03 15:33:27', NULL, 10, NULL, NULL),
-(2, 2, 1, '2026-07-06 09:41:56', NULL, 100, NULL, NULL);
-
--- --------------------------------------------------------
-
---
--- Structure de la table `casino_transactions`
---
-
-CREATE TABLE `casino_transactions` (
-  `id` bigint(20) UNSIGNED NOT NULL,
-  `client_id` bigint(20) UNSIGNED DEFAULT NULL,
-  `session_id` bigint(20) UNSIGNED DEFAULT NULL,
-  `type_transaction` varchar(50) DEFAULT NULL,
-  `montant` bigint(20) DEFAULT NULL,
-  `moyen_paiement` varchar(30) DEFAULT NULL,
-  `created_at` datetime DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
---
--- Déchargement des données de la table `casino_transactions`
---
-
-INSERT INTO `casino_transactions` (`id`, `client_id`, `session_id`, `type_transaction`, `montant`, `moyen_paiement`, `created_at`) VALUES
-(2, 1, 1, 'GAIN', 1000, 'ESPECES', '2026-07-03 15:39:01'),
-(3, 1, 1, 'RACHAT_JETONS', 100, 'MOBILE_MONEY', '2026-07-06 09:37:03'),
-(4, 1, 1, 'DEPOT', 20000, 'CARTE', '2026-07-06 09:37:59');
+INSERT INTO `casino_scoring_config` (`id`, `cle`, `valeur`, `description`, `updated_by`, `updated_at`) VALUES
+(1, 'plafond_credit_defaut', '500000', 'Plafond de crédit par défaut (Ariary), surchargeable par carte', NULL, '2026-07-07 11:11:18'),
+(2, 'poids_ratio_remboursement', '0.40', 'Poids du ratio (montants remboursés / accordés)', NULL, '2026-07-07 11:11:18'),
+(3, 'poids_retard_moyen', '0.25', 'Poids du retard moyen de remboursement (jours)', NULL, '2026-07-07 11:11:18'),
+(4, 'poids_encours_vs_plafond', '0.20', 'Poids du taux d\'utilisation du plafond', NULL, '2026-07-07 11:11:18'),
+(5, 'poids_anciennete', '0.10', 'Poids de l\'ancienneté du client (mois)', NULL, '2026-07-07 11:11:18'),
+(6, 'poids_regularite', '0.05', 'Poids de la régularité des visites/opérations', NULL, '2026-07-07 11:11:18'),
+(7, 'seuil_bon_payeur', '75', 'Score >= seuil => catégorie BON', NULL, '2026-07-07 11:11:18'),
+(8, 'seuil_moyen_payeur', '50', 'Score >= seuil (et < seuil_bon_payeur) => catégorie MOYEN, sinon MAUVAIS', NULL, '2026-07-07 11:11:18');
 
 -- --------------------------------------------------------
 
@@ -228,11 +358,22 @@ INSERT INTO `casino_transactions` (`id`, `client_id`, `session_id`, `type_transa
 
 CREATE TABLE `casino_visits` (
   `id` bigint(20) UNSIGNED NOT NULL,
-  `client_id` bigint(20) UNSIGNED DEFAULT NULL,
-  `room_id` bigint(20) UNSIGNED DEFAULT NULL,
-  `entree_at` datetime DEFAULT NULL,
-  `sortie_at` datetime DEFAULT NULL
+  `client_id` bigint(20) UNSIGNED NOT NULL,
+  `room_id` bigint(20) UNSIGNED NOT NULL,
+  `card_id` bigint(20) UNSIGNED DEFAULT NULL,
+  `entree_at` datetime NOT NULL,
+  `sortie_at` datetime DEFAULT NULL,
+  `entree_via` enum('QR','MANUEL') NOT NULL DEFAULT 'MANUEL',
+  `created_at` datetime DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Déchargement des données de la table `casino_visits`
+--
+
+INSERT INTO `casino_visits` (`id`, `client_id`, `room_id`, `card_id`, `entree_at`, `sortie_at`, `entree_via`, `created_at`) VALUES
+(1, 1, 1, NULL, '2026-07-07 11:24:59', '2026-07-07 11:25:16', 'MANUEL', '2026-07-07 11:24:59'),
+(2, 1, 1, NULL, '2026-07-07 11:25:08', '2026-07-07 11:25:17', 'MANUEL', '2026-07-07 11:25:08');
 
 -- --------------------------------------------------------
 
@@ -338,9 +479,20 @@ CREATE TABLE `financial_transactions` (
   `type_flux` varchar(30) DEFAULT NULL,
   `montant` bigint(20) DEFAULT NULL,
   `reference_id` bigint(20) DEFAULT NULL,
+  `ref_flux_global` varchar(64) DEFAULT NULL,
   `description` text DEFAULT NULL,
+  `statut_sync` enum('PENDING','SYNCED','ERROR') NOT NULL DEFAULT 'PENDING',
+  `synced_at` datetime DEFAULT NULL,
   `created_at` datetime DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Déchargement des données de la table `financial_transactions`
+--
+
+INSERT INTO `financial_transactions` (`id`, `client_id`, `module`, `type_flux`, `montant`, `reference_id`, `ref_flux_global`, `description`, `statut_sync`, `synced_at`, `created_at`) VALUES
+(1, 1, 'CASINO', 'ENTREE_CAISSE_CASINO', 10000, 1, '832f139e-07d2-4c7e-aee3-7a0c50fe96c0', 'BUY_IN caisse casino', 'SYNCED', NULL, '2026-07-07 11:20:58'),
+(2, 1, 'CASINO', 'ENTREE_CAISSE_CASINO', 10000, 2, '194efdde-5228-475f-8e6b-3eaa1e848cd2', 'BUY_IN caisse casino', 'SYNCED', NULL, '2026-07-07 11:21:18');
 
 -- --------------------------------------------------------
 
@@ -919,6 +1071,81 @@ INSERT INTO `users` (`id_admin`, `nom`, `prenom`, `email`, `mot_de_passe`, `role
 (5, 'Lefevre', 'Nicolas', 'nicolas.water@hda.com', '$2b$10$ckkBl6c1ImigmKR/eEwkEutKH4uzn1tD28ZxJqLwovbsWPsju5mlS', 'water', 'actif', '2026-06-30 11:31:13'),
 (6, 'Rousseau', 'Claire', 'claire.housekeeping@hda.com', '$2b$10$ibosLGjTRMDUkrGHUF2k6uJDVI97V2uoygzQQ5WSaRZ9qaYfOioUW', 'housekeeping', 'actif', '2026-06-30 11:31:13');
 
+-- --------------------------------------------------------
+
+--
+-- Doublure de structure pour la vue `v_casino_ecarts_caisse`
+-- (Voir ci-dessous la vue réelle)
+--
+CREATE TABLE `v_casino_ecarts_caisse` (
+`session_id` bigint(20) unsigned
+,`caisse` varchar(100)
+,`salle` varchar(100)
+,`user_id` bigint(20) unsigned
+,`ouverture_at` datetime
+,`fermeture_at` datetime
+,`fond_initial` bigint(20) unsigned
+,`fond_final_theorique` bigint(20)
+,`fond_final_declare` bigint(20) unsigned
+,`ecart` bigint(20)
+);
+
+-- --------------------------------------------------------
+
+--
+-- Doublure de structure pour la vue `v_casino_encours_credit`
+-- (Voir ci-dessous la vue réelle)
+--
+CREATE TABLE `v_casino_encours_credit` (
+`client_id` bigint(20) unsigned
+,`client` varchar(201)
+,`nb_credits_actifs` bigint(21)
+,`encours_total` decimal(42,0)
+,`prochaine_echeance` date
+);
+
+-- --------------------------------------------------------
+
+--
+-- Doublure de structure pour la vue `v_casino_produit_net_jour`
+-- (Voir ci-dessous la vue réelle)
+--
+CREATE TABLE `v_casino_produit_net_jour` (
+`room_id` bigint(20) unsigned
+,`salle` varchar(100)
+,`jour` date
+,`total_entrees` decimal(42,0)
+,`total_sorties` decimal(42,0)
+,`produit_net` decimal(43,0)
+);
+
+-- --------------------------------------------------------
+
+--
+-- Structure de la vue `v_casino_ecarts_caisse`
+--
+DROP TABLE IF EXISTS `v_casino_ecarts_caisse`;
+
+CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v_casino_ecarts_caisse`  AS SELECT `cs`.`id` AS `session_id`, `c`.`nom` AS `caisse`, `r`.`nom` AS `salle`, `cs`.`user_id` AS `user_id`, `cs`.`ouverture_at` AS `ouverture_at`, `cs`.`fermeture_at` AS `fermeture_at`, `cs`.`fond_initial` AS `fond_initial`, `cs`.`fond_final_theorique` AS `fond_final_theorique`, `cs`.`fond_final_declare` AS `fond_final_declare`, `cs`.`ecart` AS `ecart` FROM ((`casino_cashier_sessions` `cs` join `casino_cashiers` `c` on(`c`.`id` = `cs`.`cashier_id`)) join `casino_rooms` `r` on(`r`.`id` = `c`.`room_id`)) ;
+
+-- --------------------------------------------------------
+
+--
+-- Structure de la vue `v_casino_encours_credit`
+--
+DROP TABLE IF EXISTS `v_casino_encours_credit`;
+
+CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v_casino_encours_credit`  AS SELECT `cl`.`id` AS `client_id`, concat(`cl`.`nom`,' ',coalesce(`cl`.`prenom`,'')) AS `client`, count(`cr`.`id`) AS `nb_credits_actifs`, sum(`cr`.`encours`) AS `encours_total`, max(`cr`.`echeance`) AS `prochaine_echeance` FROM (`casino_credits` `cr` join `clients` `cl` on(`cl`.`id` = `cr`.`client_id`)) WHERE `cr`.`statut` in ('ACTIF','EN_RETARD') GROUP BY `cl`.`id`, `cl`.`nom`, `cl`.`prenom` ;
+
+-- --------------------------------------------------------
+
+--
+-- Structure de la vue `v_casino_produit_net_jour`
+--
+DROP TABLE IF EXISTS `v_casino_produit_net_jour`;
+
+CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v_casino_produit_net_jour`  AS SELECT `r`.`id` AS `room_id`, `r`.`nom` AS `salle`, cast(`co`.`created_at` as date) AS `jour`, sum(case when `co`.`type_operation` in ('BUY_IN','DEPOT') then `co`.`montant` else 0 end) AS `total_entrees`, sum(case when `co`.`type_operation` in ('CASH_OUT','REMBOURSEMENT_CREDIT') then `co`.`montant` else 0 end) AS `total_sorties`, sum(case when `co`.`type_operation` in ('BUY_IN','DEPOT') then `co`.`montant` else 0 end) - sum(case when `co`.`type_operation` in ('CASH_OUT','REMBOURSEMENT_CREDIT') then `co`.`montant` else 0 end) AS `produit_net` FROM (((`casino_cash_operations` `co` join `casino_cashier_sessions` `cs` on(`cs`.`id` = `co`.`cashier_session_id`)) join `casino_cashiers` `c` on(`c`.`id` = `cs`.`cashier_id`)) join `casino_rooms` `r` on(`r`.`id` = `c`.`room_id`)) GROUP BY `r`.`id`, `r`.`nom`, cast(`co`.`created_at` as date) ;
+
 --
 -- Index pour les tables déchargées
 --
@@ -935,67 +1162,112 @@ ALTER TABLE `audit_logs`
 --
 ALTER TABLE `casino_cards`
   ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `numero_carte` (`numero_carte`),
-  ADD KEY `client_id` (`client_id`);
+  ADD UNIQUE KEY `uq_cards_numero` (`numero_carte`),
+  ADD UNIQUE KEY `uq_cards_qr` (`qr_code`),
+  ADD KEY `idx_cards_client` (`client_id`);
 
 --
 -- Index pour la table `casino_cashiers`
 --
 ALTER TABLE `casino_cashiers`
   ADD PRIMARY KEY (`id`),
-  ADD KEY `room_id` (`room_id`);
+  ADD UNIQUE KEY `uq_casino_cashiers_code` (`code`),
+  ADD KEY `idx_casino_cashiers_room` (`room_id`);
+
+--
+-- Index pour la table `casino_cashier_sessions`
+--
+ALTER TABLE `casino_cashier_sessions`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_one_open_session_per_cashier` (`cashier_id`,`statut`),
+  ADD KEY `idx_sessions_cashier` (`cashier_id`),
+  ADD KEY `idx_sessions_user` (`user_id`),
+  ADD KEY `idx_sessions_statut` (`statut`);
+
+--
+-- Index pour la table `casino_cash_operations`
+--
+ALTER TABLE `casino_cash_operations`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_cashops_ref_flux` (`ref_flux_global`),
+  ADD KEY `idx_cashops_session` (`cashier_session_id`),
+  ADD KEY `idx_cashops_client` (`client_id`),
+  ADD KEY `idx_cashops_type` (`type_operation`),
+  ADD KEY `fk_cashops_credit` (`credit_id`);
 
 --
 -- Index pour la table `casino_chip_transactions`
 --
 ALTER TABLE `casino_chip_transactions`
   ADD PRIMARY KEY (`id`),
-  ADD KEY `client_id` (`client_id`),
-  ADD KEY `casino_chip_transactions_ibfk_2` (`session_id`);
+  ADD UNIQUE KEY `uq_chiptx_ref_flux` (`ref_flux_global`),
+  ADD KEY `idx_chiptx_session` (`cashier_session_id`),
+  ADD KEY `idx_chiptx_client` (`client_id`),
+  ADD KEY `idx_chiptx_type` (`chip_type_id`);
+
+--
+-- Index pour la table `casino_chip_types`
+--
+ALTER TABLE `casino_chip_types`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_chip_types_code` (`code`);
+
+--
+-- Index pour la table `casino_client_profiles`
+--
+ALTER TABLE `casino_client_profiles`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_profile_client` (`client_id`);
 
 --
 -- Index pour la table `casino_credits`
 --
 ALTER TABLE `casino_credits`
   ADD PRIMARY KEY (`id`),
-  ADD KEY `client_id` (`client_id`);
+  ADD KEY `idx_credits_client` (`client_id`);
+
+--
+-- Index pour la table `casino_credit_repayments`
+--
+ALTER TABLE `casino_credit_repayments`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_repayments_credit` (`credit_id`);
+
+--
+-- Index pour la table `casino_incidents`
+--
+ALTER TABLE `casino_incidents`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_incidents_client` (`client_id`);
 
 --
 -- Index pour la table `casino_rooms`
 --
 ALTER TABLE `casino_rooms`
-  ADD PRIMARY KEY (`id`);
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_casino_rooms_code` (`code`);
 
 --
 -- Index pour la table `casino_scores`
 --
 ALTER TABLE `casino_scores`
   ADD PRIMARY KEY (`id`),
-  ADD KEY `client_id` (`client_id`);
+  ADD KEY `idx_scores_client` (`client_id`);
 
 --
--- Index pour la table `casino_sessions`
+-- Index pour la table `casino_scoring_config`
 --
-ALTER TABLE `casino_sessions`
+ALTER TABLE `casino_scoring_config`
   ADD PRIMARY KEY (`id`),
-  ADD KEY `cashier_id` (`cashier_id`),
-  ADD KEY `user_id` (`user_id`);
-
---
--- Index pour la table `casino_transactions`
---
-ALTER TABLE `casino_transactions`
-  ADD PRIMARY KEY (`id`),
-  ADD KEY `client_id` (`client_id`),
-  ADD KEY `session_id` (`session_id`);
+  ADD UNIQUE KEY `uq_scoring_config_cle` (`cle`);
 
 --
 -- Index pour la table `casino_visits`
 --
 ALTER TABLE `casino_visits`
   ADD PRIMARY KEY (`id`),
-  ADD KEY `client_id` (`client_id`),
-  ADD KEY `room_id` (`room_id`);
+  ADD KEY `idx_visits_client` (`client_id`),
+  ADD KEY `idx_visits_room` (`room_id`);
 
 --
 -- Index pour la table `categories`
@@ -1030,6 +1302,7 @@ ALTER TABLE `equipments`
 --
 ALTER TABLE `financial_transactions`
   ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_financial_ref_flux` (`ref_flux_global`),
   ADD KEY `client_id` (`client_id`),
   ADD KEY `idx_financial_module` (`module`);
 
@@ -1297,19 +1570,43 @@ ALTER TABLE `audit_logs`
 -- AUTO_INCREMENT pour la table `casino_cards`
 --
 ALTER TABLE `casino_cards`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT pour la table `casino_cashiers`
 --
 ALTER TABLE `casino_cashiers`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+
+--
+-- AUTO_INCREMENT pour la table `casino_cashier_sessions`
+--
+ALTER TABLE `casino_cashier_sessions`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+
+--
+-- AUTO_INCREMENT pour la table `casino_cash_operations`
+--
+ALTER TABLE `casino_cash_operations`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT pour la table `casino_chip_transactions`
 --
 ALTER TABLE `casino_chip_transactions`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT pour la table `casino_chip_types`
+--
+ALTER TABLE `casino_chip_types`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT pour la table `casino_client_profiles`
+--
+ALTER TABLE `casino_client_profiles`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT pour la table `casino_credits`
@@ -1318,10 +1615,22 @@ ALTER TABLE `casino_credits`
   MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
+-- AUTO_INCREMENT pour la table `casino_credit_repayments`
+--
+ALTER TABLE `casino_credit_repayments`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT pour la table `casino_incidents`
+--
+ALTER TABLE `casino_incidents`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
 -- AUTO_INCREMENT pour la table `casino_rooms`
 --
 ALTER TABLE `casino_rooms`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT pour la table `casino_scores`
@@ -1330,22 +1639,16 @@ ALTER TABLE `casino_scores`
   MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
--- AUTO_INCREMENT pour la table `casino_sessions`
+-- AUTO_INCREMENT pour la table `casino_scoring_config`
 --
-ALTER TABLE `casino_sessions`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
-
---
--- AUTO_INCREMENT pour la table `casino_transactions`
---
-ALTER TABLE `casino_transactions`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+ALTER TABLE `casino_scoring_config`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
 
 --
 -- AUTO_INCREMENT pour la table `casino_visits`
 --
 ALTER TABLE `casino_visits`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT pour la table `categories`
@@ -1375,7 +1678,7 @@ ALTER TABLE `equipments`
 -- AUTO_INCREMENT pour la table `financial_transactions`
 --
 ALTER TABLE `financial_transactions`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT pour la table `housekeeping_tasks`
@@ -1595,53 +1898,72 @@ ALTER TABLE `audit_logs`
 -- Contraintes pour la table `casino_cards`
 --
 ALTER TABLE `casino_cards`
-  ADD CONSTRAINT `casino_cards_ibfk_1` FOREIGN KEY (`client_id`) REFERENCES `clients` (`id`);
+  ADD CONSTRAINT `fk_cards_client` FOREIGN KEY (`client_id`) REFERENCES `clients` (`id`);
 
 --
 -- Contraintes pour la table `casino_cashiers`
 --
 ALTER TABLE `casino_cashiers`
-  ADD CONSTRAINT `casino_cashiers_ibfk_1` FOREIGN KEY (`room_id`) REFERENCES `casino_rooms` (`id`);
+  ADD CONSTRAINT `fk_cashiers_room` FOREIGN KEY (`room_id`) REFERENCES `casino_rooms` (`id`);
+
+--
+-- Contraintes pour la table `casino_cashier_sessions`
+--
+ALTER TABLE `casino_cashier_sessions`
+  ADD CONSTRAINT `fk_sessions_cashier` FOREIGN KEY (`cashier_id`) REFERENCES `casino_cashiers` (`id`);
+
+--
+-- Contraintes pour la table `casino_cash_operations`
+--
+ALTER TABLE `casino_cash_operations`
+  ADD CONSTRAINT `fk_cashops_client` FOREIGN KEY (`client_id`) REFERENCES `clients` (`id`),
+  ADD CONSTRAINT `fk_cashops_credit` FOREIGN KEY (`credit_id`) REFERENCES `casino_credits` (`id`),
+  ADD CONSTRAINT `fk_cashops_session` FOREIGN KEY (`cashier_session_id`) REFERENCES `casino_cashier_sessions` (`id`);
 
 --
 -- Contraintes pour la table `casino_chip_transactions`
 --
 ALTER TABLE `casino_chip_transactions`
-  ADD CONSTRAINT `casino_chip_transactions_ibfk_1` FOREIGN KEY (`client_id`) REFERENCES `clients` (`id`),
-  ADD CONSTRAINT `casino_chip_transactions_ibfk_2` FOREIGN KEY (`session_id`) REFERENCES `casino_sessions` (`id`);
+  ADD CONSTRAINT `fk_chiptx_client` FOREIGN KEY (`client_id`) REFERENCES `clients` (`id`),
+  ADD CONSTRAINT `fk_chiptx_session` FOREIGN KEY (`cashier_session_id`) REFERENCES `casino_cashier_sessions` (`id`),
+  ADD CONSTRAINT `fk_chiptx_type` FOREIGN KEY (`chip_type_id`) REFERENCES `casino_chip_types` (`id`);
+
+--
+-- Contraintes pour la table `casino_client_profiles`
+--
+ALTER TABLE `casino_client_profiles`
+  ADD CONSTRAINT `fk_profile_client` FOREIGN KEY (`client_id`) REFERENCES `clients` (`id`);
 
 --
 -- Contraintes pour la table `casino_credits`
 --
 ALTER TABLE `casino_credits`
-  ADD CONSTRAINT `casino_credits_ibfk_1` FOREIGN KEY (`client_id`) REFERENCES `clients` (`id`);
+  ADD CONSTRAINT `fk_credits_client` FOREIGN KEY (`client_id`) REFERENCES `clients` (`id`);
+
+--
+-- Contraintes pour la table `casino_credit_repayments`
+--
+ALTER TABLE `casino_credit_repayments`
+  ADD CONSTRAINT `fk_repayments_credit` FOREIGN KEY (`credit_id`) REFERENCES `casino_credits` (`id`);
+
+--
+-- Contraintes pour la table `casino_incidents`
+--
+ALTER TABLE `casino_incidents`
+  ADD CONSTRAINT `fk_incidents_client` FOREIGN KEY (`client_id`) REFERENCES `clients` (`id`);
 
 --
 -- Contraintes pour la table `casino_scores`
 --
 ALTER TABLE `casino_scores`
-  ADD CONSTRAINT `casino_scores_ibfk_1` FOREIGN KEY (`client_id`) REFERENCES `clients` (`id`);
-
---
--- Contraintes pour la table `casino_sessions`
---
-ALTER TABLE `casino_sessions`
-  ADD CONSTRAINT `casino_sessions_ibfk_1` FOREIGN KEY (`cashier_id`) REFERENCES `casino_cashiers` (`id`),
-  ADD CONSTRAINT `casino_sessions_ibfk_2` FOREIGN KEY (`user_id`) REFERENCES `users` (`id_admin`);
-
---
--- Contraintes pour la table `casino_transactions`
---
-ALTER TABLE `casino_transactions`
-  ADD CONSTRAINT `casino_transactions_ibfk_1` FOREIGN KEY (`client_id`) REFERENCES `clients` (`id`),
-  ADD CONSTRAINT `casino_transactions_ibfk_2` FOREIGN KEY (`session_id`) REFERENCES `casino_sessions` (`id`);
+  ADD CONSTRAINT `fk_scores_client` FOREIGN KEY (`client_id`) REFERENCES `clients` (`id`);
 
 --
 -- Contraintes pour la table `casino_visits`
 --
 ALTER TABLE `casino_visits`
-  ADD CONSTRAINT `casino_visits_ibfk_1` FOREIGN KEY (`client_id`) REFERENCES `clients` (`id`),
-  ADD CONSTRAINT `casino_visits_ibfk_2` FOREIGN KEY (`room_id`) REFERENCES `casino_rooms` (`id`);
+  ADD CONSTRAINT `fk_visits_client` FOREIGN KEY (`client_id`) REFERENCES `clients` (`id`),
+  ADD CONSTRAINT `fk_visits_room` FOREIGN KEY (`room_id`) REFERENCES `casino_rooms` (`id`);
 
 --
 -- Contraintes pour la table `client_accounts`

@@ -2,7 +2,7 @@
 const express = require('express');
 const ctrl = require('../controllers/casinoController');
 const { createCrudRouter } = require('./routeFactory');
-const { requireAuth } = require('../middlewares/auth');
+const { requireAuth, requireRole } = require('../middlewares/auth');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -89,7 +89,7 @@ router.use('/credits', createCrudRouter(ctrl.creditsCrud));                 // /
 
 // Scoring de crédit (configurable, jamais bloquant à lui seul)
 router.get('/scoring/config', ctrl.getScoringConfigHandler);                // GET  /api/casino/scoring/config                (seuils & poids, paramétrables par la direction)
-router.put('/scoring/config', ctrl.updateScoringConfigHandler);             // PUT  /api/casino/scoring/config                { cle, valeur } — direction uniquement
+router.put('/scoring/config', requireRole('admin', 'manager'), ctrl.updateScoringConfigHandler); // PUT /api/casino/scoring/config { cle, valeur } — direction uniquement (ajuste les rôles à ton système réel)
 router.post('/scoring/:clientId/compute', ctrl.computeScoreHandler);        // POST /api/casino/scoring/:clientId/compute     (recalcul, renvoie score + catégorie + facteurs)
 router.get('/scoring/:clientId/history', ctrl.scoreHistoryHandler);         // GET  /api/casino/scoring/:clientId/history
 router.post('/scoring/:scoreId/decision', ctrl.scoreDecisionHandler);       // POST /api/casino/scoring/:scoreId/decision     { decision: 'VALIDEE'|'CONTESTEE'|'ANNULEE', commentaire } — décision humaine obligatoire
