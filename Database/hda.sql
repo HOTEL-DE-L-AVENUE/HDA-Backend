@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Hôte : 127.0.0.1
--- Généré le : mar. 07 juil. 2026 à 10:34
+-- Généré le : mer. 08 juil. 2026 à 15:33
 -- Version du serveur : 10.4.32-MariaDB
 -- Version de PHP : 8.2.12
 
@@ -56,7 +56,8 @@ INSERT INTO `audit_logs` (`id`, `user_id`, `action`, `entite`, `entite_id`, `pay
 (12, 1, 'LOGIN', 'users', 1, NULL, '2026-07-06 09:34:09'),
 (13, 1, 'LOGIN', 'users', 1, NULL, '2026-07-06 09:34:22'),
 (14, 1, 'LOGIN', 'users', 1, NULL, '2026-07-06 09:34:23'),
-(15, 1, 'LOGIN', 'users', 1, NULL, '2026-07-06 09:36:31');
+(15, 1, 'LOGIN', 'users', 1, NULL, '2026-07-06 09:36:31'),
+(16, 1, 'LOGIN', 'users', 1, NULL, '2026-07-08 11:53:12');
 
 -- --------------------------------------------------------
 
@@ -106,8 +107,10 @@ CREATE TABLE `casino_cashiers` (
 --
 
 INSERT INTO `casino_cashiers` (`id`, `room_id`, `code`, `nom`, `statut`, `created_at`, `updated_at`) VALUES
-(1, 1, 'CAISSE-01', 'Caisse N-01', 'OUVERTE', '2026-07-07 11:18:30', '2026-07-07 11:18:30'),
-(2, 1, 'CAISSE-02', 'Caisse N-02', 'OUVERTE', '2026-07-07 11:19:07', '2026-07-07 11:19:07');
+(1, 1, 'CAISSE-01', 'Caisse N-01', 'FERMEE', '2026-07-07 11:18:30', '2026-07-08 16:33:10'),
+(2, 1, 'CAISSE-02', 'Caisse N-02', 'OUVERTE', '2026-07-07 11:19:07', '2026-07-08 16:23:01'),
+(3, 2, 'C3', 'Caisse pour VIP 2', 'OUVERTE', '2026-07-08 15:38:14', '2026-07-08 15:47:28'),
+(4, 2, 'C4', 'Caisse Pour VIP 2', 'OUVERTE', '2026-07-08 16:25:28', '2026-07-08 16:25:28');
 
 -- --------------------------------------------------------
 
@@ -127,7 +130,8 @@ CREATE TABLE `casino_cashier_sessions` (
   `ecart` bigint(20) DEFAULT NULL COMMENT 'déclaré - théorique',
   `statut` enum('OUVERTE','FERMEE') NOT NULL DEFAULT 'OUVERTE',
   `commentaire` text DEFAULT NULL,
-  `created_at` datetime DEFAULT current_timestamp()
+  `created_at` datetime DEFAULT current_timestamp(),
+  `cashier_id_if_open` bigint(20) UNSIGNED GENERATED ALWAYS AS (if(`statut` = 'OUVERTE',`cashier_id`,NULL)) VIRTUAL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
@@ -135,7 +139,12 @@ CREATE TABLE `casino_cashier_sessions` (
 --
 
 INSERT INTO `casino_cashier_sessions` (`id`, `cashier_id`, `user_id`, `ouverture_at`, `fermeture_at`, `fond_initial`, `fond_final_declare`, `fond_final_theorique`, `ecart`, `statut`, `commentaire`, `created_at`) VALUES
-(1, 1, 1, '2026-07-07 11:20:03', NULL, 10000, NULL, NULL, NULL, 'OUVERTE', NULL, '2026-07-07 11:20:03');
+(1, 1, 1, '2026-07-07 11:20:03', '2026-07-08 16:01:17', 10000, 20000, 20000, 0, 'FERMEE', 'Gain', '2026-07-07 11:20:03'),
+(2, 2, 1, '2026-07-07 11:49:36', '2026-07-08 16:22:53', 1000, 2, -189869000, 189869002, 'FERMEE', 'Gain', '2026-07-07 11:49:36'),
+(3, 3, 1, '2026-07-08 15:39:22', '2026-07-08 15:40:45', 10000, 60000, 60000, 0, 'FERMEE', 'Gain', '2026-07-08 15:39:22'),
+(4, 3, 1, '2026-07-08 15:47:28', NULL, 1000, NULL, NULL, NULL, 'OUVERTE', NULL, '2026-07-08 15:47:28'),
+(5, 1, 1, '2026-07-08 16:16:02', '2026-07-08 16:33:10', 20000, 81000, -81000, 162000, 'FERMEE', 'Gain', '2026-07-08 16:16:02'),
+(6, 2, 1, '2026-07-08 16:23:01', NULL, 200000, NULL, NULL, NULL, 'OUVERTE', NULL, '2026-07-08 16:23:01');
 
 -- --------------------------------------------------------
 
@@ -163,7 +172,8 @@ CREATE TABLE `casino_cash_operations` (
 
 INSERT INTO `casino_cash_operations` (`id`, `cashier_session_id`, `client_id`, `client_libre`, `type_operation`, `montant`, `moyen_paiement`, `credit_id`, `ref_flux_global`, `created_by`, `created_at`) VALUES
 (1, 1, 1, NULL, 'BUY_IN', 10000, 'ESPECES', NULL, '832f139e-07d2-4c7e-aee3-7a0c50fe96c0', 1, '2026-07-07 11:20:58'),
-(2, 1, 1, NULL, 'BUY_IN', 10000, 'ESPECES', NULL, '194efdde-5228-475f-8e6b-3eaa1e848cd2', 1, '2026-07-07 11:21:18');
+(2, 1, 1, NULL, 'BUY_IN', 10000, 'ESPECES', NULL, '194efdde-5228-475f-8e6b-3eaa1e848cd2', 1, '2026-07-07 11:21:18'),
+(3, 1, 1, NULL, 'CASH_OUT', 10000, 'ESPECES', NULL, '48140274-7e39-4924-83b6-714b846b19b2', 1, '2026-07-07 11:50:02');
 
 -- --------------------------------------------------------
 
@@ -187,6 +197,27 @@ CREATE TABLE `casino_chip_transactions` (
   `created_at` datetime DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Déchargement des données de la table `casino_chip_transactions`
+--
+
+INSERT INTO `casino_chip_transactions` (`id`, `chip_type_id`, `cashier_session_id`, `client_id`, `client_libre`, `type_operation`, `quantite`, `valeur_unitaire`, `moyen_paiement`, `ref_flux_global`, `created_by`, `created_at`) VALUES
+(1, 1, 2, 1, NULL, 'ACHAT', 1, 10000, 'ESPECES', 'a6cc8633-af67-48fc-b3e8-42ba061611a6', 1, '2026-07-07 11:57:19'),
+(2, 1, 2, 1, NULL, 'ACHAT', 1, 10000, 'ESPECES', '7f98ba85-9b3e-4f3c-b0b0-20f9d33021c9', 1, '2026-07-07 11:57:27'),
+(3, 1, 2, 1, NULL, 'ACHAT', 1, 10000, 'ESPECES', '2a22eb5c-a600-4b10-b3a4-291ae3f4b7b9', 1, '2026-07-07 15:38:33'),
+(4, 1, 2, 1, NULL, 'ACHAT', 10, 10000, 'ESPECES', '9c5bb00f-f192-4d8c-8aa5-e6741181d7c1', 1, '2026-07-07 15:38:56'),
+(5, 1, 2, 1, NULL, 'ACHAT', 1000, 10000, 'ESPECES', '6f401161-cb47-47e7-8f4c-121fb6ce30c2', 1, '2026-07-08 11:54:54'),
+(6, 1, 2, 1, NULL, 'REPRISE', 20000, 10000, 'ESPECES', '4f61a4bd-3719-4541-8f9f-36dc28128cc7', 1, '2026-07-08 11:55:18'),
+(7, 2, 3, NULL, NULL, 'ACHAT', 20, 1000, 'ESPECES', 'd77507b0-1434-42f4-9afc-e556d9ea48e4', 1, '2026-07-08 15:39:36'),
+(8, 2, 3, 1, NULL, 'ACHAT', 30, 1000, 'ESPECES', 'ea750332-a828-4f06-a50a-1c8eddcedd29', 1, '2026-07-08 15:39:53'),
+(9, 1, 4, 2, NULL, 'ACHAT', 30, 10000, 'ESPECES', '14222e98-46ca-4198-9b2d-bbc2f6a3bd90', 1, '2026-07-08 15:49:30'),
+(10, 2, 4, 2, NULL, 'REPRISE', 10, 1000, 'ESPECES', '2168553f-c885-4148-b5ee-ab6825646ae4', 1, '2026-07-08 15:55:39'),
+(11, 2, 5, 2, NULL, 'ACHAT', 2, 1000, 'ESPECES', 'a5670f4e-a41e-4353-9383-3844d0b180b0', 1, '2026-07-08 16:16:35'),
+(12, 2, 5, 2, NULL, 'REPRISE', 3, 1000, 'ESPECES', '79a267c2-0f6a-46d3-8c14-2a5e6af15c70', 1, '2026-07-08 16:17:02'),
+(13, 1, 5, 2, NULL, 'REPRISE', 10, 10000, 'ESPECES', 'a2e1edb0-dc7b-493b-a3ee-a00c65098f86', 1, '2026-07-08 16:18:06'),
+(14, 2, 6, NULL, 'Bena', 'ACHAT', 100, 1000, 'ESPECES', 'f9712c65-3b09-4adf-bc0c-f360c53afbdd', 1, '2026-07-08 16:23:12'),
+(15, 2, 6, NULL, 'Bena', 'REPRISE', 3, 1000, 'ESPECES', 'fffbc821-164c-4c84-95a7-1c6bb95459a9', 1, '2026-07-08 16:23:22');
+
 -- --------------------------------------------------------
 
 --
@@ -203,6 +234,14 @@ CREATE TABLE `casino_chip_types` (
   `created_at` datetime DEFAULT current_timestamp(),
   `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Déchargement des données de la table `casino_chip_types`
+--
+
+INSERT INTO `casino_chip_types` (`id`, `code`, `nom`, `valeur_nominale`, `couleur`, `statut`, `created_at`, `updated_at`) VALUES
+(1, 'JT-01', 'Jetons 1000', 10000, '#D97757', 'ACTIF', '2026-07-07 11:56:34', '2026-07-07 11:56:34'),
+(2, 'JT-03', 'Jeton 03', 1000, '#3b82f6', 'ACTIF', '2026-07-08 15:26:04', '2026-07-08 15:26:04');
 
 -- --------------------------------------------------------
 
@@ -300,7 +339,8 @@ CREATE TABLE `casino_rooms` (
 --
 
 INSERT INTO `casino_rooms` (`id`, `code`, `nom`, `type_salle`, `statut`, `created_at`, `updated_at`) VALUES
-(1, 'SALLES-VIP', 'salle VIP', 'VIP', 'OUVERTE', '2026-07-07 11:14:02', '2026-07-07 11:14:02');
+(1, 'SALLES-VIP', 'salle VIP', 'VIP', 'OUVERTE', '2026-07-07 11:14:02', '2026-07-07 11:14:02'),
+(2, 'SALLE-VIP-2', 'Salle VIP 2', 'VIP', 'OUVERTE', '2026-07-08 11:54:00', '2026-07-08 11:54:00');
 
 -- --------------------------------------------------------
 
@@ -373,7 +413,8 @@ CREATE TABLE `casino_visits` (
 
 INSERT INTO `casino_visits` (`id`, `client_id`, `room_id`, `card_id`, `entree_at`, `sortie_at`, `entree_via`, `created_at`) VALUES
 (1, 1, 1, NULL, '2026-07-07 11:24:59', '2026-07-07 11:25:16', 'MANUEL', '2026-07-07 11:24:59'),
-(2, 1, 1, NULL, '2026-07-07 11:25:08', '2026-07-07 11:25:17', 'MANUEL', '2026-07-07 11:25:08');
+(2, 1, 1, NULL, '2026-07-07 11:25:08', '2026-07-07 11:25:17', 'MANUEL', '2026-07-07 11:25:08'),
+(3, 1, 1, NULL, '2026-07-08 15:45:28', NULL, 'MANUEL', '2026-07-08 15:45:28');
 
 -- --------------------------------------------------------
 
@@ -436,7 +477,8 @@ CREATE TABLE `clients` (
 --
 
 INSERT INTO `clients` (`id`, `code_client`, `nom`, `prenom`, `telephone`, `email`, `adresse`, `date_naissance`, `type_piece`, `numero_piece`, `photo_url`, `is_casino_player`, `statut`, `created_at`, `updated_at`) VALUES
-(1, '111', 'Feno', 'Mahefa', '+261 34 12 345 69', 'mahefafenosoanobel@gmail.com', 'Vatofotsy', '2026-07-11', 'CNI', '10', NULL, 0, 'BLOCKED', NULL, NULL);
+(1, '111', 'Feno', 'Mahefa', '+261 34 12 345 69', 'mahefafenosoanobel@gmail.com', 'Vatofotsy', '2026-07-11', 'CNI', '10', NULL, 1, 'ACTIF', NULL, NULL),
+(2, NULL, 'Rako', 'Besolomaso', '0334658234', NULL, NULL, NULL, NULL, NULL, NULL, 1, 'ACTIF', '2026-07-08 12:49:26', NULL);
 
 -- --------------------------------------------------------
 
@@ -492,7 +534,23 @@ CREATE TABLE `financial_transactions` (
 
 INSERT INTO `financial_transactions` (`id`, `client_id`, `module`, `type_flux`, `montant`, `reference_id`, `ref_flux_global`, `description`, `statut_sync`, `synced_at`, `created_at`) VALUES
 (1, 1, 'CASINO', 'ENTREE_CAISSE_CASINO', 10000, 1, '832f139e-07d2-4c7e-aee3-7a0c50fe96c0', 'BUY_IN caisse casino', 'SYNCED', NULL, '2026-07-07 11:20:58'),
-(2, 1, 'CASINO', 'ENTREE_CAISSE_CASINO', 10000, 2, '194efdde-5228-475f-8e6b-3eaa1e848cd2', 'BUY_IN caisse casino', 'SYNCED', NULL, '2026-07-07 11:21:18');
+(2, 1, 'CASINO', 'ENTREE_CAISSE_CASINO', 10000, 2, '194efdde-5228-475f-8e6b-3eaa1e848cd2', 'BUY_IN caisse casino', 'SYNCED', NULL, '2026-07-07 11:21:18'),
+(3, 1, 'CASINO', 'SORTIE_CAISSE_CASINO', 10000, 3, '48140274-7e39-4924-83b6-714b846b19b2', 'CASH_OUT caisse casino', 'SYNCED', NULL, '2026-07-07 11:50:02'),
+(4, 1, 'CASINO', 'ENTREE_CAISSE_CASINO', 10000, 1, 'a6cc8633-af67-48fc-b3e8-42ba061611a6', 'ACHAT 1 jeton(s) Jetons 1000', 'SYNCED', NULL, '2026-07-07 11:57:19'),
+(5, 1, 'CASINO', 'ENTREE_CAISSE_CASINO', 10000, 2, '7f98ba85-9b3e-4f3c-b0b0-20f9d33021c9', 'ACHAT 1 jeton(s) Jetons 1000', 'SYNCED', NULL, '2026-07-07 11:57:27'),
+(6, 1, 'CASINO', 'ENTREE_CAISSE_CASINO', 10000, 3, '2a22eb5c-a600-4b10-b3a4-291ae3f4b7b9', 'ACHAT 1 jeton(s) Jetons 1000', 'SYNCED', NULL, '2026-07-07 15:38:33'),
+(7, 1, 'CASINO', 'ENTREE_CAISSE_CASINO', 100000, 4, '9c5bb00f-f192-4d8c-8aa5-e6741181d7c1', 'ACHAT 10 jeton(s) Jetons 1000', 'SYNCED', NULL, '2026-07-07 15:38:56'),
+(8, 1, 'CASINO', 'ENTREE_CAISSE_CASINO', 10000000, 5, '6f401161-cb47-47e7-8f4c-121fb6ce30c2', 'ACHAT 1000 jeton(s) Jetons 1000', 'SYNCED', NULL, '2026-07-08 11:54:54'),
+(9, 1, 'CASINO', 'SORTIE_CAISSE_CASINO', 200000000, 6, '4f61a4bd-3719-4541-8f9f-36dc28128cc7', 'REPRISE 20000 jeton(s) Jetons 1000', 'SYNCED', NULL, '2026-07-08 11:55:18'),
+(10, NULL, 'CASINO', 'ENTREE_CAISSE_CASINO', 20000, 7, 'd77507b0-1434-42f4-9afc-e556d9ea48e4', 'ACHAT 20 jeton(s) Jeton 03', 'SYNCED', NULL, '2026-07-08 15:39:36'),
+(11, 1, 'CASINO', 'ENTREE_CAISSE_CASINO', 30000, 8, 'ea750332-a828-4f06-a50a-1c8eddcedd29', 'ACHAT 30 jeton(s) Jeton 03', 'SYNCED', NULL, '2026-07-08 15:39:53'),
+(12, 2, 'CASINO', 'ENTREE_CAISSE_CASINO', 300000, 9, '14222e98-46ca-4198-9b2d-bbc2f6a3bd90', 'ACHAT 30 jeton(s) Jetons 1000', 'SYNCED', NULL, '2026-07-08 15:49:30'),
+(13, 2, 'CASINO', 'SORTIE_CAISSE_CASINO', 10000, 10, '2168553f-c885-4148-b5ee-ab6825646ae4', 'REPRISE 10 jeton(s) Jeton 03', 'SYNCED', NULL, '2026-07-08 15:55:39'),
+(14, 2, 'CASINO', 'ENTREE_CAISSE_CASINO', 2000, 11, 'a5670f4e-a41e-4353-9383-3844d0b180b0', 'ACHAT 2 jeton(s) Jeton 03', 'SYNCED', NULL, '2026-07-08 16:16:35'),
+(15, 2, 'CASINO', 'SORTIE_CAISSE_CASINO', 3000, 12, '79a267c2-0f6a-46d3-8c14-2a5e6af15c70', 'REPRISE 3 jeton(s) Jeton 03', 'SYNCED', NULL, '2026-07-08 16:17:02'),
+(16, 2, 'CASINO', 'SORTIE_CAISSE_CASINO', 100000, 13, 'a2e1edb0-dc7b-493b-a3ee-a00c65098f86', 'REPRISE 10 jeton(s) Jetons 1000', 'SYNCED', NULL, '2026-07-08 16:18:07'),
+(17, NULL, 'CASINO', 'ENTREE_CAISSE_CASINO', 100000, 14, 'f9712c65-3b09-4adf-bc0c-f360c53afbdd', 'ACHAT 100 jeton(s) Jeton 03', 'SYNCED', NULL, '2026-07-08 16:23:12'),
+(18, NULL, 'CASINO', 'SORTIE_CAISSE_CASINO', 3000, 15, 'fffbc821-164c-4c84-95a7-1c6bb95459a9', 'REPRISE 3 jeton(s) Jeton 03', 'SYNCED', NULL, '2026-07-08 16:23:22');
 
 -- --------------------------------------------------------
 
@@ -1179,7 +1237,7 @@ ALTER TABLE `casino_cashiers`
 --
 ALTER TABLE `casino_cashier_sessions`
   ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `uq_one_open_session_per_cashier` (`cashier_id`,`statut`),
+  ADD UNIQUE KEY `uq_one_open_session_per_cashier` (`cashier_id_if_open`),
   ADD KEY `idx_sessions_cashier` (`cashier_id`),
   ADD KEY `idx_sessions_user` (`user_id`),
   ADD KEY `idx_sessions_statut` (`statut`);
@@ -1564,7 +1622,7 @@ ALTER TABLE `users`
 -- AUTO_INCREMENT pour la table `audit_logs`
 --
 ALTER TABLE `audit_logs`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=16;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=17;
 
 --
 -- AUTO_INCREMENT pour la table `casino_cards`
@@ -1576,31 +1634,31 @@ ALTER TABLE `casino_cards`
 -- AUTO_INCREMENT pour la table `casino_cashiers`
 --
 ALTER TABLE `casino_cashiers`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
 
 --
 -- AUTO_INCREMENT pour la table `casino_cashier_sessions`
 --
 ALTER TABLE `casino_cashier_sessions`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
 
 --
 -- AUTO_INCREMENT pour la table `casino_cash_operations`
 --
 ALTER TABLE `casino_cash_operations`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 
 --
 -- AUTO_INCREMENT pour la table `casino_chip_transactions`
 --
 ALTER TABLE `casino_chip_transactions`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=16;
 
 --
 -- AUTO_INCREMENT pour la table `casino_chip_types`
 --
 ALTER TABLE `casino_chip_types`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT pour la table `casino_client_profiles`
@@ -1630,7 +1688,7 @@ ALTER TABLE `casino_incidents`
 -- AUTO_INCREMENT pour la table `casino_rooms`
 --
 ALTER TABLE `casino_rooms`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT pour la table `casino_scores`
@@ -1648,7 +1706,7 @@ ALTER TABLE `casino_scoring_config`
 -- AUTO_INCREMENT pour la table `casino_visits`
 --
 ALTER TABLE `casino_visits`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 
 --
 -- AUTO_INCREMENT pour la table `categories`
@@ -1660,7 +1718,7 @@ ALTER TABLE `categories`
 -- AUTO_INCREMENT pour la table `clients`
 --
 ALTER TABLE `clients`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT pour la table `client_accounts`
@@ -1678,7 +1736,7 @@ ALTER TABLE `equipments`
 -- AUTO_INCREMENT pour la table `financial_transactions`
 --
 ALTER TABLE `financial_transactions`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=19;
 
 --
 -- AUTO_INCREMENT pour la table `housekeeping_tasks`
