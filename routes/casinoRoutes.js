@@ -62,6 +62,9 @@ router.use('/incidents', createCrudRouter(ctrl.incidentsCrud));              // 
 // =====================================================================
 router.use('/chip-types', createCrudRouter(ctrl.chipTypesCrud));             // /api/casino/chip-types
 
+// Achat par jetons (echanger des jetons contre des articles ou services, rattaché à une session de caisse)
+router.post('/chips/pay', ctrl.payWithChipsHandler);
+
 // Mouvements de jetons (achat / reprise), rattachés à une session de caisse
 router.post('/chips/buy', ctrl.buyChipsHandler);                             // POST /api/casino/chips/buy   { session_id, chip_type_id, quantite, client_id?|client_libre?, moyen_paiement }
 router.post('/chips/sell', ctrl.sellChipsHandler);                          // POST /api/casino/chips/sell  { session_id, chip_type_id, quantite, client_id?|client_libre?, moyen_paiement }
