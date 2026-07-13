@@ -37,6 +37,20 @@ aujourd'hui** — Boutique et Hébergement n'ont pas encore de table de session
 de caisse dédiée en base ; un transfert impliquant ces modules renvoie
 **400**.
 
+Chaque objet transfert renvoyé (par tous les endpoints de lecture/écriture
+ci-dessous) est **enrichi côté serveur** avec le code de la caisse, quand il
+est résolvable :
+
+| Champ | Description |
+|---|---|
+| `cashier_source_code` / `cashier_source_nom` | Résolus par jointure `casino_cashier_sessions → casino_cashiers` si `module_source = 'CASINO'`, sinon `null` |
+| `cashier_destination_code` / `cashier_destination_nom` | Idem pour `module_destination` |
+
+Seul **CASINO** est résolu pour l'instant — les autres modules n'ont pas de
+table de caisse dédiée exploitable de la même façon. Le frontend doit
+toujours prévoir un repli sur `module_x (session #id)` quand ces champs sont
+`null`.
+
 ---
 
 ## `POST /`
@@ -74,9 +88,14 @@ les identifiants de session **dans leur table respective** : une
   "created_by": 1,
   "confirmed_by": null,
   "created_at": "2026-07-10 18:02:11",
-  "confirmed_at": null
+  "confirmed_at": null,
+  "cashier_source_code": "CAISSE-02",
+  "cashier_source_nom": "Caisse N-02",
+  "cashier_destination_code": null,
+  "cashier_destination_nom": null
 }
 ```
+(`cashier_destination_*` à `null` ici car `RESTAURANT` n'est pas encore résolu — voir « Enrichissement » ci-dessus.)
 
 **400** si :
 - `montant` invalide (absent, ≤ 0)
@@ -110,7 +129,11 @@ Confirme la réception physique. Aucun corps requis.
   "created_by": 1,
   "confirmed_by": 4,
   "created_at": "2026-07-10 18:02:11",
-  "confirmed_at": "2026-07-10 18:05:47"
+  "confirmed_at": "2026-07-10 18:05:47",
+  "cashier_source_code": "CAISSE-02",
+  "cashier_source_nom": "Caisse N-02",
+  "cashier_destination_code": null,
+  "cashier_destination_nom": null
 }
 ```
 
@@ -154,6 +177,22 @@ un montant physique différent de ce qui a été déclaré).
 ```
 
 **409** si le transfert n'est plus `EN_ATTENTE`.
+
+### Corriger un transfert sortant déjà déclaré (pas de `PUT`)
+
+Il n'existe volontairement aucune route de modification d'un transfert
+`EN_ATTENTE` — un transfert déclaré est immuable, pour la traçabilité. Le
+correctif standard, utilisé par le frontend (bouton **« Procéder »** sur un
+transfert sortant), est :
+
+1. `POST /` avec les valeurs corrigées → nouveau transfert
+2. `POST /:id/reject` sur l'ancien, avec `motif_refus: "Remplacé par le transfert #<nouvel_id>"`
+
+Cette séquence n'est pas atomique côté serveur (deux appels distincts) : si
+l'étape 2 échoue après un succès de l'étape 1, les deux transferts restent
+visibles (l'ancien encore `EN_ATTENTE`) — c'est acceptable car aucune
+écriture financière n'a lieu avant confirmation, et l'incohérence reste
+visible et corrigible manuellement via un nouveau `reject`.
 
 ---
 
@@ -201,7 +240,11 @@ sans devoir tout lister puis filtrer côté client.
     "motif": "Appoint pour le service du soir",
     "statut": "EN_ATTENTE",
     "created_by": 1,
-    "created_at": "2026-07-10 18:02:11"
+    "created_at": "2026-07-10 18:02:11",
+    "cashier_source_code": "CAISSE-02",
+    "cashier_source_nom": "Caisse N-02",
+    "cashier_destination_code": null,
+    "cashier_destination_nom": null
   }
 ]
 ```
@@ -231,3 +274,9 @@ faire calculer son solde théorique en intégrant directement `caisse_transfers`
 (`SUM` des transferts confirmés où `module_destination`/`module_source` =
 `'RESTAURANT'` et `session_destination_id`/`session_source_id` = la session
 courante).
+
+Même limitation pour l'enrichissement `cashier_*_code`/`cashier_*_nom` :
+seul `CASINO` est résolu (jointure vers `casino_cashiers`). Tant que
+`RESTAURANT`/`BAR`/`BOUTIQUE`/`HEBERGEMENT` n'ont pas de table de caisse
+avec un champ `code` équivalent, ces champs resteront `null` pour eux — ce
+n'est pas un bug, c'est l'état actuel du schéma.
