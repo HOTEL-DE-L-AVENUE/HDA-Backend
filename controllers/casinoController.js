@@ -61,6 +61,21 @@ async function getOpenSession(conn, sessionId) {
   return rows[0] || null;
 }
 
+/**
+ * Source de vérité du solde consolidé d'un client, tous départements
+ * confondus (`client_accounts.solde`). Positif = le client doit de l'argent
+ * à HDA (encours de crédit). Nécessite la contrainte UNIQUE(client_id)
+ * (migration) pour que ON DUPLICATE KEY UPDATE cible la bonne ligne.
+ */
+async function adjustClientAccountSolde(conn, clientId, delta) {
+  if (!clientId || !delta) return;
+  await conn.query(
+    `INSERT INTO client_accounts (client_id, solde) VALUES (?, ?)
+     ON DUPLICATE KEY UPDATE solde = solde + VALUES(solde)`,
+    [clientId, delta]
+  );
+}
+
 async function getScoringConfigMap(conn) {
   const [rows] = await conn.query(`SELECT cle, valeur FROM casino_scoring_config`);
   const map = {};
@@ -356,8 +371,8 @@ exports.openSessionHandler = async (req, res, next) => {
 async function computeSessionTotals(conn, sessionId) {
   const [[cashTotals]] = await conn.query(
     `SELECT
-       SUM(CASE WHEN type_operation IN ('BUY_IN','DEPOT','REMBOURSEMENT_CREDIT') THEN montant ELSE 0 END) AS entrees,
-       SUM(CASE WHEN type_operation IN ('CASH_OUT','AVANCE_CREDIT') THEN montant ELSE 0 END) AS sorties
+       SUM(CASE WHEN type_operation IN ('BUY_IN','DEPOT','REMBOURSEMENT_CREDIT','TRANSFERT_ENTRANT') THEN montant ELSE 0 END) AS entrees,
+       SUM(CASE WHEN type_operation IN ('CASH_OUT','AVANCE_CREDIT','TRANSFERT_SORTANT') THEN montant ELSE 0 END) AS sorties
      FROM casino_cash_operations WHERE cashier_session_id = ?`,
     [sessionId]
   );
@@ -478,7 +493,14 @@ exports.clientProfileHandler = async (req, res, next) => {
     const [[lastScore]] = await pool.query(
       `SELECT * FROM casino_scores WHERE client_id = ? ORDER BY calcule_le DESC LIMIT 1`, [id]
     );
-    res.json({ client, profile: profile || null, card: card || null, dernier_score: lastScore || null });
+    const [[account]] = await pool.query(`SELECT solde FROM client_accounts WHERE client_id = ?`, [id]);
+    res.json({
+      client,
+      profile: profile || null,
+      card: card || null,
+      dernier_score: lastScore || null,
+      solde_compte: account ? Number(account.solde) : 0,
+    });
   } catch (err) { next(err); }
 };
 
@@ -800,6 +822,7 @@ exports.grantCreditHandler = async (req, res, next) => {
          VALUES (?, ?, ?, ?, NOW(), ?, 'ACTIF', ?)`,
         [client_id, session_id || null, amount, amount, echeance || null, caissierId(req)]
       );
+      await adjustClientAccountSolde(conn, client_id, amount);
       const [[row]] = await conn.query(`SELECT * FROM casino_credits WHERE id = ?`, [result.insertId]);
       return row;
     });
@@ -836,6 +859,7 @@ exports.drawCreditHandler = async (req, res, next) => {
         ref_flux_global: ref,
         description: `Avance sur crédit #${id}`,
       });
+      await adjustClientAccountSolde(conn, credit.client_id, amount);
 
       const [[row]] = await conn.query(`SELECT * FROM casino_cash_operations WHERE id = ?`, [result.insertId]);
       return row;
@@ -870,6 +894,7 @@ exports.repayCreditHandler = async (req, res, next) => {
       const nouvelEncours = Math.max(0, Number(credit.encours) - amount);
       const nouveauStatut = nouvelEncours === 0 ? 'SOLDE' : (delaiJours && delaiJours > 0 ? 'EN_RETARD' : credit.statut);
       await conn.query(`UPDATE casino_credits SET encours = ?, statut = ? WHERE id = ?`, [nouvelEncours, nouveauStatut, id]);
+      await adjustClientAccountSolde(conn, credit.client_id, -amount);
 
       if (session_id) {
         await conn.query(
