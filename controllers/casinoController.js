@@ -44,12 +44,12 @@ function caissierId(req) {
  * casino. Idempotent grâce à `ref_flux_global` (UNIQUE en base) : si la ligne
  * existe déjà, `INSERT IGNORE` ne crée pas de doublon.
  */
-async function recordFinancialTransaction(conn, { client_id = null, type_flux, montant, reference_id, description, ref_flux_global }) {
+async function recordFinancialTransaction(conn, { client_id = null, module = 'CASINO', type_flux, montant, reference_id, description, ref_flux_global }) {
   await conn.query(
     `INSERT IGNORE INTO financial_transactions
        (client_id, module, type_flux, montant, reference_id, ref_flux_global, description, statut_sync, created_at)
-     VALUES (?, 'CASINO', ?, ?, ?, ?, ?, 'SYNCED', NOW())`,
-    [client_id, type_flux, montant, reference_id, ref_flux_global, description]
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'SYNCED', NOW())`,
+    [client_id, module, type_flux, montant, reference_id, ref_flux_global, description]
   );
 }
 
@@ -59,6 +59,21 @@ async function getOpenSession(conn, sessionId) {
     [sessionId]
   );
   return rows[0] || null;
+}
+
+/**
+ * Source de vérité du solde consolidé d'un client, tous départements
+ * confondus (`client_accounts.solde`). Positif = le client doit de l'argent
+ * à HDA (encours de crédit). Nécessite la contrainte UNIQUE(client_id)
+ * (migration) pour que ON DUPLICATE KEY UPDATE cible la bonne ligne.
+ */
+async function adjustClientAccountSolde(conn, clientId, delta) {
+  if (!clientId || !delta) return;
+  await conn.query(
+    `INSERT INTO client_accounts (client_id, solde) VALUES (?, ?)
+     ON DUPLICATE KEY UPDATE solde = solde + VALUES(solde)`,
+    [clientId, delta]
+  );
 }
 
 async function getScoringConfigMap(conn) {
@@ -183,7 +198,7 @@ exports.incidentsCrud = buildCrud('casino_incidents', {
 });
 
 exports.chipTypesCrud = buildCrud('casino_chip_types', {
-  allowedFields: ['code', 'nom', 'valeur_nominale', 'couleur', 'statut'],
+  allowedFields: ['code', 'nom', 'valeur_nominale', 'couleur', 'statut', 'quantite_stock'],
 });
 
 // Lecture seule : la création passe par /chips/buy et /chips/sell
@@ -356,8 +371,8 @@ exports.openSessionHandler = async (req, res, next) => {
 async function computeSessionTotals(conn, sessionId) {
   const [[cashTotals]] = await conn.query(
     `SELECT
-       SUM(CASE WHEN type_operation IN ('BUY_IN','DEPOT','REMBOURSEMENT_CREDIT') THEN montant ELSE 0 END) AS entrees,
-       SUM(CASE WHEN type_operation IN ('CASH_OUT','AVANCE_CREDIT') THEN montant ELSE 0 END) AS sorties
+       SUM(CASE WHEN type_operation IN ('BUY_IN','DEPOT','REMBOURSEMENT_CREDIT','TRANSFERT_ENTRANT') THEN montant ELSE 0 END) AS entrees,
+       SUM(CASE WHEN type_operation IN ('CASH_OUT','AVANCE_CREDIT','TRANSFERT_SORTANT') THEN montant ELSE 0 END) AS sorties
      FROM casino_cash_operations WHERE cashier_session_id = ?`,
     [sessionId]
   );
@@ -478,7 +493,14 @@ exports.clientProfileHandler = async (req, res, next) => {
     const [[lastScore]] = await pool.query(
       `SELECT * FROM casino_scores WHERE client_id = ? ORDER BY calcule_le DESC LIMIT 1`, [id]
     );
-    res.json({ client, profile: profile || null, card: card || null, dernier_score: lastScore || null });
+    const [[account]] = await pool.query(`SELECT solde FROM client_accounts WHERE client_id = ?`, [id]);
+    res.json({
+      client,
+      profile: profile || null,
+      card: card || null,
+      dernier_score: lastScore || null,
+      solde_compte: account ? Number(account.solde) : 0,
+    });
   } catch (err) { next(err); }
 };
 
@@ -597,8 +619,25 @@ async function chipMovement(req, res, next, typeOperation) {
       const session = await getOpenSession(conn, session_id);
       if (!session) throw ApiError.badRequest('Session de caisse introuvable ou fermée');
 
-      const [[chipType]] = await conn.query(`SELECT * FROM casino_chip_types WHERE id = ? AND statut = 'ACTIF'`, [chip_type_id]);
+      // FOR UPDATE : verrouille la ligne le temps de la transaction pour
+      // éviter une survente en cas de mouvements concurrents sur le même type.
+      const [[chipType]] = await conn.query(
+        `SELECT * FROM casino_chip_types WHERE id = ? AND statut = 'ACTIF' FOR UPDATE`,
+        [chip_type_id]
+      );
       if (!chipType) throw ApiError.notFound('Type de jeton introuvable ou inactif');
+
+      if (typeOperation === 'ACHAT' && chipType.quantite_stock < qty) {
+        throw ApiError.conflict(
+          `Stock de jetons insuffisant (disponible : ${chipType.quantite_stock}, demandé : ${qty})`
+        );
+      }
+
+      const stockDelta = typeOperation === 'ACHAT' ? -qty : qty;
+      await conn.query(
+        `UPDATE casino_chip_types SET quantite_stock = quantite_stock + ? WHERE id = ?`,
+        [stockDelta, chip_type_id]
+      );
 
       const ref = genRef();
       const [result] = await conn.query(
@@ -630,6 +669,73 @@ async function chipMovement(req, res, next, typeOperation) {
 
 exports.buyChipsHandler = (req, res, next) => chipMovement(req, res, next, 'ACHAT');
 exports.sellChipsHandler = (req, res, next) => chipMovement(req, res, next, 'REPRISE');
+
+// =====================================================================
+// Paiement en jetons dans un autre département (Restaurant/Bar/Boutique/
+// Hébergement). Distinct de chipMovement : pas de session de caisse casino
+// obligatoire, client_id obligatoire (traçabilité), recette imputée au
+// module cible et non au casino.
+// =====================================================================
+
+const CHIP_PAYMENT_MODULES = ['RESTAURANT', 'BAR', 'BOUTIQUE', 'HEBERGEMENT'];
+
+exports.payWithChipsHandler = async (req, res, next) => {
+  try {
+    const { client_id, chip_type_id, quantite, module_cible, reference_commande_id } = req.body;
+    const qty = Number(quantite);
+
+    if (!client_id) throw ApiError.badRequest('client_id obligatoire pour un paiement en jetons');
+    if (!Number.isInteger(qty) || qty <= 0) throw ApiError.badRequest('quantite invalide');
+    if (!CHIP_PAYMENT_MODULES.includes(module_cible)) {
+      throw ApiError.badRequest(`module_cible invalide (attendu : ${CHIP_PAYMENT_MODULES.join(', ')})`);
+    }
+
+    const tx = await withTransaction(async (conn) => {
+      const [[chipType]] = await conn.query(
+        `SELECT * FROM casino_chip_types WHERE id = ? AND statut = 'ACTIF' FOR UPDATE`,
+        [chip_type_id]
+      );
+      if (!chipType) throw ApiError.notFound('Type de jeton introuvable ou inactif');
+
+      // Les jetons remis au comptoir du module cible reviennent physiquement
+      // à la cage du casino (réconciliation manuelle des espèces/jetons côté
+      // module cible) → le stock casino est réincrémenté immédiatement.
+      await conn.query(
+        `UPDATE casino_chip_types SET quantite_stock = quantite_stock + ? WHERE id = ?`,
+        [qty, chip_type_id]
+      );
+
+      const ref = genRef();
+      const montantTotal = qty * chipType.valeur_nominale;
+
+      const [result] = await conn.query(
+        `INSERT INTO casino_chip_transactions
+           (chip_type_id, cashier_session_id, client_id, client_libre, type_operation, module_cible,
+            reference_commande_id, quantite, valeur_unitaire, moyen_paiement, ref_flux_global, created_by, created_at)
+         VALUES (?, NULL, ?, NULL, 'PAIEMENT', ?, ?, ?, ?, 'JETONS', ?, ?, NOW())`,
+        [chip_type_id, client_id, module_cible, reference_commande_id || null,
+         qty, chipType.valeur_nominale, ref, caissierId(req)]
+      );
+
+      // Recette attribuée au vrai département consommateur, pas au casino,
+      // pour que produit_net / reporting casino ne soit pas gonflé à tort.
+      await recordFinancialTransaction(conn, {
+        client_id,
+        module: module_cible,
+        type_flux: `PAIEMENT_JETONS_${module_cible}`,
+        montant: montantTotal,
+        reference_id: reference_commande_id || result.insertId,
+        ref_flux_global: ref,
+        description: `Paiement en jetons (${qty} × ${chipType.nom}) — ${module_cible}`,
+      });
+
+      const [[row]] = await conn.query(`SELECT * FROM casino_chip_transactions WHERE id = ?`, [result.insertId]);
+      return row;
+    });
+
+    res.status(201).json(tx);
+  } catch (err) { next(err); }
+};
 
 exports.chipHistoryByClientHandler = async (req, res, next) => {
   try {
@@ -716,6 +822,7 @@ exports.grantCreditHandler = async (req, res, next) => {
          VALUES (?, ?, ?, ?, NOW(), ?, 'ACTIF', ?)`,
         [client_id, session_id || null, amount, amount, echeance || null, caissierId(req)]
       );
+      await adjustClientAccountSolde(conn, client_id, amount);
       const [[row]] = await conn.query(`SELECT * FROM casino_credits WHERE id = ?`, [result.insertId]);
       return row;
     });
@@ -752,6 +859,7 @@ exports.drawCreditHandler = async (req, res, next) => {
         ref_flux_global: ref,
         description: `Avance sur crédit #${id}`,
       });
+      await adjustClientAccountSolde(conn, credit.client_id, amount);
 
       const [[row]] = await conn.query(`SELECT * FROM casino_cash_operations WHERE id = ?`, [result.insertId]);
       return row;
@@ -786,6 +894,7 @@ exports.repayCreditHandler = async (req, res, next) => {
       const nouvelEncours = Math.max(0, Number(credit.encours) - amount);
       const nouveauStatut = nouvelEncours === 0 ? 'SOLDE' : (delaiJours && delaiJours > 0 ? 'EN_RETARD' : credit.statut);
       await conn.query(`UPDATE casino_credits SET encours = ?, statut = ? WHERE id = ?`, [nouvelEncours, nouveauStatut, id]);
+      await adjustClientAccountSolde(conn, credit.client_id, -amount);
 
       if (session_id) {
         await conn.query(

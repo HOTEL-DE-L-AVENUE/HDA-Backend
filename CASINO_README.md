@@ -7,6 +7,10 @@ décodé fournit `req.user = { id_admin, role, email }`.
 Format des montants : entiers en Ariary (pas de décimales). Dates : `datetime`
 MySQL (`YYYY-MM-DD HH:MM:SS`) ou `date` (`YYYY-MM-DD`).
 
+> Le transfert de fonds **entre caisses** (casino ↔ restaurant ↔ ...) n'est
+> **pas** documenté ici : c'est un module transversal, monté sous
+> `/api/caisse-transfers` (hors `/api/casino`). Voir `CAISSE_TRANSFERS_README.md`.
+
 ---
 
 ## Tableau de bord & consolidation
@@ -84,6 +88,11 @@ Champs : `room_id, code, nom, statut` (`statut` ∈ `OUVERTE, FERMEE, MAINTENANC
 ```
 `fond_final_theorique = fond_initial + entrées − sorties` (buy-in/dépôts/remboursements en entrée ; cash-out/avances en sortie ; jetons achetés en entrée, jetons repris en sortie). `ecart = déclaré − théorique`.
 
+> Un **transfert de fonds reçu ou envoyé vers une autre caisse** (module
+> `caisse-transfers`, hors `/api/casino`) compte aussi en entrée
+> (`TRANSFERT_ENTRANT`) ou en sortie (`TRANSFERT_SORTANT`) une fois confirmé
+> par la caisse destinataire. Voir `CAISSE_TRANSFERS_README.md`.
+
 ### `GET /sessions/:id/summary`
 **Sortie 200** : `{ session, total_entrees, total_sorties, solde_theorique }` (calcul en direct, session ouverte ou fermée).
 
@@ -107,7 +116,8 @@ Recherche sur `nom, prenom, telephone, code_client`.
 **Sortie 201** : client créé (`is_casino_player = 1`).
 
 ### `GET /clients/:id/profile`
-**Sortie 200** : `{ client, profile, card, dernier_score }` (`profile`/`card`/`dernier_score` = `null` si absents).
+**Sortie 200** : `{ client, profile, card, dernier_score, solde_compte }` (`profile`/`card`/`dernier_score` = `null` si absents).
+`solde_compte` = solde consolidé du client tous départements confondus (`client_accounts.solde`, positif = le client doit de l'argent à HDA — alimenté par les crédits casino accordés/tirés/remboursés). Voir section « Compte client consolidé ».
 
 ### `GET /clients/:id/history`
 **Sortie 200** : `{ visites: [...], salles_frequentees: [{ id, nom, nb_visites }] }`.
@@ -156,7 +166,10 @@ Champs incidents : `client_id, session_id, type (INCIDENT|LITIGE), gravite (FAIB
 ## Jetons
 
 ### `/chip-types` (CRUD standard)
-Champs : `code, nom, valeur_nominale, couleur, statut (ACTIF|INACTIF)`.
+Champs : `code, nom, valeur_nominale, couleur, quantite_stock, statut (ACTIF|INACTIF)`.
+`quantite_stock` = nombre de jetons physiquement disponibles pour ce type ;
+décrémenté par `/chips/buy`, réincrémenté par `/chips/sell` et `/chips/pay`
+(les jetons remis dans un autre département reviennent à la cage casino).
 
 ### `POST /chips/buy` — le client prend des jetons (cash → jetons)
 **Entrée**
@@ -164,13 +177,33 @@ Champs : `code, nom, valeur_nominale, couleur, statut (ACTIF|INACTIF)`.
 { "session_id": 12, "chip_type_id": 2, "quantite": 20,
   "client_id": 55, "moyen_paiement": "ESPECES" }
 ```
-(`client_id` OU `client_libre`, les deux optionnels). **Sortie 201** : mouvement créé, `montant_total` calculé (`quantite × valeur_nominale`), écriture financière générée.
+(`client_id` OU `client_libre`, les deux optionnels). **Sortie 201** : mouvement créé, `montant_total` calculé (`quantite × valeur_nominale`), écriture financière générée. **409** si `quantite_stock` insuffisant (verrou `FOR UPDATE` sur le type de jeton pour éviter la survente en cas d'opérations concurrentes).
 
 ### `POST /chips/sell` — reprise de jetons (jetons → cash)
 Même forme que `/buy`. **Sortie 201**.
 
 ### `GET /chips/by-client/:clientId`
 **Sortie 200** : historique des mouvements de jetons du client, avec `type_jeton`.
+
+### `POST /chips/pay` — paiement en jetons dans un autre département
+Utilisé par Restaurant/Bar/Boutique/Hébergement au moment du checkout d'une
+commande réglée en jetons. **N'est pas rattaché à une session de caisse
+casino** (`session_id` absent) — les jetons remis reviennent physiquement à
+la cage casino, donc le stock du type de jeton est réincrémenté.
+**Entrée**
+```json
+{ "client_id": 55, "chip_type_id": 2, "quantite": 10,
+  "module_cible": "RESTAURANT", "reference_commande_id": 341 }
+```
+`client_id` **obligatoire** (contrairement à `/chips/buy` et `/chips/sell`, un
+paiement en jetons ne peut pas être anonyme). `module_cible` ∈ `RESTAURANT,
+BAR, BOUTIQUE, HEBERGEMENT`. `reference_commande_id` optionnel, permet de
+rattacher le paiement à la commande du module cible.
+**Sortie 201** : mouvement créé (`type_operation: 'PAIEMENT'`), `montant_total`
+calculé, écriture financière générée **dans le module cible** (`module:
+"RESTAURANT"`, etc.) et non dans `CASINO`, pour que le produit net casino ne
+soit pas gonflé à tort. **400** si `client_id` manquant ou `module_cible`
+invalide. **404** si type de jeton introuvable ou inactif.
 
 ### `/chips` (CRUD **lecture seule** — 405 sur create/update/remove)
 
@@ -199,20 +232,42 @@ Toutes nécessitent une session `OUVERTE` (`session_id`), sinon **400**.
 ### `POST /credits/grant`
 **Entrée** `{ "client_id": 55, "montant": 300000, "echeance": "2026-08-01", "session_id": 12 }`
 Vérifie `encours actuel + montant ≤ plafond` (plafond de la carte ou, à défaut, `plafond_credit_defaut` de la config). **409** si dépassement.
-**Sortie 201** : crédit créé (`statut: 'ACTIF'`).
+**Sortie 201** : crédit créé (`statut: 'ACTIF'`). Incrémente `client_accounts.solde` du client de `montant` (voir « Compte client consolidé »).
 
 ### `POST /credits/:id/draw`
 Tirage sur un crédit déjà accordé. **Entrée** `{ "session_id": 12, "montant": 50000, "moyen_paiement": "ESPECES" }`.
-**Sortie 201** : opération de caisse `AVANCE_CREDIT` créée + écriture financière (sortie).
+**Sortie 201** : opération de caisse `AVANCE_CREDIT` créée + écriture financière (sortie). Incrémente `client_accounts.solde` de `montant` (dette supplémentaire).
 
 ### `POST /credits/:id/repay`
 **Entrée** `{ "montant": 100000, "moyen_paiement": "ESPECES", "session_id": 12 }` (`session_id` optionnel : si fourni, trace aussi une opération de caisse `REMBOURSEMENT_CREDIT`).
-**Sortie 201** : le remboursement créé, avec `delai_jours` (retard vs échéance, négatif si en avance). Le crédit voit son `encours` diminuer et son `statut` passer à `SOLDE` si `encours = 0`.
+**Sortie 201** : le remboursement créé, avec `delai_jours` (retard vs échéance, négatif si en avance). Le crédit voit son `encours` diminuer et son `statut` passer à `SOLDE` si `encours = 0`. Décrémente `client_accounts.solde` de `montant`.
 
 ### `GET /credits/by-client/:clientId/active`
 **Sortie 200** : crédits `ACTIF`/`EN_RETARD` du client.
 
 ### `/credits` (CRUD standard)
+
+---
+
+## Compte client consolidé
+
+`client_accounts.solde` est la **source de vérité unique** du solde d'un
+client tous départements confondus (positif = le client doit de l'argent à
+HDA). Contrairement à `casino_credits.encours` (propre à un crédit donné),
+`solde` est la somme vivante, mise à jour en temps réel à chaque octroi,
+tirage ou remboursement de crédit — quel que soit le département qui
+enregistre l'opération.
+
+- Alimenté uniquement par les opérations de crédit casino pour l'instant
+  (`/credits/grant`, `/credits/:id/draw` en `+`, `/credits/:id/repay` en `-`).
+  Si d'autres départements développent leur propre mécanisme de crédit, ils
+  doivent alimenter la **même** table via le même pattern
+  (`INSERT ... ON DUPLICATE KEY UPDATE solde = solde + ?`), pour que
+  `solde_compte` reste consolidé et non dupliqué par département.
+- Exposé en lecture via `GET /clients/:id/profile` → `solde_compte`.
+- Aucune route de modification directe n'est exposée : le solde ne se
+  modifie qu'en conséquence d'une opération de crédit tracée (jamais en
+  écriture libre), pour conserver la traçabilité complète.
 
 ---
 
