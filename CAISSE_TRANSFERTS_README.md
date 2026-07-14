@@ -53,6 +53,41 @@ toujours prévoir un repli sur `module_x (session #id)` quand ces champs sont
 
 ---
 
+## Contrôle de solde à la déclaration
+
+Quand `module_source = 'CASINO'`, `POST /` vérifie que `montant` ne dépasse
+pas le **solde théorique disponible** de la caisse émettrice avant
+d'accepter la déclaration :
+
+```
+solde_disponible = fond_initial + entrées − sorties − transferts_sortants_EN_ATTENTE
+```
+
+- `entrées`/`sorties` répliquent exactement le calcul de
+  `computeSessionTotals()` (`casinoController.js`) : opérations de caisse
+  (`BUY_IN`, `DEPOT`, `REMBOURSEMENT_CREDIT`, `TRANSFERT_ENTRANT` en
+  entrée ; `CASH_OUT`, `AVANCE_CREDIT`, `TRANSFERT_SORTANT` en sortie) **et**
+  mouvements de jetons (`ACHAT` en entrée, `REPRISE` en sortie).
+- `transferts_sortants_EN_ATTENTE` : somme des transferts déjà déclarés
+  depuis cette même session mais pas encore confirmés. Sans cette
+  déduction, deux transferts déclarés coup sur coup (avant confirmation du
+  premier) pourraient ensemble dépasser le solde réel — seule la
+  **confirmation** écrit dans `casino_cash_operations`, la déclaration seule
+  ne réserve rien par défaut.
+- La session source est verrouillée (`FOR UPDATE`) le temps du calcul, pour
+  qu'une déclaration concurrente sur la même caisse ne contourne pas le
+  contrôle.
+- **Non appliqué** si `module_source ≠ 'CASINO'` : pas de ledger
+  équivalent à `casino_cash_operations` pour les autres modules (même
+  limitation que documentée plus bas).
+
+**409** si dépassement :
+```json
+{ "message": "Fonds insuffisants en caisse (disponible : 150000 Ar, demandé : 200000 Ar)" }
+```
+
+---
+
 ## `POST /`
 
 Déclare un transfert (`session_source_id` / `session_destination_id` sont
@@ -106,6 +141,12 @@ les identifiants de session **dans leur table respective** : une
   ```json
   { "message": "Session RESTAURANT #14 introuvable ou fermée" }
   ```
+
+**409** si `module_source = 'CASINO'` et `montant` dépasse le solde
+disponible de la caisse émettrice (voir « Contrôle de solde » ci-dessus) :
+```json
+{ "message": "Fonds insuffisants en caisse (disponible : 150000 Ar, demandé : 200000 Ar)" }
+```
 
 ---
 
@@ -258,7 +299,7 @@ sans devoir tout lister puis filtrer côté client.
 | 400 | Montant invalide, module inconnu ou non pris en charge, caisse source = caisse destination, session introuvable/fermée |
 | 401 | Token manquant/invalide |
 | 404 | Transfert introuvable |
-| 409 | Transfert déjà confirmé/refusé (le workflow ne peut être rejoué) |
+| 409 | Transfert déjà confirmé/refusé (le workflow ne peut être rejoué) ; ou fonds insuffisants en caisse casino émettrice (`POST /`) |
 
 ---
 
