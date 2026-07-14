@@ -68,12 +68,60 @@ async function assertOpenSession(conn, module, sessionId) {
       `Module "${module}" non pris en charge pour les transferts inter-caisses (pas encore de session de caisse dédiée en base)`
     );
   }
+  // FOR UPDATE : verrouille la ligne de session le temps de la transaction,
+  // pour que le contrôle de solde disponible (computeCasinoAvailableBalance)
+  // ne soit pas contourné par deux transferts créés en même temps.
   const [[row]] = await conn.query(
-    `SELECT * FROM \`${cfg.table}\` WHERE id = ? AND ${cfg.openWhere}`,
+    `SELECT * FROM \`${cfg.table}\` WHERE id = ? AND ${cfg.openWhere} FOR UPDATE`,
     [sessionId]
   );
   if (!row) throw ApiError.badRequest(`Session ${module} #${sessionId} introuvable ou fermée`);
   return row;
+}
+
+// =====================================================================
+// Solde disponible en caisse casino, avant d'autoriser un transfert
+// sortant. Réplique le calcul de computeSessionTotals()
+// (casinoController.js) : fond_initial + entrées − sorties, en tenant
+// compte des opérations de caisse ET des mouvements de jetons. À maintenir
+// synchronisé si cette formule évolue côté casinoController.js.
+//
+// Prend aussi en compte les transferts déjà EN_ATTENTE issus de cette même
+// session : sans ça, deux transferts déclarés coup sur coup (avant
+// confirmation du premier) pourraient ensemble dépasser le solde réel,
+// puisque seule la CONFIRMATION écrit dans casino_cash_operations.
+// =====================================================================
+
+async function computeCasinoAvailableBalance(conn, sessionId) {
+  const [[session]] = await conn.query(`SELECT * FROM casino_cashier_sessions WHERE id = ?`, [sessionId]);
+  if (!session) return null;
+
+  const [[cashTotals]] = await conn.query(
+    `SELECT
+       SUM(CASE WHEN type_operation IN ('BUY_IN','DEPOT','REMBOURSEMENT_CREDIT','TRANSFERT_ENTRANT') THEN montant ELSE 0 END) AS entrees,
+       SUM(CASE WHEN type_operation IN ('CASH_OUT','AVANCE_CREDIT','TRANSFERT_SORTANT') THEN montant ELSE 0 END) AS sorties
+     FROM casino_cash_operations WHERE cashier_session_id = ?`,
+    [sessionId]
+  );
+  const [[chipTotals]] = await conn.query(
+    `SELECT
+       SUM(CASE WHEN type_operation = 'ACHAT' THEN montant_total ELSE 0 END) AS entrees,
+       SUM(CASE WHEN type_operation = 'REPRISE' THEN montant_total ELSE 0 END) AS sorties
+     FROM casino_chip_transactions WHERE cashier_session_id = ?`,
+    [sessionId]
+  );
+  const entrees = Number(cashTotals.entrees || 0) + Number(chipTotals.entrees || 0);
+  const sorties = Number(cashTotals.sorties || 0) + Number(chipTotals.sorties || 0);
+  const fondTheorique = Number(session.fond_initial) + entrees - sorties;
+
+  const [[pending]] = await conn.query(
+    `SELECT COALESCE(SUM(montant), 0) AS total
+       FROM caisse_transfers
+      WHERE module_source = 'CASINO' AND session_source_id = ? AND statut = 'EN_ATTENTE'`,
+    [sessionId]
+  );
+
+  return fondTheorique - Number(pending.total || 0);
 }
 
 // =====================================================================
@@ -135,6 +183,15 @@ exports.createCaisseTransferHandler = async (req, res, next) => {
     const transfer = await withTransaction(async (conn) => {
       await assertOpenSession(conn, module_source, session_source_id);
       await assertOpenSession(conn, module_destination, session_destination_id);
+
+      if (module_source === 'CASINO') {
+        const disponible = await computeCasinoAvailableBalance(conn, session_source_id);
+        if (amount > disponible) {
+          throw ApiError.conflict(
+            `Fonds insuffisants en caisse (disponible : ${disponible} Ar, demandé : ${amount} Ar)`
+          );
+        }
+      }
 
       const [result] = await conn.query(
         `INSERT INTO caisse_transfers
