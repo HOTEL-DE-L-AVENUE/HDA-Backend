@@ -1,9 +1,16 @@
 // controllers/clientController.js
-const { Clients, ClientAccounts, LoyaltyPoints, findByClientId, search, adjustAccountBalance } = require('../models/clientModel');
+const {
+  Clients, ClientAccounts, LoyaltyPoints,
+  findByClientId, search, adjustAccountBalance,
+  findKycByClientId, upsertKyc,
+} = require('../models/clientModel');
+const { findLatestSignature, findSignatureHistory, createSignature } = require('../models/signatureModel');
 const { createCrudController } = require('./controllerFactory');
-const { renderClient, renderClientWithAccount } = require('../views/clientView');
+const { renderClient, renderClientWithKyc, renderKyc } = require('../views/clientView');
 const ApiError = require('../utils/ApiError');
-const { ok } = require('../utils/apiResponse');
+const { ok, created } = require('../utils/apiResponse');
+
+const NIVEAUX_RISQUE = ['FAIBLE', 'MOYEN', 'ELEVE'];
 
 const clientsCrud = createCrudController(Clients, {
   filterable: ['statut', 'is_casino_player'],
@@ -13,8 +20,11 @@ const clientsCrud = createCrudController(Clients, {
 async function getOneWithAccount(req, res) {
   const client = await Clients.findById(req.params.id);
   if (!client) throw ApiError.notFound(`Client #${req.params.id} introuvable`);
-  const account = await findByClientId(req.params.id);
-  return ok(res, renderClientWithAccount(client, account));
+  const [account, kyc] = await Promise.all([
+    findByClientId(req.params.id),
+    findKycByClientId(req.params.id),
+  ]);
+  return ok(res, renderClientWithKyc(client, account, kyc));
 }
 
 async function searchClients(req, res) {
@@ -49,7 +59,67 @@ async function loyaltyHistory(req, res) {
   return ok(res, rows);
 }
 
+// GET /api/clients/:id/kyc — fiche KYC (conformité LBC/FT)
+async function getKyc(req, res) {
+  const client = await Clients.findById(req.params.id);
+  if (!client) throw ApiError.notFound(`Client #${req.params.id} introuvable`);
+  const kyc = await findKycByClientId(req.params.id);
+  return ok(res, renderKyc(kyc));
+}
+
+// PUT /api/clients/:id/kyc — crée ou met à jour la fiche KYC (upsert)
+async function saveKyc(req, res) {
+  const client = await Clients.findById(req.params.id);
+  if (!client) throw ApiError.notFound(`Client #${req.params.id} introuvable`);
+
+  if (req.body.niveau_risque && !NIVEAUX_RISQUE.includes(req.body.niveau_risque)) {
+    throw ApiError.badRequest(`niveau_risque doit être l'un de : ${NIVEAUX_RISQUE.join(', ')}`);
+  }
+
+  // NOTE: adapter `req.user?.id_admin` si le payload JWT expose l'id de l'agent
+  // sous un autre nom (ex: req.user?.id).
+  const kyc = await upsertKyc(req.params.id, {
+    ...req.body,
+    agent_verificateur: req.body.agent_verificateur ?? req.user?.id_admin ?? null,
+    date_verification: req.body.date_verification || new Date().toISOString().slice(0, 10),
+  });
+  return ok(res, renderKyc(kyc));
+}
+
+// GET /api/clients/:id/kyc/signature — dernière signature électronique liée à la déclaration KYC
+async function getKycSignature(req, res) {
+  const client = await Clients.findById(req.params.id);
+  if (!client) throw ApiError.notFound(`Client #${req.params.id} introuvable`);
+  const signature = await findLatestSignature('client_kyc', req.params.id);
+  return ok(res, signature);
+}
+
+// GET /api/clients/:id/kyc/signature/history — historique complet des signatures KYC de ce client
+async function getKycSignatureHistory(req, res) {
+  const client = await Clients.findById(req.params.id);
+  if (!client) throw ApiError.notFound(`Client #${req.params.id} introuvable`);
+  const rows = await findSignatureHistory('client_kyc', req.params.id);
+  return ok(res, rows);
+}
+
+// POST /api/clients/:id/kyc/signature — enregistre une NOUVELLE signature (jamais un remplacement)
+async function saveKycSignature(req, res) {
+  const client = await Clients.findById(req.params.id);
+  if (!client) throw ApiError.notFound(`Client #${req.params.id} introuvable`);
+  const { signature_data } = req.body;
+  if (!signature_data) throw ApiError.badRequest('signature_data requis');
+
+  const signature = await createSignature({
+    signableType: 'client_kyc',
+    signableId: req.params.id,
+    clientId: req.params.id,
+    signatureData: signature_data,
+  });
+  return created(res, signature);
+}
+
 module.exports = {
   clientsCrud, getOneWithAccount, searchClients, getAccount, creditAccount, debitAccount, loyaltyHistory,
+  getKyc, saveKyc, getKycSignature, getKycSignatureHistory, saveKycSignature,
   ClientAccountsCrud: createCrudController(ClientAccounts, { filterable: ['client_id'] }),
 };
