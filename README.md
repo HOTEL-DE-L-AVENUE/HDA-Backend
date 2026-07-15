@@ -29,6 +29,7 @@ hda-backend/
 ├── models/                    # Model — accès SQL
 │   ├── crudFactory.js          # génère findAll/findById/create/update/remove pour une table
 │   ├── clientModel.js
+│   ├── signatureModel.js       # module transversal : signature électronique (générique, append-only)
 │   ├── casinoModel.js          # + logique métier (sessions, crédits, jetons, visites...)
 │   ├── hebergementModel.js
 │   ├── restaurantModel.js
@@ -74,6 +75,10 @@ Toutes les routes `/api/casino/*` et `/api/admin/*` exigent un header
 `Authorization: Bearer <token>` obtenu via `/api/auth/login`. Les autres modules sont ouverts
 par défaut dans ce squelette — à protéger de la même façon selon vos besoins (`requireAuth`,
 `requireRole('admin','manager')` disponibles dans `middlewares/auth.js`).
+
+> Le module signature électronique (`routes/signatureRoutes.js`) n'est **pas monté
+> automatiquement** — voir `SIGNATURE_README.md` pour la ligne à ajouter dans
+> `server.js` (avec `requireAuth`).
 
 ---
 
@@ -134,7 +139,7 @@ Légende : 🔒 = authentification requise.
 | GET | `/api/clients` | Liste paginée (`?page=&limit=&sort=&order=&statut=`) |
 | GET | `/api/clients/search?q=` | Recherche nom/prénom/code/tel/email |
 | GET | `/api/clients/:id` | Détail |
-| GET | `/api/clients/:id/full` | Détail + solde du compte |
+| GET | `/api/clients/:id/full` | Détail + solde du compte + fiche KYC |
 | POST | `/api/clients` | Création |
 | PUT | `/api/clients/:id` | Modification |
 | DELETE | `/api/clients/:id` | Suppression |
@@ -142,6 +147,11 @@ Légende : 🔒 = authentification requise.
 | POST | `/api/clients/:id/account/credit` | Créditer le compte |
 | POST | `/api/clients/:id/account/debit` | Débiter le compte |
 | GET | `/api/clients/:id/loyalty` | Historique de points de fidélité |
+| GET | `/api/clients/:id/kyc` | Fiche KYC (conformité LBC/FT) — disponible pour tous les clients |
+| PUT | `/api/clients/:id/kyc` | Créer / mettre à jour la fiche KYC (upsert) |
+| GET | `/api/clients/:id/kyc/signature` | Dernière signature électronique liée à la déclaration KYC |
+| GET | `/api/clients/:id/kyc/signature/history` | Historique complet des signatures KYC (append-only) |
+| POST | `/api/clients/:id/kyc/signature` | Enregistrer une nouvelle signature (jamais un remplacement) |
 
 **GET /api/clients/:id/full**
 ```json
@@ -151,10 +161,46 @@ Légende : 🔒 = authentification requise.
   "data": {
     "id": 1, "code_client": "CL-0001", "nom": "Andria", "prenom": "Voahangy",
     "telephone": "0341234567", "email": "voahangy@mail.mg",
-    "is_casino_player": true, "statut": "actif", "solde": 50000
+    "is_casino_player": true, "statut": "actif", "solde": 50000,
+    "kyc": null
   }
 }
 ```
+*(`kyc` = `null` tant qu'aucune fiche n'a été renseignée pour ce client — voir `PUT /api/clients/:id/kyc`.)*
+
+**PUT /api/clients/:id/kyc**
+```json
+// requête (tous les champs optionnels, upsert)
+{ "nationalite": "Malgache", "profession": "Entrepreneur", "niveau_risque": "FAIBLE" }
+```
+```json
+// réponse
+{
+  "success": true,
+  "data": {
+    "id": 1, "client_id": 1, "nationalite": "Malgache", "profession": "Entrepreneur",
+    "niveau_risque": "FAIBLE", "declaration_client": false, "date_verification": "2026-07-15"
+  }
+}
+```
+
+**POST /api/clients/:id/kyc/signature**
+```json
+// requête
+{ "signature_data": "data:image/png;base64,iVBORw0K..." }
+```
+```json
+// réponse 201 (une nouvelle ligne à chaque appel — append-only)
+{
+  "success": true,
+  "data": {
+    "id": 7, "signable_type": "client_kyc", "signable_id": 1, "client_id": 1,
+    "signature_data": "data:image/png;base64,iVBORw0K...", "signed_at": "2026-07-15 09:42:10"
+  }
+}
+```
+Détails complets (modèle de données, historique, module générique réutilisable
+pour d'autres domaines) : voir `SIGNATURE_README.md`.
 
 **POST /api/clients/:id/account/credit**
 ```json
