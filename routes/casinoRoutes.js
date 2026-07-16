@@ -106,4 +106,30 @@ router.post('/visits/:id/check-out', ctrl.checkOutHandler);                 // P
 router.get('/visits/in-room/:roomId', ctrl.currentlyInRoomHandler);         // GET  /api/casino/visits/in-room/:roomId
 router.use('/visits', createCrudRouter(ctrl.visitsCrud));                   // /api/casino/visits
 
+// =====================================================================
+// Tables de jeu & Caves/Recaves (une salle -> plusieurs tables ; chaque
+// cave/recave génère une écriture de caisse buy-in si payée, et exige une
+// signature du joueur via la table transversale `signatures`)
+// =====================================================================
+router.post('/tables-jeu/:id/ouvrir', ctrl.ouvrirTableHandler);              // POST /api/casino/tables-jeu/:id/ouvrir
+router.post('/tables-jeu/:id/fermer', ctrl.fermerTableHandler);              // POST /api/casino/tables-jeu/:id/fermer
+router.post('/tables-jeu/:id/caves', ctrl.addCaveHandler);                   // POST /api/casino/tables-jeu/:id/caves      { session_id, client_id?|client_libre?, numero_adherent?, montant, statut_paiement, moyen_paiement? }
+router.get('/tables-jeu/:id/caves', ctrl.listCavesHandler);                  // GET  /api/casino/tables-jeu/:id/caves?date=
+router.get('/tables-jeu/:id/feuille', ctrl.feuilleTableHandler);             // GET  /api/casino/tables-jeu/:id/feuille?date=  (feuille de table consolidée)
+router.get('/tables-jeu', ctrl.listTablesHandler);                            // GET  /api/casino/tables-jeu?room_id=   (remplace la liste générique : ajoute `a_historique`)
+router.post('/tables-jeu/:id/archiver', ctrl.archiverTableHandler);           // POST /api/casino/tables-jeu/:id/archiver
+router.post('/tables-jeu/:id/desarchiver', ctrl.desarchiverTableHandler);     // POST /api/casino/tables-jeu/:id/desarchiver
+router.delete('/tables-jeu/:id', ctrl.removeTableHandler);                    // DELETE /api/casino/tables-jeu/:id      (409 explicite si historique, au lieu de l'erreur SQL 1451 brute)
+router.use('/tables-jeu', createCrudRouter(ctrl.tablesJeuCrud));             // /api/casino/tables-jeu (CRUD standard)
+ 
+router.post('/table-caves/:caveId/signature', ctrl.signCaveHandler);         // POST /api/casino/table-caves/:caveId/signature  { signature_data }
+router.get('/table-caves/:caveId/signature', ctrl.getCaveSignatureHandler);  // GET  /api/casino/table-caves/:caveId/signature
+
+router.post('/tables-jeu/:id/prolongations', ctrl.addProlongationHandler);          // POST /api/casino/tables-jeu/:id/prolongations  { session_id, client_id?|client_libre?, statut_paiement, moyen_paiement? } — 400 si le timer n'est pas encore écoulé
+router.get('/tables-jeu/:id/prolongations', ctrl.listProlongationsHandler);         // GET  /api/casino/tables-jeu/:id/prolongations?date=
+router.post('/table-prolongations/:prolongationId/signature', ctrl.signProlongationHandler); // POST /api/casino/table-prolongations/:prolongationId/signature { signature_data }
+ 
+router.post('/tables-jeu/:id/pourboires', ctrl.addPourboireHandler);                // POST /api/casino/tables-jeu/:id/pourboires     { session_id, montant, type_pourboire: 'JETONS'|'ESPECES' }
+router.get('/tables-jeu/:id/pourboires', ctrl.listPourboiresHandler);               // GET  /api/casino/tables-jeu/:id/pourboires?date=
+
 module.exports = router;
