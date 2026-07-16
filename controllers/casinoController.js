@@ -1123,3 +1123,561 @@ exports.currentlyInRoomHandler = async (req, res, next) => {
     res.json(rows);
   } catch (err) { next(err); }
 };
+
+// -------------------------------------------------------------------------
+// Tables de jeu (CRUD standard + ouvrir/fermer)
+// -------------------------------------------------------------------------
+ 
+exports.tablesJeuCrud = buildCrud('casino_tables_jeu', {
+  allowedFields: ['room_id', 'numero', 'type_jeu', 'cave_minimum', 'statut'],
+});
+ 
+exports.ouvrirTableHandler = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const [result] = await pool.query(`UPDATE casino_tables_jeu SET statut = 'OUVERTE' WHERE id = ?`, [id]);
+    if (result.affectedRows === 0) throw ApiError.notFound('Table de jeu introuvable');
+    const [[row]] = await pool.query(`SELECT * FROM casino_tables_jeu WHERE id = ?`, [id]);
+    res.json(row);
+  } catch (err) { next(err); }
+};
+ 
+exports.fermerTableHandler = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const [result] = await pool.query(`UPDATE casino_tables_jeu SET statut = 'FERMEE' WHERE id = ?`, [id]);
+    if (result.affectedRows === 0) throw ApiError.notFound('Table de jeu introuvable');
+    const [[row]] = await pool.query(`SELECT * FROM casino_tables_jeu WHERE id = ?`, [id]);
+    res.json(row);
+  } catch (err) { next(err); }
+};
+ 
+// -------------------------------------------------------------------------
+// Caves & recaves
+// -------------------------------------------------------------------------
+ 
+exports.addCaveHandler = async (req, res, next) => {
+  try {
+    const { id: tableJeuId } = req.params;
+    const { session_id, client_id, client_libre, numero_adherent, montant, statut_paiement, moyen_paiement } = req.body;
+    const amount = asMoney(montant);
+    const statutPaiement = statut_paiement === 'NON_PAYE' ? 'NON_PAYE' : 'PAYE';
+    if (!client_id && !client_libre) throw ApiError.badRequest('client_id ou client_libre requis');
+ 
+    const cave = await withTransaction(async (conn) => {
+      const [[table]] = await conn.query(`SELECT * FROM casino_tables_jeu WHERE id = ?`, [tableJeuId]);
+      if (!table) throw ApiError.notFound('Table de jeu introuvable');
+      if (table.statut !== 'OUVERTE') throw ApiError.badRequest('Cette table de jeu est fermée');
+ 
+      const session = await getOpenSession(conn, session_id);
+      if (!session) throw ApiError.badRequest('Session de caisse introuvable ou fermée');
+ 
+      // Verrouille les caves déjà enregistrées pour ce joueur/table/jour, le
+      // temps de la transaction, pour éviter une désynchronisation de
+      // numero_cave / montant_total_joueur en cas de doubles clics concurrents.
+      const identClause = client_id ? 'client_id = ?' : 'client_libre = ?';
+      const identParam = client_id || client_libre;
+      const [previousRows] = await conn.query(
+        `SELECT * FROM casino_table_caves
+          WHERE table_jeu_id = ? AND ${identClause} AND date_jeu = CURDATE()
+          ORDER BY numero_cave ASC FOR UPDATE`,
+        [tableJeuId, identParam]
+      );
+ 
+      const numeroCave = previousRows.length + 1;
+      const heureArrivee = previousRows.length ? previousRows[0].heure_arrivee : new Date();
+      const montantTotalJoueur = previousRows.reduce((sum, r) => sum + Number(r.montant_cave), 0) + amount;
+ 
+      if (numeroCave === 1 && amount < Number(table.cave_minimum)) {
+        throw ApiError.badRequest(`La cave initiale doit être au moins de ${table.cave_minimum} Ar`);
+      }
+ 
+      let cashOperationId = null;
+      if (statutPaiement === 'PAYE') {
+        const ref = genRef();
+        const [opResult] = await conn.query(
+          `INSERT INTO casino_cash_operations
+             (cashier_session_id, client_id, client_libre, type_operation, montant, moyen_paiement,
+              ref_flux_global, created_by, created_at)
+           VALUES (?, ?, ?, 'BUY_IN', ?, ?, ?, ?, NOW())`,
+          [session_id, client_id || null, client_id ? null : (client_libre || null),
+           amount, moyen_paiement || 'ESPECES', ref, caissierId(req)]
+        );
+        cashOperationId = opResult.insertId;
+ 
+        await recordFinancialTransaction(conn, {
+          client_id: client_id || null,
+          type_flux: 'ENTREE_CAISSE_CASINO',
+          montant: amount,
+          reference_id: cashOperationId,
+          ref_flux_global: ref,
+          description: `Cave/recave table ${table.numero} (n°${numeroCave})`,
+        });
+      }
+ 
+      const [result] = await conn.query(
+        `INSERT INTO casino_table_caves
+           (table_jeu_id, cashier_session_id, client_id, client_libre, numero_adherent, date_jeu,
+            heure_arrivee, heure_mouvement, numero_cave, montant_cave, montant_total_joueur,
+            montant_jetons_remis, statut_paiement, moyen_paiement, cash_operation_id, created_by, created_at)
+         VALUES (?, ?, ?, ?, ?, CURDATE(), ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+        [tableJeuId, session_id, client_id || null, client_id ? null : (client_libre || null),
+         numero_adherent || null, heureArrivee, numeroCave, amount, montantTotalJoueur,
+         amount, statutPaiement, statutPaiement === 'PAYE' ? (moyen_paiement || 'ESPECES') : null,
+         cashOperationId, caissierId(req)]
+      );
+ 
+      const [[row]] = await conn.query(`SELECT * FROM casino_table_caves WHERE id = ?`, [result.insertId]);
+      return row;
+    });
+ 
+    res.status(201).json(cave);
+  } catch (err) { next(err); }
+};
+ 
+exports.listCavesHandler = async (req, res, next) => {
+  try {
+    const { id: tableJeuId } = req.params;
+    const { date } = req.query;
+    const [rows] = await pool.query(
+      `SELECT * FROM casino_table_caves WHERE table_jeu_id = ? AND date_jeu = ? ORDER BY heure_mouvement ASC`,
+      [tableJeuId, date || new Date().toISOString().slice(0, 10)]
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+};
+ 
+exports.feuilleTableHandler = async (req, res, next) => {
+  try {
+    const { id: tableJeuId } = req.params;
+    const { date } = req.query;
+    const jour = date || new Date().toISOString().slice(0, 10);
+ 
+    const [[table]] = await pool.query(
+      `SELECT tj.*, r.nom AS salle FROM casino_tables_jeu tj
+         JOIN casino_rooms r ON r.id = tj.room_id
+        WHERE tj.id = ?`,
+      [tableJeuId]
+    );
+    if (!table) throw ApiError.notFound('Table de jeu introuvable');
+ 
+    const [rows] = await pool.query(
+      `SELECT tc.*, c.nom, c.prenom,
+              (SELECT COUNT(*) FROM signatures s
+                WHERE s.signable_type = 'casino_table_cave' AND s.signable_id = tc.id) AS nb_signatures
+         FROM casino_table_caves tc
+         LEFT JOIN clients c ON c.id = tc.client_id
+        WHERE tc.table_jeu_id = ? AND tc.date_jeu = ?
+        ORDER BY tc.heure_mouvement ASC`,
+      [tableJeuId, jour]
+    );
+ 
+    const lignes = rows.map((r) => ({
+      joueur: r.client_id ? `${r.nom || ''} ${r.prenom || ''}`.trim() : (r.client_libre || 'Joueur de passage'),
+      numero_adherent: r.numero_adherent,
+      heure_arrivee: r.heure_arrivee,
+      heure: r.heure_mouvement,
+      numero_cave: r.numero_cave,
+      montant_cave: Number(r.montant_cave),
+      montant_total_joueur: Number(r.montant_total_joueur),
+      statut_paiement: r.statut_paiement,
+      moyen_paiement: r.moyen_paiement,
+      signature_presente: Number(r.nb_signatures) > 0,
+    }));
+ 
+    const totaux = rows.reduce(
+      (acc, r) => {
+        acc.total_cashing_jetons += Number(r.montant_jetons_remis);
+        if (r.statut_paiement === 'PAYE') {
+          acc.total_caves_encaissees += Number(r.montant_cave);
+          if (r.moyen_paiement === 'ESPECES') acc.montant_paye_especes += Number(r.montant_cave);
+          if (r.moyen_paiement === 'CARTE') acc.montant_paye_tpe += Number(r.montant_cave);
+        } else {
+          acc.montant_non_paye += Number(r.montant_cave);
+        }
+        return acc;
+      },
+      { total_cashing_jetons: 0, total_caves_encaissees: 0, montant_paye_especes: 0, montant_paye_tpe: 0, montant_non_paye: 0 }
+    );
+ 
+    res.json({
+      table: { id: table.id, numero: table.numero, type_jeu: table.type_jeu, cave_minimum: Number(table.cave_minimum), salle: table.salle },
+      date: jour,
+      lignes,
+      totaux,
+    });
+  } catch (err) { next(err); }
+};
+ 
+// -------------------------------------------------------------------------
+// Signature d'une cave/recave (table transversale `signatures`, comme pour
+// le KYC — signable_type = 'casino_table_cave', signable_id = cave.id)
+// -------------------------------------------------------------------------
+ 
+exports.signCaveHandler = async (req, res, next) => {
+  try {
+    const { caveId } = req.params;
+    const { signature_data } = req.body;
+    if (!signature_data) throw ApiError.badRequest('signature_data requis');
+ 
+    const [[cave]] = await pool.query(`SELECT * FROM casino_table_caves WHERE id = ?`, [caveId]);
+    if (!cave) throw ApiError.notFound('Cave introuvable');
+ 
+    const [result] = await pool.query(
+      `INSERT INTO signatures (signable_type, signable_id, client_id, signature_data, signed_at, created_at)
+       VALUES ('casino_table_cave', ?, ?, ?, NOW(), NOW())`,
+      [caveId, cave.client_id || null, signature_data]
+    );
+    const [[row]] = await pool.query(`SELECT * FROM signatures WHERE id = ?`, [result.insertId]);
+    res.status(201).json(row);
+  } catch (err) { next(err); }
+};
+ 
+exports.getCaveSignatureHandler = async (req, res, next) => {
+  try {
+    const { caveId } = req.params;
+    const [[row]] = await pool.query(
+      `SELECT * FROM signatures WHERE signable_type = 'casino_table_cave' AND signable_id = ?
+        ORDER BY signed_at DESC LIMIT 1`,
+      [caveId]
+    );
+    res.json(row || null);
+  } catch (err) { next(err); }
+};
+
+// -------------------------------------------------------------------------
+// Prolongations (salaire horaire du croupier, à charge du joueur)
+// -------------------------------------------------------------------------
+ 
+// Calcule si une prolongation est disponible pour une table : la référence
+// du timer est `derniere_prolongation_at` si elle existe, sinon `created_at`
+// de la table.
+function prolongationDisponible(table) {
+  const reference = table.derniere_prolongation_at || table.created_at;
+  const expiry = new Date(reference).getTime() + Number(table.duree_prolongation_minutes) * 60000;
+  return Date.now() >= expiry;
+}
+ 
+exports.addProlongationHandler = async (req, res, next) => {
+  try {
+    const { id: tableJeuId } = req.params;
+    const { session_id, client_id, client_libre, statut_paiement, moyen_paiement } = req.body;
+    const statutPaiement = statut_paiement === 'NON_PAYE' ? 'NON_PAYE' : 'PAYE';
+    if (!client_id && !client_libre) throw ApiError.badRequest('client_id ou client_libre requis');
+ 
+    const prolongation = await withTransaction(async (conn) => {
+      const [[table]] = await conn.query(`SELECT * FROM casino_tables_jeu WHERE id = ? FOR UPDATE`, [tableJeuId]);
+      if (!table) throw ApiError.notFound('Table de jeu introuvable');
+      if (table.statut !== 'OUVERTE') throw ApiError.badRequest('Cette table de jeu est fermée');
+      if (!prolongationDisponible(table)) {
+        throw ApiError.badRequest('Prolongation pas encore disponible : la période en cours n\'est pas terminée');
+      }
+ 
+      const session = await getOpenSession(conn, session_id);
+      if (!session) throw ApiError.badRequest('Session de caisse introuvable ou fermée');
+ 
+      const montant = Number(table.salaire_horaire_croupier);
+ 
+      let cashOperationId = null;
+      if (statutPaiement === 'PAYE') {
+        const ref = genRef();
+        const [opResult] = await conn.query(
+          `INSERT INTO casino_cash_operations
+             (cashier_session_id, client_id, client_libre, type_operation, montant, moyen_paiement,
+              ref_flux_global, created_by, created_at)
+           VALUES (?, ?, ?, 'PROLONGATION', ?, ?, ?, ?, NOW())`,
+          [session_id, client_id || null, client_id ? null : (client_libre || null),
+           montant, moyen_paiement || 'ESPECES', ref, caissierId(req)]
+        );
+        cashOperationId = opResult.insertId;
+ 
+        await recordFinancialTransaction(conn, {
+          client_id: client_id || null,
+          type_flux: 'ENTREE_CAISSE_CASINO',
+          montant,
+          reference_id: cashOperationId,
+          ref_flux_global: ref,
+          description: `Prolongation table ${table.numero} (salaire croupier)`,
+        });
+      }
+ 
+      const [result] = await conn.query(
+        `INSERT INTO casino_table_prolongations
+           (table_jeu_id, cashier_session_id, client_id, client_libre, montant, statut_paiement,
+            moyen_paiement, cash_operation_id, created_by, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+        [tableJeuId, session_id, client_id || null, client_id ? null : (client_libre || null),
+         montant, statutPaiement, statutPaiement === 'PAYE' ? (moyen_paiement || 'ESPECES') : null,
+         cashOperationId, caissierId(req)]
+      );
+ 
+      await conn.query(`UPDATE casino_tables_jeu SET derniere_prolongation_at = NOW() WHERE id = ?`, [tableJeuId]);
+ 
+      const [[row]] = await conn.query(`SELECT * FROM casino_table_prolongations WHERE id = ?`, [result.insertId]);
+      return row;
+    });
+ 
+    res.status(201).json(prolongation);
+  } catch (err) { next(err); }
+};
+ 
+exports.listProlongationsHandler = async (req, res, next) => {
+  try {
+    const { id: tableJeuId } = req.params;
+    const { date } = req.query;
+    const [rows] = await pool.query(
+      `SELECT * FROM casino_table_prolongations WHERE table_jeu_id = ? AND DATE(created_at) = ? ORDER BY created_at ASC`,
+      [tableJeuId, date || new Date().toISOString().slice(0, 10)]
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+};
+ 
+// Signature d'une prolongation — même mécanisme que pour les caves.
+exports.signProlongationHandler = async (req, res, next) => {
+  try {
+    const { prolongationId } = req.params;
+    const { signature_data } = req.body;
+    if (!signature_data) throw ApiError.badRequest('signature_data requis');
+ 
+    const [[prolongation]] = await pool.query(`SELECT * FROM casino_table_prolongations WHERE id = ?`, [prolongationId]);
+    if (!prolongation) throw ApiError.notFound('Prolongation introuvable');
+ 
+    const [result] = await pool.query(
+      `INSERT INTO signatures (signable_type, signable_id, client_id, signature_data, signed_at, created_at)
+       VALUES ('casino_table_prolongation', ?, ?, ?, NOW(), NOW())`,
+      [prolongationId, prolongation.client_id || null, signature_data]
+    );
+    const [[row]] = await pool.query(`SELECT * FROM signatures WHERE id = ?`, [result.insertId]);
+    res.status(201).json(row);
+  } catch (err) { next(err); }
+};
+ 
+// -------------------------------------------------------------------------
+// Pourboires (déclaratif — jetons ou espèces, ne génère pas d'écriture de
+// caisse : l'argent a déjà transité via les caves)
+// -------------------------------------------------------------------------
+ 
+exports.addPourboireHandler = async (req, res, next) => {
+  try {
+    const { id: tableJeuId } = req.params;
+    const { session_id, montant, type_pourboire } = req.body;
+    const amount = asMoney(montant);
+    if (!['JETONS', 'ESPECES'].includes(type_pourboire)) {
+      throw ApiError.badRequest('type_pourboire doit être JETONS ou ESPECES');
+    }
+ 
+    const [[table]] = await pool.query(`SELECT id FROM casino_tables_jeu WHERE id = ?`, [tableJeuId]);
+    if (!table) throw ApiError.notFound('Table de jeu introuvable');
+ 
+    const [result] = await pool.query(
+      `INSERT INTO casino_table_pourboires
+         (table_jeu_id, cashier_session_id, montant, type_pourboire, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, NOW())`,
+      [tableJeuId, session_id, amount, type_pourboire, caissierId(req)]
+    );
+    const [[row]] = await pool.query(`SELECT * FROM casino_table_pourboires WHERE id = ?`, [result.insertId]);
+    res.status(201).json(row);
+  } catch (err) { next(err); }
+};
+ 
+exports.listPourboiresHandler = async (req, res, next) => {
+  try {
+    const { id: tableJeuId } = req.params;
+    const { date } = req.query;
+    const [rows] = await pool.query(
+      `SELECT * FROM casino_table_pourboires WHERE table_jeu_id = ? AND DATE(created_at) = ? ORDER BY created_at ASC`,
+      [tableJeuId, date || new Date().toISOString().slice(0, 10)]
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+};
+ 
+// -------------------------------------------------------------------------
+// `feuilleTableHandler` (déjà livré) — remplace la version précédente pour
+// inclure prolongations + pourboires. Colle cette version à la place de
+// l'ancienne, même signature de route (`GET /tables-jeu/:id/feuille`).
+// -------------------------------------------------------------------------
+ 
+exports.feuilleTableHandler = async (req, res, next) => {
+  try {
+    const { id: tableJeuId } = req.params;
+    const { date } = req.query;
+    const jour = date || new Date().toISOString().slice(0, 10);
+ 
+    const [[table]] = await pool.query(
+      `SELECT tj.*, r.nom AS salle FROM casino_tables_jeu tj
+         JOIN casino_rooms r ON r.id = tj.room_id
+        WHERE tj.id = ?`,
+      [tableJeuId]
+    );
+    if (!table) throw ApiError.notFound('Table de jeu introuvable');
+ 
+    const [caveRows] = await pool.query(
+      `SELECT tc.*, c.nom, c.prenom,
+              (SELECT COUNT(*) FROM signatures s
+                WHERE s.signable_type = 'casino_table_cave' AND s.signable_id = tc.id) AS nb_signatures
+         FROM casino_table_caves tc
+         LEFT JOIN clients c ON c.id = tc.client_id
+        WHERE tc.table_jeu_id = ? AND tc.date_jeu = ?
+        ORDER BY tc.heure_mouvement ASC`,
+      [tableJeuId, jour]
+    );
+ 
+    const [prolongationRows] = await pool.query(
+      `SELECT tp.*, c.nom, c.prenom,
+              (SELECT COUNT(*) FROM signatures s
+                WHERE s.signable_type = 'casino_table_prolongation' AND s.signable_id = tp.id) AS nb_signatures
+         FROM casino_table_prolongations tp
+         LEFT JOIN clients c ON c.id = tp.client_id
+        WHERE tp.table_jeu_id = ? AND DATE(tp.created_at) = ?
+        ORDER BY tp.created_at ASC`,
+      [tableJeuId, jour]
+    );
+ 
+    const [pourboireRows] = await pool.query(
+      `SELECT * FROM casino_table_pourboires WHERE table_jeu_id = ? AND DATE(created_at) = ? ORDER BY created_at ASC`,
+      [tableJeuId, jour]
+    );
+ 
+    const lignes = caveRows.map((r) => ({
+      joueur: r.client_id ? `${r.nom || ''} ${r.prenom || ''}`.trim() : (r.client_libre || 'Joueur de passage'),
+      numero_adherent: r.numero_adherent,
+      heure_arrivee: r.heure_arrivee,
+      heure: r.heure_mouvement,
+      numero_cave: r.numero_cave,
+      montant_cave: Number(r.montant_cave),
+      montant_total_joueur: Number(r.montant_total_joueur),
+      statut_paiement: r.statut_paiement,
+      moyen_paiement: r.moyen_paiement,
+      signature_presente: Number(r.nb_signatures) > 0,
+    }));
+ 
+    const prolongations = prolongationRows.map((r) => ({
+      joueur: r.client_id ? `${r.nom || ''} ${r.prenom || ''}`.trim() : (r.client_libre || 'Joueur de passage'),
+      heure: r.created_at,
+      montant: Number(r.montant),
+      statut_paiement: r.statut_paiement,
+      moyen_paiement: r.moyen_paiement,
+      signature_presente: Number(r.nb_signatures) > 0,
+    }));
+ 
+    const totaux = caveRows.reduce(
+      (acc, r) => {
+        acc.total_cashing_jetons += Number(r.montant_jetons_remis);
+        if (r.statut_paiement === 'PAYE') {
+          acc.total_caves_encaissees += Number(r.montant_cave);
+          if (r.moyen_paiement === 'ESPECES') acc.montant_paye_especes += Number(r.montant_cave);
+          if (r.moyen_paiement === 'CARTE') acc.montant_paye_tpe += Number(r.montant_cave);
+        } else {
+          acc.montant_non_paye += Number(r.montant_cave);
+        }
+        return acc;
+      },
+      { total_cashing_jetons: 0, total_caves_encaissees: 0, montant_paye_especes: 0, montant_paye_tpe: 0, montant_non_paye: 0 }
+    );
+ 
+    totaux.total_prolongation = prolongationRows.reduce((sum, r) => sum + Number(r.montant), 0);
+    totaux.total_prolongation_payee = prolongationRows
+      .filter((r) => r.statut_paiement === 'PAYE')
+      .reduce((sum, r) => sum + Number(r.montant), 0);
+    totaux.total_prolongation_non_payee = totaux.total_prolongation - totaux.total_prolongation_payee;
+ 
+    const pourboires = {
+      total_jetons: pourboireRows.filter((r) => r.type_pourboire === 'JETONS').reduce((s, r) => s + Number(r.montant), 0),
+      total_especes: pourboireRows.filter((r) => r.type_pourboire === 'ESPECES').reduce((s, r) => s + Number(r.montant), 0),
+    };
+    pourboires.total = pourboires.total_jetons + pourboires.total_especes;
+ 
+    res.json({
+      table: {
+        id: table.id, numero: table.numero, type_jeu: table.type_jeu,
+        cave_minimum: Number(table.cave_minimum), salaire_horaire_croupier: Number(table.salaire_horaire_croupier),
+        salle: table.salle,
+      },
+      date: jour,
+      lignes,
+      prolongations,
+      pourboires,
+      totaux,
+    });
+  } catch (err) { next(err); }
+};
+
+
+// GET /tables-jeu?room_id= — remplace la liste générique de tablesJeuCrud
+// pour exposer `a_historique` (utilisé par le front pour griser la
+// suppression et proposer "Archiver" à la place).
+exports.listTablesHandler = async (req, res, next) => {
+  try {
+    const { room_id } = req.query;
+    const params = [];
+    let sql = `
+      SELECT tj.*,
+        EXISTS(SELECT 1 FROM casino_table_caves tc WHERE tc.table_jeu_id = tj.id) OR
+        EXISTS(SELECT 1 FROM casino_table_prolongations tp WHERE tp.table_jeu_id = tj.id) OR
+        EXISTS(SELECT 1 FROM casino_table_pourboires tb WHERE tb.table_jeu_id = tj.id) AS a_historique
+      FROM casino_tables_jeu tj`;
+    if (room_id) {
+      sql += ' WHERE tj.room_id = ?';
+      params.push(room_id);
+    }
+    sql += ' ORDER BY tj.numero ASC';
+    const [rows] = await pool.query(sql, params);
+    res.json(rows.map((r) => ({ ...r, a_historique: !!r.a_historique })));
+  } catch (err) { next(err); }
+};
+ 
+// DELETE /tables-jeu/:id — remplace le delete générique : vérifie l'absence
+// d'historique AVANT de tenter le DELETE, pour renvoyer un message clair
+// plutôt que l'erreur SQL 1451 brute remontée par le générique.
+exports.removeTableHandler = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const [[table]] = await pool.query(`SELECT * FROM casino_tables_jeu WHERE id = ?`, [id]);
+    if (!table) throw ApiError.notFound('Table de jeu introuvable');
+ 
+    const [[{ n }]] = await pool.query(
+      `SELECT
+         (SELECT COUNT(*) FROM casino_table_caves WHERE table_jeu_id = ?) +
+         (SELECT COUNT(*) FROM casino_table_prolongations WHERE table_jeu_id = ?) +
+         (SELECT COUNT(*) FROM casino_table_pourboires WHERE table_jeu_id = ?) AS n`,
+      [id, id, id]
+    );
+    if (Number(n) > 0) {
+      throw ApiError.conflict(
+        'Impossible de supprimer une table ayant un historique (caves, prolongations ou pourboires). Archivez-la à la place.'
+      );
+    }
+ 
+    await pool.query(`DELETE FROM casino_tables_jeu WHERE id = ?`, [id]);
+    res.status(204).end();
+  } catch (err) { next(err); }
+};
+ 
+// POST /tables-jeu/:id/archiver — n'efface rien, sort juste la table de la
+// rotation active. L'historique (caves, prolongations, pourboires, feuille)
+// reste consultable normalement.
+exports.archiverTableHandler = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const [result] = await pool.query(`UPDATE casino_tables_jeu SET statut = 'ARCHIVEE' WHERE id = ?`, [id]);
+    if (result.affectedRows === 0) throw ApiError.notFound('Table de jeu introuvable');
+    const [[row]] = await pool.query(`SELECT * FROM casino_tables_jeu WHERE id = ?`, [id]);
+    res.json(row);
+  } catch (err) { next(err); }
+};
+ 
+// POST /tables-jeu/:id/desarchiver — remet la table en FERMEE (à rouvrir
+// ensuite normalement via /ouvrir si besoin).
+exports.desarchiverTableHandler = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const [[table]] = await pool.query(`SELECT * FROM casino_tables_jeu WHERE id = ?`, [id]);
+    if (!table) throw ApiError.notFound('Table de jeu introuvable');
+    if (table.statut !== 'ARCHIVEE') throw ApiError.badRequest('Cette table n\'est pas archivée');
+    await pool.query(`UPDATE casino_tables_jeu SET statut = 'FERMEE' WHERE id = ?`, [id]);
+    const [[row]] = await pool.query(`SELECT * FROM casino_tables_jeu WHERE id = ?`, [id]);
+    res.json(row);
+  } catch (err) { next(err); }
+};

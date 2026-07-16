@@ -330,6 +330,171 @@ Décision humaine sur un score (validation, contestation ou annulation).
 
 ---
 
+## Tables de jeu & Caves/Recaves
+
+Une **salle** peut contenir des **tables de jeu** (poker, blackjack, etc.).
+Chaque table définit une **cave minimum** : le montant que le joueur doit
+miser pour s'installer. S'il épuise ses jetons, il peut faire une
+**recave** (réapprovisionnement), sans minimum imposé par défaut.
+
+Chaque cave et chaque recave est un événement **tracé et signé** :
+- Elle crée une ligne dans `casino_table_caves`.
+- Si payée, elle génère une écriture de caisse (`casino_cash_operations`,
+  type `BUY_IN`) exactement comme `/operations/buy-in`, rattachée à
+  la même session de caisse casino.
+- Elle exige une signature du joueur, enregistrée dans la table
+  transversale `signatures` (`signable_type: 'casino_table_cave'`,
+  `signable_id` = id de la cave) — même mécanisme que la signature KYC, via
+  le composant réutilisable `src/components/SignaturePad.tsx`.
+
+### `/tables-jeu` (CRUD standard, lecture/écriture partiellement surchargées — voir plus bas)
+Champs : `room_id, numero, type_jeu, cave_minimum, salaire_horaire_croupier,
+duree_prolongation_minutes, statut`.
+`type_jeu` ∈ `POKER, BLACKJACK, ROULETTE, BACCARA, AUTRE`. `statut` ∈ `OUVERTE, FERMEE, ARCHIVEE`.
+`salaire_horaire_croupier` (Ariary/heure) et `duree_prolongation_minutes`
+(défaut 60) sont fixés à la création — voir « Prolongations » plus bas.
+
+#### `GET /tables-jeu?room_id=`
+Surcharge la liste générique du CRUD pour ajouter `a_historique` (booléen) à
+chaque table : `true` si elle a au moins une cave, une prolongation ou un
+pourboire. Le front s'en sert pour proposer « Archiver » plutôt que
+« Supprimer » dès qu'une suppression physique casserait une FK.
+
+### `POST /tables-jeu/:id/ouvrir` / `POST /tables-jeu/:id/fermer`
+Bascule le statut de la table entre `OUVERTE` et `FERMEE`.
+
+### `POST /tables-jeu/:id/archiver` / `POST /tables-jeu/:id/desarchiver`
+Passe la table en `ARCHIVEE` (sort de la rotation active, aucune donnée
+supprimée — caves, prolongations, pourboires et feuille de table restent
+consultables) ou la remet en `FERMEE`. À utiliser à la place de la
+suppression dès que `a_historique = true`.
+
+### `DELETE /tables-jeu/:id`
+Surcharge le delete générique du CRUD : vérifie d'abord l'absence de caves,
+prolongations et pourboires liées. **409** (`ApiError.conflict`) avec un
+message explicite si la table a un historique — sinon `casino_table_caves`
+etc. bloqueraient la suppression via leur contrainte FK
+(`fk_caves_table`/`fk_prolong_table`/`fk_pourboire_table`), ce qui
+remontait auparavant une erreur SQL brute (`ER_ROW_IS_REFERENCED_2`,
+1451) au lieu d'un message utilisable côté front. **204** si la suppression
+a réussi.
+
+### `POST /tables-jeu/:id/caves`
+Enregistre une cave (si c'est la première du joueur, ce jour, à cette
+table) ou une recave (sinon) — le serveur détermine `numero_cave`
+automatiquement.
+
+**Entrée**
+```json
+{
+  "session_id": 12,
+  "client_id": 55,
+  "numero_adherent": "ADH-0231",
+  "montant": 200000,
+  "statut_paiement": "PAYE",
+  "moyen_paiement": "ESPECES"
+}
+```
+(`client_id` OU `client_libre`, l'un des deux. `numero_adherent` optionnel.)
+
+**Logique serveur**
+- `date_jeu` = date du jour. `numero_cave` = 1 + nombre de caves déjà
+  enregistrées pour `(table_jeu_id, client_id/libre, date_jeu)`.
+- `heure_arrivee` = figée à la 1ère cave du joueur ce jour-là sur cette
+  table ; reprise telle quelle pour les recaves suivantes.
+- Si `numero_cave === 1` : **400** si `montant < cave_minimum` de la
+  table. Une recave n'a pas de minimum imposé.
+- `montant_total_joueur` = somme des `montant_cave` du joueur sur
+  `(table_jeu_id, date_jeu)`, mouvement courant inclus.
+- Si `statut_paiement = 'PAYE'` : crée une `casino_cash_operations` de
+  type `BUY_IN`, avec écriture financière globale (`ref_flux_global`)
+  comme tout buy-in. Si `'NON_PAYE'` : aucune écriture de caisse tant que
+  le solde n'est pas régularisé.
+
+**Sortie 201** : la ligne cave créée, avec `numero_cave`, `heure_arrivee`,
+`montant_total_joueur`.
+
+### `GET /tables-jeu/:id/caves?date=`
+Liste brute des caves/recaves de la table pour une date donnée
+(`YYYY-MM-DD`, défaut = aujourd'hui).
+
+### `GET /tables-jeu/:id/feuille?date=`
+La **feuille de table** consolidée, prête à afficher/imprimer : par ligne,
+`joueur, numero_adherent, heure_arrivee, heure, numero_cave, montant_cave,
+montant_total_joueur, statut_paiement, moyen_paiement, signature_presente` ;
+plus des `totaux` : `total_cashing_jetons, total_caves_encaissees,
+montant_paye_especes, montant_paye_tpe, montant_non_paye`.
+
+### `POST /table-caves/:caveId/signature`
+**Entrée** `{ "signature_data": "data:image/png;base64,..." }`
+**Sortie 201** : nouvelle ligne dans `signatures` (même table que le KYC,
+`signable_type: 'casino_table_cave'`).
+
+### `GET /table-caves/:caveId/signature`
+Dernière signature de cette cave (`null` si absente — à afficher comme
+alerte dans la feuille de table).
+
+### Codes d'erreur spécifiques
+
+| Code | Cas |
+|---|---|
+| 400 | `montant < cave_minimum` sur une 1ère cave, table fermée, `client_id`/`client_libre` manquants |
+| 404 | Table de jeu ou cave introuvable |
+| 409 | `numero` de table déjà utilisé dans la salle |
+
+---
+
+## Prolongations & Pourboires
+
+### Prolongation (salaire horaire du croupier, à charge du joueur)
+
+Chaque table de jeu fixe, à sa création, un `salaire_horaire_croupier`
+(Ariary/heure) et une `duree_prolongation_minutes` (défaut 60). Le timer
+d'une table démarre à sa création et se relance à chaque prolongation
+accordée (`derniere_prolongation_at`). Le bouton « Prolongation » côté
+front est masqué tant que la période en cours n'est pas terminée ; une
+fois écoulée, il redevient actif avec le badge « Timeout Pour la
+Prolongation ». Le serveur applique la même règle côté API (400 si appelée
+trop tôt) — le front n'est pas la seule barrière.
+
+#### `POST /tables-jeu/:id/prolongations`
+**Entrée** `{ session_id, client_id?|client_libre?, statut_paiement, moyen_paiement? }`
+Le montant n'est **pas** dans le body : c'est toujours
+`table.salaire_horaire_croupier` au moment de l'appel (snapshot en base).
+**400** si la période en cours n'est pas terminée, ou si la table est
+fermée. Génère une `casino_cash_operations` de type `PROLONGATION` si
+payée (comme un buy-in), et relance le timer (`derniere_prolongation_at = NOW()`).
+Exige une signature du joueur, comme les caves
+(`signable_type: 'casino_table_prolongation'`).
+
+#### `GET /tables-jeu/:id/prolongations?date=`
+Liste brute des prolongations du jour.
+
+#### `POST /table-prolongations/:prolongationId/signature`
+Même mécanisme que `/table-caves/:caveId/signature`.
+
+### Pourboires (déclaratif, jetons ou espèces)
+
+Contrairement aux caves/prolongations, un pourboire ne génère **aucune**
+écriture de caisse : l'argent a déjà transité par la caisse via les caves.
+C'est une déclaration servant à isoler la part du croupier en fin de
+service. Le front prompt ce montant juste avant la fermeture d'une table
+(« Aucun pourboire » reste possible pour fermer sans rien déclarer).
+
+#### `POST /tables-jeu/:id/pourboires`
+**Entrée** `{ session_id, montant, type_pourboire: 'JETONS'|'ESPECES' }`
+
+#### `GET /tables-jeu/:id/pourboires?date=`
+Liste brute des pourboires du jour.
+
+### `GET /tables-jeu/:id/feuille?date=` (mise à jour)
+La feuille de table inclut désormais `prolongations` (même forme que
+`lignes`, sans `numero_cave`/`numero_adherent`), `pourboires` (`{ total_jetons,
+total_especes, total }`), et dans `totaux` : `total_prolongation,
+total_prolongation_payee, total_prolongation_non_payee`.
+
+---
+
 ## Codes d'erreur communs
 
 | Code | Cas |

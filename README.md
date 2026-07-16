@@ -214,6 +214,17 @@ pour d'autres domaines) : voir `SIGNATURE_README.md`.
 
 ### 5.4 Casino (`/api/casino`) — 🔒 toutes les routes
 
+> ⚠️ **Cette section est obsolète.** Elle documente la forme de réponse de
+> `models/casinoModel.js` et `views/casinoView.js`, qui ne sont plus
+> importés nulle part (`casinoRoutes.js` n'utilise que `casinoController.js`,
+> lequel requête `pool` directement). Le dashboard réel renvoie par exemple
+> `{ salles_total, salles_ouvertes, sessions_ouvertes, produit_net_jour,
+> encours_credit_total, incidents_ouverts }`, pas la forme ci-dessous. La
+> doc à jour du module casino est `CASINO_README.md` (routes, sessions,
+> crédits, jetons, scoring, visites, tables de jeu). Cette sous-section 5.4
+> est conservée telle quelle en attendant une repasse dédiée ; ne pas s'y
+> fier pour le comportement actuel de l'API.
+
 #### Dashboard
 | GET | `/api/casino/dashboard` | Indicateurs agrégés temps réel |
 
