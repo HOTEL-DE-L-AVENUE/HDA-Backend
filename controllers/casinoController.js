@@ -1135,7 +1135,14 @@ exports.tablesJeuCrud = buildCrud('casino_tables_jeu', {
 exports.ouvrirTableHandler = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const [result] = await pool.query(`UPDATE casino_tables_jeu SET statut = 'OUVERTE' WHERE id = ?`, [id]);
+    // Chaque ouverture = nouvelle session de jeu : le timer "temps de jeu
+    // simple" repart de zéro (derniere_ouverture_at = NOW()) et l'historique
+    // de prolongation d'une session précédente n'est plus pris en compte
+    // (derniere_prolongation_at remis à NULL).
+    const [result] = await pool.query(
+      `UPDATE casino_tables_jeu SET statut = 'OUVERTE', derniere_ouverture_at = NOW(), derniere_prolongation_at = NULL WHERE id = ?`,
+      [id]
+    );
     if (result.affectedRows === 0) throw ApiError.notFound('Table de jeu introuvable');
     const [[row]] = await pool.query(`SELECT * FROM casino_tables_jeu WHERE id = ?`, [id]);
     res.json(row);
@@ -1145,7 +1152,14 @@ exports.ouvrirTableHandler = async (req, res, next) => {
 exports.fermerTableHandler = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const [result] = await pool.query(`UPDATE casino_tables_jeu SET statut = 'FERMEE' WHERE id = ?`, [id]);
+    // Remise à zéro du timer à la fermeture : la prochaine ouverture
+    // repart directement en phase JEU_SIMPLE (voir ouvrirTableHandler, qui
+    // fait de toute façon le même reset — ceinture et bretelles si la table
+    // est un jour rouverte par un autre chemin que /ouvrir).
+    const [result] = await pool.query(
+      `UPDATE casino_tables_jeu SET statut = 'FERMEE', derniere_prolongation_at = NULL WHERE id = ?`,
+      [id]
+    );
     if (result.affectedRows === 0) throw ApiError.notFound('Table de jeu introuvable');
     const [[row]] = await pool.query(`SELECT * FROM casino_tables_jeu WHERE id = ?`, [id]);
     res.json(row);
@@ -1247,68 +1261,6 @@ exports.listCavesHandler = async (req, res, next) => {
   } catch (err) { next(err); }
 };
  
-exports.feuilleTableHandler = async (req, res, next) => {
-  try {
-    const { id: tableJeuId } = req.params;
-    const { date } = req.query;
-    const jour = date || new Date().toISOString().slice(0, 10);
- 
-    const [[table]] = await pool.query(
-      `SELECT tj.*, r.nom AS salle FROM casino_tables_jeu tj
-         JOIN casino_rooms r ON r.id = tj.room_id
-        WHERE tj.id = ?`,
-      [tableJeuId]
-    );
-    if (!table) throw ApiError.notFound('Table de jeu introuvable');
- 
-    const [rows] = await pool.query(
-      `SELECT tc.*, c.nom, c.prenom,
-              (SELECT COUNT(*) FROM signatures s
-                WHERE s.signable_type = 'casino_table_cave' AND s.signable_id = tc.id) AS nb_signatures
-         FROM casino_table_caves tc
-         LEFT JOIN clients c ON c.id = tc.client_id
-        WHERE tc.table_jeu_id = ? AND tc.date_jeu = ?
-        ORDER BY tc.heure_mouvement ASC`,
-      [tableJeuId, jour]
-    );
- 
-    const lignes = rows.map((r) => ({
-      joueur: r.client_id ? `${r.nom || ''} ${r.prenom || ''}`.trim() : (r.client_libre || 'Joueur de passage'),
-      numero_adherent: r.numero_adherent,
-      heure_arrivee: r.heure_arrivee,
-      heure: r.heure_mouvement,
-      numero_cave: r.numero_cave,
-      montant_cave: Number(r.montant_cave),
-      montant_total_joueur: Number(r.montant_total_joueur),
-      statut_paiement: r.statut_paiement,
-      moyen_paiement: r.moyen_paiement,
-      signature_presente: Number(r.nb_signatures) > 0,
-    }));
- 
-    const totaux = rows.reduce(
-      (acc, r) => {
-        acc.total_cashing_jetons += Number(r.montant_jetons_remis);
-        if (r.statut_paiement === 'PAYE') {
-          acc.total_caves_encaissees += Number(r.montant_cave);
-          if (r.moyen_paiement === 'ESPECES') acc.montant_paye_especes += Number(r.montant_cave);
-          if (r.moyen_paiement === 'CARTE') acc.montant_paye_tpe += Number(r.montant_cave);
-        } else {
-          acc.montant_non_paye += Number(r.montant_cave);
-        }
-        return acc;
-      },
-      { total_cashing_jetons: 0, total_caves_encaissees: 0, montant_paye_especes: 0, montant_paye_tpe: 0, montant_non_paye: 0 }
-    );
- 
-    res.json({
-      table: { id: table.id, numero: table.numero, type_jeu: table.type_jeu, cave_minimum: Number(table.cave_minimum), salle: table.salle },
-      date: jour,
-      lignes,
-      totaux,
-    });
-  } catch (err) { next(err); }
-};
- 
 // -------------------------------------------------------------------------
 // Signature d'une cave/recave (table transversale `signatures`, comme pour
 // le KYC — signable_type = 'casino_table_cave', signable_id = cave.id)
@@ -1349,13 +1301,25 @@ exports.getCaveSignatureHandler = async (req, res, next) => {
 // Prolongations (salaire horaire du croupier, à charge du joueur)
 // -------------------------------------------------------------------------
  
-// Calcule si une prolongation est disponible pour une table : la référence
-// du timer est `derniere_prolongation_at` si elle existe, sinon `created_at`
-// de la table.
-function prolongationDisponible(table) {
-  const reference = table.derniere_prolongation_at || table.created_at;
-  const expiry = new Date(reference).getTime() + Number(table.duree_prolongation_minutes) * 60000;
-  return Date.now() >= expiry;
+// Deux temps distincts :
+//  - Tant qu'aucune prolongation n'a encore été faite (`derniere_prolongation_at`
+//    NULL) : phase JEU_SIMPLE, référence = derniere_ouverture_at (repartie à
+//    chaque ouverture) — ou created_at si la table n'a jamais été ouverte
+//    explicitement via /ouvrir —, durée = duree_jeu_simple_minutes.
+//  - Dès qu'au moins une prolongation existe : phase PROLONGATION,
+//    référence = derniere_prolongation_at, durée = duree_prolongation_minutes.
+function calculerEtatProlongation(table) {
+  const enPhaseSimple = !table.derniere_prolongation_at;
+  const reference = enPhaseSimple
+    ? (table.derniere_ouverture_at || table.created_at)
+    : table.derniere_prolongation_at;
+  const dureeMinutes = enPhaseSimple ? table.duree_jeu_simple_minutes : table.duree_prolongation_minutes;
+  const expiry = new Date(reference).getTime() + Number(dureeMinutes) * 60000;
+  return {
+    disponible: Date.now() >= expiry,
+    phase: enPhaseSimple ? 'JEU_SIMPLE' : 'PROLONGATION',
+    expiry,
+  };
 }
  
 exports.addProlongationHandler = async (req, res, next) => {
@@ -1369,8 +1333,9 @@ exports.addProlongationHandler = async (req, res, next) => {
       const [[table]] = await conn.query(`SELECT * FROM casino_tables_jeu WHERE id = ? FOR UPDATE`, [tableJeuId]);
       if (!table) throw ApiError.notFound('Table de jeu introuvable');
       if (table.statut !== 'OUVERTE') throw ApiError.badRequest('Cette table de jeu est fermée');
-      if (!prolongationDisponible(table)) {
-        throw ApiError.badRequest('Prolongation pas encore disponible : la période en cours n\'est pas terminée');
+      const { disponible } = calculerEtatProlongation(table);
+      if (!disponible) {
+        throw ApiError.badRequest("Prolongation pas encore disponible : le temps de jeu en cours n'est pas terminé");
       }
  
       const session = await getOpenSession(conn, session_id);
@@ -1593,6 +1558,8 @@ exports.feuilleTableHandler = async (req, res, next) => {
       table: {
         id: table.id, numero: table.numero, type_jeu: table.type_jeu,
         cave_minimum: Number(table.cave_minimum), salaire_horaire_croupier: Number(table.salaire_horaire_croupier),
+        duree_jeu_simple_minutes: Number(table.duree_jeu_simple_minutes),
+        duree_prolongation_minutes: Number(table.duree_prolongation_minutes),
         salle: table.salle,
       },
       date: jour,
