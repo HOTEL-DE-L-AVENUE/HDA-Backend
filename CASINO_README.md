@@ -529,6 +529,45 @@ total_prolongation_payee, total_prolongation_non_payee`.
 
 ---
 
+## Présence par table & temps de jeu
+
+`heure_arrivee` (sur `casino_table_caves`) donnait un début, mais rien
+n'enregistrait de fin — impossible de totaliser un vrai temps de jeu.
+`casino_table_visits` comble ce trou (même principe que `casino_visits` au
+niveau salle) :
+- **Arrivée automatique** : 1ère cave du joueur sur la table, le jour même
+  → ouverture d'une présence (`entree_at`).
+- **Départ** : manuel via `POST /table-visits/:visitId/terminer` (bouton
+  « Terminer » dans « Joueurs actifs »), ou automatique à la fermeture de
+  la table (`POST /tables-jeu/:id/fermer` clôture toutes les présences
+  encore ouvertes de cette table).
+- **Limite connue** : si un joueur revient sur la même table le même jour
+  après un vrai départ, sa présence n'est pas rouverte (seule la 1ère cave
+  du jour déclenche une arrivée) — le temps compté reste continu du 1er
+  `entree_at` jusqu'au départ.
+
+### `GET /tables-jeu/:id/joueurs-actifs`
+Joueurs actuellement présents à la table (`sortie_at IS NULL`), avec
+`minutes_ecoulees` depuis l'arrivée.
+
+### `POST /table-visits/:visitId/terminer`
+Départ manuel d'un joueur précis.
+
+### `GET /reports/temps-jeu-joueur/:clientId?date=`
+Temps de jeu total d'un joueur identifié. Sans `date`, cumul toutes dates
+confondues. Renvoie aussi `type_jeu_prefere` et `par_type_jeu` (cumul par
+`POKER/BLACKJACK/ROULETTE/BACCARA/AUTRE`, déterminé à partir des tables où
+le joueur a une présence réelle enregistrée — jamais une inférence).
+Affiché dans l'onglet « Temps de jeu » de la fiche client
+(`ClientProfileModal.tsx`).
+
+### `GET /reports/temps-jeu-jour?date=`
+Temps de jeu total du jour (défaut aujourd'hui), toutes tables et tous
+joueurs confondus, avec le détail par table. Affiché en bandeau en haut de
+l'onglet « Tables de jeu ».
+
+---
+
 ## Codes d'erreur communs
 
 | Code | Cas |

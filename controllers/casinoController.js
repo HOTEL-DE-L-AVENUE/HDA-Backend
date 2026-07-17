@@ -1152,16 +1152,24 @@ exports.ouvrirTableHandler = async (req, res, next) => {
 exports.fermerTableHandler = async (req, res, next) => {
   try {
     const { id } = req.params;
-    // Remise à zéro du timer à la fermeture : la prochaine ouverture
-    // repart directement en phase JEU_SIMPLE (voir ouvrirTableHandler, qui
-    // fait de toute façon le même reset — ceinture et bretelles si la table
-    // est un jour rouverte par un autre chemin que /ouvrir).
-    const [result] = await pool.query(
-      `UPDATE casino_tables_jeu SET statut = 'FERMEE', derniere_prolongation_at = NULL WHERE id = ?`,
-      [id]
-    );
-    if (result.affectedRows === 0) throw ApiError.notFound('Table de jeu introuvable');
-    const [[row]] = await pool.query(`SELECT * FROM casino_tables_jeu WHERE id = ?`, [id]);
+    const row = await withTransaction(async (conn) => {
+      const [result] = await conn.query(
+        `UPDATE casino_tables_jeu SET statut = 'FERMEE', derniere_prolongation_at = NULL WHERE id = ?`,
+        [id]
+      );
+      if (result.affectedRows === 0) throw ApiError.notFound('Table de jeu introuvable');
+
+      // Fermeture de la table = tous les joueurs encore présents sont
+      // considérés partis à cet instant (départ manuel possible avant via
+      // "Terminer" pour une précision fine par joueur).
+      await conn.query(
+        `UPDATE casino_table_visits SET sortie_at = NOW() WHERE table_jeu_id = ? AND sortie_at IS NULL`,
+        [id]
+      );
+
+      const [[updated]] = await conn.query(`SELECT * FROM casino_tables_jeu WHERE id = ?`, [id]);
+      return updated;
+    });
     res.json(row);
   } catch (err) { next(err); }
 };
@@ -1240,7 +1248,19 @@ exports.addCaveHandler = async (req, res, next) => {
          amount, statutPaiement, statutPaiement === 'PAYE' ? (moyen_paiement || 'ESPECES') : null,
          cashOperationId, caissierId(req)]
       );
- 
+
+      // Arrivée automatique (présence par table) sur la toute première cave
+      // du joueur ce jour-là — nécessaire pour totaliser un temps de jeu réel
+      // (voir casino_table_visits). Les caves/recaves suivantes du même
+      // joueur le même jour ne rouvrent pas une nouvelle présence.
+      if (numeroCave === 1) {
+        await conn.query(
+          `INSERT INTO casino_table_visits (table_jeu_id, client_id, client_libre, entree_at, created_by)
+           VALUES (?, ?, ?, NOW(), ?)`,
+          [tableJeuId, client_id || null, client_id ? null : (client_libre || null), caissierId(req)]
+        );
+      }
+
       const [[row]] = await conn.query(`SELECT * FROM casino_table_caves WHERE id = ?`, [result.insertId]);
       return row;
     });
@@ -1646,5 +1666,132 @@ exports.desarchiverTableHandler = async (req, res, next) => {
     await pool.query(`UPDATE casino_tables_jeu SET statut = 'FERMEE' WHERE id = ?`, [id]);
     const [[row]] = await pool.query(`SELECT * FROM casino_tables_jeu WHERE id = ?`, [id]);
     res.json(row);
+  } catch (err) { next(err); }
+};
+// -------------------------------------------------------------------------
+// Présence par table (casino_table_visits) & totalisation du temps de jeu
+// -------------------------------------------------------------------------
+
+// GET /tables-jeu/:id/joueurs-actifs — joueurs actuellement présents à
+// cette table (sortie_at IS NULL), avec la durée écoulée depuis l'arrivée.
+exports.joueursActifsHandler = async (req, res, next) => {
+  try {
+    const { id: tableJeuId } = req.params;
+    const [rows] = await pool.query(
+      `SELECT tv.*, c.nom, c.prenom,
+              TIMESTAMPDIFF(MINUTE, tv.entree_at, NOW()) AS minutes_ecoulees
+         FROM casino_table_visits tv
+         LEFT JOIN clients c ON c.id = tv.client_id
+        WHERE tv.table_jeu_id = ? AND tv.sortie_at IS NULL
+        ORDER BY tv.entree_at ASC`,
+      [tableJeuId]
+    );
+    res.json(rows.map((r) => ({
+      id: r.id,
+      joueur: r.client_id ? `${r.nom || ''} ${r.prenom || ''}`.trim() : (r.client_libre || 'Joueur de passage'),
+      client_id: r.client_id,
+      entree_at: r.entree_at,
+      minutes_ecoulees: Number(r.minutes_ecoulees),
+    })));
+  } catch (err) { next(err); }
+};
+
+// POST /table-visits/:visitId/terminer — départ manuel d'un joueur précis
+// (plus précis que d'attendre la fermeture de la table).
+exports.terminerVisiteHandler = async (req, res, next) => {
+  try {
+    const { visitId } = req.params;
+    const [result] = await pool.query(
+      `UPDATE casino_table_visits SET sortie_at = NOW() WHERE id = ? AND sortie_at IS NULL`,
+      [visitId]
+    );
+    if (result.affectedRows === 0) throw ApiError.notFound('Présence introuvable ou déjà terminée');
+    const [[row]] = await pool.query(`SELECT * FROM casino_table_visits WHERE id = ?`, [visitId]);
+    res.json(row);
+  } catch (err) { next(err); }
+};
+
+// GET /reports/temps-jeu-joueur/:clientId?date= — temps de jeu total d'un
+// joueur identifié (carte/fiche). `date` optionnel (YYYY-MM-DD) pour ne
+// compter qu'un jour donné ; sans `date`, cumul toutes dates confondues.
+// Une présence encore ouverte compte jusqu'à NOW().
+exports.tempsJeuJoueurHandler = async (req, res, next) => {
+  try {
+    const { clientId } = req.params;
+    const { date } = req.query;
+    const params = [clientId];
+    let sql = `
+      SELECT tv.id, tv.table_jeu_id, tj.numero AS table_numero, tj.type_jeu, tv.entree_at, tv.sortie_at,
+             TIMESTAMPDIFF(MINUTE, tv.entree_at, COALESCE(tv.sortie_at, NOW())) AS minutes
+        FROM casino_table_visits tv
+        JOIN casino_tables_jeu tj ON tj.id = tv.table_jeu_id
+       WHERE tv.client_id = ?`;
+    if (date) {
+      sql += ' AND DATE(tv.entree_at) = ?';
+      params.push(date);
+    }
+    sql += ' ORDER BY tv.entree_at ASC';
+    const [rows] = await pool.query(sql, params);
+
+    const sessions = rows.map((r) => ({
+      table_jeu_id: r.table_jeu_id,
+      table_numero: r.table_numero,
+      type_jeu: r.type_jeu,
+      entree_at: r.entree_at,
+      sortie_at: r.sortie_at,
+      minutes: Number(r.minutes),
+      en_cours: !r.sortie_at,
+    }));
+    const total_minutes = sessions.reduce((sum, s) => sum + s.minutes, 0);
+
+    // Cumul par type de jeu — déterminé à partir des tables où le joueur a
+    // effectivement une présence enregistrée (casino_table_visits), pas
+    // d'inférence : c'est du réel, pas une supposition.
+    const parType = {};
+    for (const s of sessions) {
+      if (!parType[s.type_jeu]) parType[s.type_jeu] = { type_jeu: s.type_jeu, minutes: 0, nb_sessions: 0 };
+      parType[s.type_jeu].minutes += s.minutes;
+      parType[s.type_jeu].nb_sessions += 1;
+    }
+    const par_type_jeu = Object.values(parType).sort((a, b) => b.minutes - a.minutes);
+    const type_jeu_prefere = par_type_jeu.length ? par_type_jeu[0].type_jeu : null;
+
+    res.json({
+      client_id: Number(clientId),
+      date: date || null,
+      total_minutes,
+      type_jeu_prefere,
+      par_type_jeu,
+      sessions,
+    });
+  } catch (err) { next(err); }
+};
+
+// GET /reports/temps-jeu-jour?date= — temps de jeu total du jour, tous
+// joueurs et toutes tables confondus (defaut = aujourd'hui), avec le
+// détail par table.
+exports.tempsJeuJourHandler = async (req, res, next) => {
+  try {
+    const jour = req.query.date || new Date().toISOString().slice(0, 10);
+    const [rows] = await pool.query(
+      `SELECT tv.table_jeu_id, tj.numero AS table_numero,
+              TIMESTAMPDIFF(MINUTE, tv.entree_at, COALESCE(tv.sortie_at, NOW())) AS minutes
+         FROM casino_table_visits tv
+         JOIN casino_tables_jeu tj ON tj.id = tv.table_jeu_id
+        WHERE DATE(tv.entree_at) = ?`,
+      [jour]
+    );
+
+    const parTable = {};
+    let total_minutes = 0;
+    for (const r of rows) {
+      const minutes = Number(r.minutes);
+      total_minutes += minutes;
+      if (!parTable[r.table_jeu_id]) parTable[r.table_jeu_id] = { table_jeu_id: r.table_jeu_id, table_numero: r.table_numero, minutes: 0, nb_sessions: 0 };
+      parTable[r.table_jeu_id].minutes += minutes;
+      parTable[r.table_jeu_id].nb_sessions += 1;
+    }
+
+    res.json({ date: jour, total_minutes, par_table: Object.values(parTable) });
   } catch (err) { next(err); }
 };

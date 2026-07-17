@@ -132,4 +132,12 @@ router.post('/table-prolongations/:prolongationId/signature', ctrl.signProlongat
 router.post('/tables-jeu/:id/pourboires', ctrl.addPourboireHandler);                // POST /api/casino/tables-jeu/:id/pourboires     { session_id, montant, type_pourboire: 'JETONS'|'ESPECES' }
 router.get('/tables-jeu/:id/pourboires', ctrl.listPourboiresHandler);               // GET  /api/casino/tables-jeu/:id/pourboires?date=
 
+// Rapports (à côté du bloc "Tableau de bord & consolidation" existant) :
+router.get('/reports/temps-jeu-joueur/:clientId', ctrl.tempsJeuJoueurHandler); // GET /api/casino/reports/temps-jeu-joueur/:clientId?date=  (total minutes, cumul si pas de date)
+router.get('/reports/temps-jeu-jour', ctrl.tempsJeuJourHandler);               // GET /api/casino/reports/temps-jeu-jour?date=              (total minutes, toutes tables, défaut aujourd'hui)
+ 
+// Dans le bloc "Tables de jeu" existant, avant `router.use('/tables-jeu', createCrudRouter(...))` :
+router.get('/tables-jeu/:id/joueurs-actifs', ctrl.joueursActifsHandler);       // GET /api/casino/tables-jeu/:id/joueurs-actifs
+router.post('/table-visits/:visitId/terminer', ctrl.terminerVisiteHandler);    // POST /api/casino/table-visits/:visitId/terminer
+
 module.exports = router;
