@@ -349,10 +349,22 @@ Chaque cave et chaque recave est un événement **tracé et signé** :
 
 ### `/tables-jeu` (CRUD standard, lecture/écriture partiellement surchargées — voir plus bas)
 Champs : `room_id, numero, type_jeu, cave_minimum, salaire_horaire_croupier,
-duree_prolongation_minutes, statut`.
+duree_jeu_simple_minutes, duree_prolongation_minutes, statut`.
 `type_jeu` ∈ `POKER, BLACKJACK, ROULETTE, BACCARA, AUTRE`. `statut` ∈ `OUVERTE, FERMEE, ARCHIVEE`.
-`salaire_horaire_croupier` (Ariary/heure) et `duree_prolongation_minutes`
-(défaut 60) sont fixés à la création — voir « Prolongations » plus bas.
+
+Deux temporisations distinctes, fixées à la création :
+- `duree_jeu_simple_minutes` (défaut 120 = 2h) — le **temps de jeu simple,
+  sans prolongation**, décompté depuis `created_at`. Tant qu'il n'est pas
+  écoulé, le bouton « Prolongation » n'est pas proposé. À expiration :
+  label « Temps de jeu terminé », le bouton apparaît pour la première fois.
+- `duree_prolongation_minutes` (défaut 60) — la **durée d'une
+  prolongation**, décomptée depuis `derniere_prolongation_at` une fois
+  qu'au moins une prolongation a été accordée. À expiration : label
+  « Timeout Pour la Prolongation », le bouton redevient disponible pour la
+  prolongation suivante.
+
+Voir « Prolongations » plus bas pour le détail de la logique serveur
+(`calculerEtatProlongation`).
 
 #### `GET /tables-jeu?room_id=`
 Surcharge la liste générique du CRUD pour ajouter `a_historique` (booléen) à
@@ -448,14 +460,36 @@ alerte dans la feuille de table).
 
 ### Prolongation (salaire horaire du croupier, à charge du joueur)
 
-Chaque table de jeu fixe, à sa création, un `salaire_horaire_croupier`
-(Ariary/heure) et une `duree_prolongation_minutes` (défaut 60). Le timer
-d'une table démarre à sa création et se relance à chaque prolongation
-accordée (`derniere_prolongation_at`). Le bouton « Prolongation » côté
-front est masqué tant que la période en cours n'est pas terminée ; une
-fois écoulée, il redevient actif avec le badge « Timeout Pour la
-Prolongation ». Le serveur applique la même règle côté API (400 si appelée
-trop tôt) — le front n'est pas la seule barrière.
+Chaque table fixe, à sa création, un `salaire_horaire_croupier`
+(Ariary/heure), un `duree_jeu_simple_minutes` (défaut 120) et un
+`duree_prolongation_minutes` (défaut 60). Deux phases, calculées côté
+serveur par `calculerEtatProlongation(table)` (et répliquées côté front
+dans `etatMinuteur`, pour l'affichage du compte à rebours sans appel
+réseau) :
+
+1. **Phase « jeu simple »** — tant qu'aucune prolongation n'a encore été
+   accordée (`derniere_prolongation_at IS NULL`) : référence =
+   `derniere_ouverture_at` (ou `created_at` si la table n'a jamais été
+   ouverte explicitement via `/ouvrir`), durée = `duree_jeu_simple_minutes`.
+   Le bouton « Prolongation » n'est pas affiché avant l'expiration. À
+   expiration : badge « Temps de jeu terminé », le bouton apparaît pour la
+   première fois.
+
+   **Le timer se remet à zéro à chaque cycle ouverture/fermeture** :
+   `POST /tables-jeu/:id/ouvrir` met à jour `derniere_ouverture_at = NOW()`
+   et remet `derniere_prolongation_at` à `NULL` (nouvelle session de jeu =
+   on repart en phase JEU_SIMPLE, l'historique de prolongation d'une
+   session précédente ne compte plus). `POST /tables-jeu/:id/fermer` remet
+   également `derniere_prolongation_at` à `NULL` par sécurité.
+2. **Phase « prolongation »** — dès qu'au moins une prolongation existe :
+   référence = `derniere_prolongation_at`, durée =
+   `duree_prolongation_minutes`. Le bouton est masqué (remplacé par un
+   compte à rebours mm:ss) tant que cette durée n'est pas écoulée ; à
+   expiration : badge « Timeout Pour la Prolongation », le bouton
+   redevient disponible.
+
+Le serveur applique la même règle côté API (`400` si appelée trop tôt,
+quelle que soit la phase) — le front n'est pas la seule barrière.
 
 #### `POST /tables-jeu/:id/prolongations`
 **Entrée** `{ session_id, client_id?|client_libre?, statut_paiement, moyen_paiement? }`
@@ -492,6 +526,45 @@ La feuille de table inclut désormais `prolongations` (même forme que
 `lignes`, sans `numero_cave`/`numero_adherent`), `pourboires` (`{ total_jetons,
 total_especes, total }`), et dans `totaux` : `total_prolongation,
 total_prolongation_payee, total_prolongation_non_payee`.
+
+---
+
+## Présence par table & temps de jeu
+
+`heure_arrivee` (sur `casino_table_caves`) donnait un début, mais rien
+n'enregistrait de fin — impossible de totaliser un vrai temps de jeu.
+`casino_table_visits` comble ce trou (même principe que `casino_visits` au
+niveau salle) :
+- **Arrivée automatique** : 1ère cave du joueur sur la table, le jour même
+  → ouverture d'une présence (`entree_at`).
+- **Départ** : manuel via `POST /table-visits/:visitId/terminer` (bouton
+  « Terminer » dans « Joueurs actifs »), ou automatique à la fermeture de
+  la table (`POST /tables-jeu/:id/fermer` clôture toutes les présences
+  encore ouvertes de cette table).
+- **Limite connue** : si un joueur revient sur la même table le même jour
+  après un vrai départ, sa présence n'est pas rouverte (seule la 1ère cave
+  du jour déclenche une arrivée) — le temps compté reste continu du 1er
+  `entree_at` jusqu'au départ.
+
+### `GET /tables-jeu/:id/joueurs-actifs`
+Joueurs actuellement présents à la table (`sortie_at IS NULL`), avec
+`minutes_ecoulees` depuis l'arrivée.
+
+### `POST /table-visits/:visitId/terminer`
+Départ manuel d'un joueur précis.
+
+### `GET /reports/temps-jeu-joueur/:clientId?date=`
+Temps de jeu total d'un joueur identifié. Sans `date`, cumul toutes dates
+confondues. Renvoie aussi `type_jeu_prefere` et `par_type_jeu` (cumul par
+`POKER/BLACKJACK/ROULETTE/BACCARA/AUTRE`, déterminé à partir des tables où
+le joueur a une présence réelle enregistrée — jamais une inférence).
+Affiché dans l'onglet « Temps de jeu » de la fiche client
+(`ClientProfileModal.tsx`).
+
+### `GET /reports/temps-jeu-jour?date=`
+Temps de jeu total du jour (défaut aujourd'hui), toutes tables et tous
+joueurs confondus, avec le détail par table. Affiché en bandeau en haut de
+l'onglet « Tables de jeu ».
 
 ---
 
