@@ -1501,7 +1501,10 @@ exports.feuilleTableHandler = async (req, res, next) => {
     const [caveRows] = await pool.query(
       `SELECT tc.*, c.nom, c.prenom,
               (SELECT COUNT(*) FROM signatures s
-                WHERE s.signable_type = 'casino_table_cave' AND s.signable_id = tc.id) AS nb_signatures
+                WHERE s.signable_type = 'casino_table_cave' AND s.signable_id = tc.id) AS nb_signatures,
+              (SELECT s.signature_data FROM signatures s
+                WHERE s.signable_type = 'casino_table_cave' AND s.signable_id = tc.id
+                ORDER BY s.signed_at DESC LIMIT 1) AS signature_data
          FROM casino_table_caves tc
          LEFT JOIN clients c ON c.id = tc.client_id
         WHERE tc.table_jeu_id = ? AND tc.date_jeu = ?
@@ -1512,7 +1515,10 @@ exports.feuilleTableHandler = async (req, res, next) => {
     const [prolongationRows] = await pool.query(
       `SELECT tp.*, c.nom, c.prenom,
               (SELECT COUNT(*) FROM signatures s
-                WHERE s.signable_type = 'casino_table_prolongation' AND s.signable_id = tp.id) AS nb_signatures
+                WHERE s.signable_type = 'casino_table_prolongation' AND s.signable_id = tp.id) AS nb_signatures,
+              (SELECT s.signature_data FROM signatures s
+                WHERE s.signable_type = 'casino_table_prolongation' AND s.signable_id = tp.id
+                ORDER BY s.signed_at DESC LIMIT 1) AS signature_data
          FROM casino_table_prolongations tp
          LEFT JOIN clients c ON c.id = tp.client_id
         WHERE tp.table_jeu_id = ? AND DATE(tp.created_at) = ?
@@ -1526,6 +1532,7 @@ exports.feuilleTableHandler = async (req, res, next) => {
     );
  
     const lignes = caveRows.map((r) => ({
+      cave_id: r.id,
       joueur: r.client_id ? `${r.nom || ''} ${r.prenom || ''}`.trim() : (r.client_libre || 'Joueur de passage'),
       numero_adherent: r.numero_adherent,
       heure_arrivee: r.heure_arrivee,
@@ -1536,15 +1543,18 @@ exports.feuilleTableHandler = async (req, res, next) => {
       statut_paiement: r.statut_paiement,
       moyen_paiement: r.moyen_paiement,
       signature_presente: Number(r.nb_signatures) > 0,
+      signature_data: r.signature_data || null,
     }));
  
     const prolongations = prolongationRows.map((r) => ({
+      prolongation_id: r.id,
       joueur: r.client_id ? `${r.nom || ''} ${r.prenom || ''}`.trim() : (r.client_libre || 'Joueur de passage'),
       heure: r.created_at,
       montant: Number(r.montant),
       statut_paiement: r.statut_paiement,
       moyen_paiement: r.moyen_paiement,
       signature_presente: Number(r.nb_signatures) > 0,
+      signature_data: r.signature_data || null,
     }));
  
     const totaux = caveRows.reduce(
