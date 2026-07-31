@@ -1,5 +1,6 @@
 const { pool, withTransaction } = require('../config/db');
 const { createOrder, ensureBarTransactionsSchema } = require('./barTransaction.model');
+const ApiError = require('../utils/ApiError');
 
 async function findOrCreateClient(name, connection) {
   const clientName = String(name || '').trim();
@@ -76,6 +77,32 @@ async function createBarOrder({ clientName, tableId, items }) {
   await ensureBarTransactionsSchema();
 
   return withTransaction(async (conn) => {
+    // Lock and validate each requested stock row before creating the order.
+    // The stock decrement and order creation therefore succeed or fail together.
+    const requestedQuantities = new Map();
+    for (const item of items || []) {
+      const productId = Number(item.product_id ?? item.id);
+      const quantity = Number(item.quantite);
+      if (!Number.isInteger(productId) || productId <= 0 || !Number.isFinite(quantity) || quantity <= 0) {
+        throw ApiError.badRequest('Chaque article doit avoir un produit et une quantité positive.');
+      }
+      requestedQuantities.set(productId, (requestedQuantities.get(productId) || 0) + quantity);
+    }
+
+    for (const [productId, quantity] of requestedQuantities) {
+      const [stocks] = await conn.query(
+        `SELECT bs.quantite, bp.nom
+         FROM bar_stock bs
+         JOIN bar_products bp ON bp.id = bs.product_id
+         WHERE bs.product_id = ? FOR UPDATE`,
+        [productId]
+      );
+      if (!stocks.length) throw ApiError.badRequest(`Stock introuvable pour le produit #${productId}.`);
+      if (Number(stocks[0].quantite) < quantity) {
+        throw ApiError.badRequest(`Stock insuffisant pour ${stocks[0].nom}. Disponible : ${stocks[0].quantite}.`);
+      }
+    }
+
     const clientId = await findOrCreateClient(clientName, conn);
     const total = (items || []).reduce((sum, item) => sum + Number(item.quantite || 1) * Number(item.prix || 0), 0);
 
@@ -85,6 +112,13 @@ async function createBarOrder({ clientName, tableId, items }) {
     );
 
     const orderId = result.insertId;
+
+    for (const [productId, quantity] of requestedQuantities) {
+      await conn.query(
+        'UPDATE bar_stock SET quantite = quantite - ? WHERE product_id = ?',
+        [quantity, productId]
+      );
+    }
 
     const transactionItems = (items || []).map((item) => ({
       product_id: item.product_id ?? item.id,
