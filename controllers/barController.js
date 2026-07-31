@@ -3,6 +3,7 @@ const { BarCashiers, openCashierSession, closeCashierSession, getCurrentSession 
 const { BarSessions, sessionStats } = require('../models/barSession.model');
 const barProductModel = require('../models/barProduct.model');
 const { addTransaction } = require('../models/barTransaction.model');
+const { listBarOrders, createBarOrder, deleteBarOrder } = require('../models/barOrder.model');
 const { createCrudController } = require('./controllerFactory');
 const ApiError = require('../utils/ApiError');
 const { ok, created } = require('../utils/apiResponse');
@@ -122,6 +123,26 @@ async function listTransactionsHandler(req, res) {
   return ok(res, rows);
 }
 
+async function listBarOrdersHandler(req, res) {
+  const orders = await listBarOrders();
+  return ok(res, orders);
+}
+
+async function createBarOrderHandler(req, res) {
+  const { client, table, items } = req.body || {};
+  if (!client || table === undefined || !Array.isArray(items) || items.length === 0) {
+    throw ApiError.badRequest('client, table et items sont requis');
+  }
+
+  const order = await createBarOrder({ clientName: client, tableId: table, items });
+  return created(res, order);
+}
+
+async function deleteBarOrderHandler(req, res) {
+  const deleted = await deleteBarOrder(req.params.id);
+  if (!deleted) throw ApiError.notFound(`Commande #${req.params.id} introuvable`);
+  return ok(res, { message: 'Commande supprimée' });
+}
 module.exports = {
   tablesCrud, cashiersCrud, sessionsCrud, productsCrud,
   tablesStatsHandler, openCashierHandler, closeCashierHandler,
@@ -129,4 +150,5 @@ module.exports = {
   currentSessionHandler, getBarStockHandler,
   addBarStockHandler, updateBarStockHandler, deleteBarStockHandler,
   addTransactionHandler, latestTransactionsByProductHandler, listTransactionsHandler,
+  listBarOrdersHandler, createBarOrderHandler, deleteBarOrderHandler,
 };

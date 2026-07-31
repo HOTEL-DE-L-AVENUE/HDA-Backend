@@ -2,9 +2,23 @@
 const express = require('express');
 const ctrl = require('../controllers/restaurantController');
 const { createCrudRouter } = require('./routeFactory');
+const stockCtrl = require('../controllers/stockController');
 
 const router = express.Router();
 
+// Stock restaurant — mêmes données que le module stock, avec les libellés nécessaires à l'interface.
+router.get('/stock', ctrl.restaurantStockHandler);
+router.get('/stock/movements', ctrl.restaurantStockMovementsHandler);
+router.post('/stock/adjust', ctrl.adjustRestaurantStockHandler);
+router.use('/stock/locations', createCrudRouter(stockCtrl.stockLocationsCrud));
+router.use('/products', createCrudRouter(stockCtrl.productsCrud));
+router.use('/units', createCrudRouter(stockCtrl.unitsCrud));
+router.use('/product-types', createCrudRouter(stockCtrl.productTypesCrud));
+router.use('/categories', createCrudRouter(stockCtrl.categoriesCrud));
+router.use('/suppliers', createCrudRouter(stockCtrl.suppliersCrud));
+router.get('/purchases', ctrl.listRestaurantPurchasesHandler);
+router.post('/purchases', ctrl.createRestaurantPurchaseHandler);
+router.get('/purchases/:id', ctrl.restaurantPurchaseDetailHandler);
 router.use('/tables', createCrudRouter(ctrl.tablesCrud));
 
 router.post('/orders', ctrl.createOrderHandler);              // POST /api/restaurant/orders (avec lignes)

@@ -20,35 +20,52 @@ async function getBarProductsWithStock() {
 
 async function addBarProductWithStock(data) {
   const pool = require('../config/db').pool;
-  const { nom, categorie, prix, alcool, unite, quantite, seuil_minimum, ingredients } = data;
-  const result = await pool.query(
+  const nom = String(data.nom || '').trim();
+  const categorie = String(data.categorie || data.category || 'Bar').trim();
+  const prix = Number(data.prix ?? data.prixUnitaire ?? data.prix_unitaire ?? data.price ?? 0);
+  const alcool = data.alcool === false || data.alcool === 0 ? 0 : 1;
+  const unite = String(data.unite || 'unités').trim();
+  const quantite = Number(data.quantite ?? 0);
+  const seuil_minimum = Number(data.seuil_minimum ?? data.seuilMinimum ?? 5);
+  const ingredients = String(data.ingredients || '').trim();
+
+  const [result] = await pool.query(
     'INSERT INTO bar_products (nom, ingredients, prix, categorie, alcool, type_produit, source_module) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [nom, ingredients || '', prix || 0, categorie || 'Bar', alcool !== false ? 1 : 0, 'PRODUIT_FINI', 'BAR']
+    [nom, ingredients, Number.isFinite(prix) ? prix : 0, categorie, alcool, 'PRODUIT_FINI', 'BAR']
   );
   const productId = result.insertId;
   await pool.query(
     'INSERT INTO bar_stock (product_id, quantite, seuil_minimum, unite) VALUES (?, ?, ?, ?)',
-    [productId, quantite || 0, seuil_minimum || 5, unite || 'unités']
+    [productId, Number.isFinite(quantite) ? quantite : 0, Number.isFinite(seuil_minimum) ? seuil_minimum : 5, unite]
   );
-  return { id: productId, ...data };
+  return { id: productId, nom, categorie, prix: Number.isFinite(prix) ? prix : 0, quantite: Number.isFinite(quantite) ? quantite : 0, seuil_minimum: Number.isFinite(seuil_minimum) ? seuil_minimum : 5, unite, ingredients, alcool };
 }
 
 async function updateBarProductWithStock(id, data) {
   const pool = require('../config/db').pool;
-  const { nom, categorie, prix, alcool, unite, quantite, seuil_minimum, ingredients } = data;
+  const nom = String(data.nom || '').trim();
+  const categorie = String(data.categorie || data.category || 'Bar').trim();
+  const prix = Number(data.prix ?? data.prixUnitaire ?? data.prix_unitaire ?? data.price ?? 0);
+  const alcool = data.alcool === false || data.alcool === 0 ? 0 : 1;
+  const unite = String(data.unite || 'unités').trim();
+  const quantite = Number(data.quantite ?? 0);
+  const seuil_minimum = Number(data.seuil_minimum ?? data.seuilMinimum ?? 5);
+  const ingredients = String(data.ingredients || '').trim();
+
   await pool.query(
     'UPDATE bar_products SET nom=?, ingredients=?, prix=?, categorie=?, alcool=?, type_produit=?, source_module=? WHERE id=?',
-    [nom, ingredients || '', prix || 0, categorie || 'Bar', alcool !== false ? 1 : 0, 'PRODUIT_FINI', 'BAR', id]
+    [nom, ingredients, Number.isFinite(prix) ? prix : 0, categorie, alcool, 'PRODUIT_FINI', 'BAR', id]
   );
   await pool.query(
     'INSERT INTO bar_stock (product_id, quantite, seuil_minimum, unite) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE quantite=VALUES(quantite), seuil_minimum=VALUES(seuil_minimum), unite=VALUES(unite)',
-    [id, quantite || 0, seuil_minimum || 5, unite || 'unités']
+    [id, Number.isFinite(quantite) ? quantite : 0, Number.isFinite(seuil_minimum) ? seuil_minimum : 5, unite]
   );
-  return { id, ...data };
+  return { id, nom, categorie, prix: Number.isFinite(prix) ? prix : 0, quantite: Number.isFinite(quantite) ? quantite : 0, seuil_minimum: Number.isFinite(seuil_minimum) ? seuil_minimum : 5, unite, ingredients, alcool };
 }
 
 async function deleteBarProductWithStock(id) {
   const pool = require('../config/db').pool;
+  await pool.query('DELETE FROM bar_transactions WHERE product_id = ?', [id]);
   await pool.query('DELETE FROM bar_stock WHERE product_id = ?', [id]);
   await pool.query('DELETE FROM bar_products WHERE id = ?', [id]);
   return { id };
