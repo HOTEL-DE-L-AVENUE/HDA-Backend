@@ -64,6 +64,7 @@ async function listBarOrders() {
     table: Number(order.table_id),
     statut: order.statut,
     total: Number(order.montant_total || 0),
+    created_at: order.created_at,
     items: (grouped[order.id] || []).map((item) => ({
       nom: item.nom,
       quantite: Number(item.quantite || 1),
