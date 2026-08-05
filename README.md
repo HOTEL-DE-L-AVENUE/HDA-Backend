@@ -1,5 +1,5 @@
 # API HDA — Documentation technique
-
+ 
 Backend Node.js / Express en architecture **MVC**, connecté à la base MySQL/MariaDB `hda`
 (hébergement, restaurant, stock, finance, casino). Toutes les requêtes passent par un pool
 `mysql2/promise`.
