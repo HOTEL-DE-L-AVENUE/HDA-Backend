@@ -18,7 +18,12 @@ router.get('/:id/kyc/signature/history', ctrl.getKycSignatureHistory); // GET hi
 router.get('/:id/kyc/signature', ctrl.getKycSignature);           // GET dernière signature
 router.post('/:id/kyc/signature', ctrl.saveKycSignature);         // POST nouvelle signature (append-only, jamais un remplacement)
 
-// CRUD standard sur /api/clients
+// Création / mise à jour : logique dédiée (nom obligatoire, code_client
+// auto-généré et immuable) — doit précéder le CRUD générique ci-dessous.
+router.post('/', ctrl.createClientHandler);       // POST /api/clients
+router.put('/:id', ctrl.updateClientHandler);     // PUT /api/clients/:id
+
+// CRUD standard sur /api/clients (GET liste, GET /:id, DELETE /:id, etc.)
 router.use('/', createCrudRouter(ctrl.clientsCrud));
 
 module.exports = router;
