@@ -1,151 +1,130 @@
-// controllers/clientController.js
-const {
-  Clients, ClientAccounts, LoyaltyPoints,
-  createClient, updateClient,
-  findByClientId, search, adjustAccountBalance,
-  findKycByClientId, upsertKyc,
-} = require('../models/clientModel');
-const { findLatestSignature, findSignatureHistory, createSignature } = require('../models/signatureModel');
-const { createCrudController } = require('./controllerFactory');
-const { renderClient, renderClientWithKyc, renderKyc } = require('../views/clientView');
-const ApiError = require('../utils/ApiError');
-const { ok, created } = require('../utils/apiResponse');
+// models/clientModel.js
+const { pool, withTransaction } = require('../config/db');
+const { createCrudModel } = require('./crudFactory');
 
-const NIVEAUX_RISQUE = ['FAIBLE', 'MOYEN', 'ELEVE'];
-
-const clientsCrud = createCrudController(Clients, {
-  filterable: ['statut', 'is_casino_player'],
-  view: renderClient,
+const Clients = createCrudModel({
+  table: 'clients',
+  pk: 'id',
+  fields: [
+    'code_client', 'nom', 'prenom', 'telephone', 'email', 'adresse',
+    'date_naissance', 'type_piece', 'numero_piece', 'photo_url',
+    'is_casino_player', 'statut',
+  ],
+  sortable: ['id', 'nom', 'prenom', 'code_client', 'statut', 'created_at'],
 });
 
-// POST /api/clients — nom est le seul champ obligatoire ; code_client est
-// auto-généré s'il n'est pas fourni (voir clientModel.createClient).
-async function createClientHandler(req, res) {
-  if (!req.body?.nom || !String(req.body.nom).trim()) {
-    throw ApiError.badRequest('Le nom est requis');
+const ClientAccounts = createCrudModel({
+  table: 'client_accounts',
+  pk: 'id',
+  fields: ['client_id', 'solde'],
+  sortable: ['id', 'client_id', 'solde'],
+});
+
+const LoyaltyPoints = createCrudModel({
+  table: 'loyalty_points',
+  pk: 'id',
+  fields: ['client_id', 'points', 'motif', 'created_at'],
+  sortable: ['id', 'client_id', 'created_at'],
+});
+
+// Fiche KYC (Know Your Customer) — conformité LBC/FT casino.
+// Exposé surtout via findKycByClientId / upsertKyc (relation 1-1 avec un client),
+// mais on garde aussi un modèle CRUD générique pour les besoins d'admin/listing.
+const ClientKyc = createCrudModel({
+  table: 'client_kyc',
+  pk: 'id',
+  fields: [
+    'client_id', 'lieu_naissance', 'nationalite', 'profession',
+    'date_delivrance_piece', 'date_expiration_piece', 'autorite_delivrance',
+    'source_revenus', 'revenu_mensuel_estime', 'mode_paiement', 'banque',
+    'doc_piece_identite', 'doc_justificatif_domicile', 'doc_photo_client', 'doc_autre',
+    'niveau_risque', 'commentaires_risque', 'declaration_client',
+    'agent_verificateur', 'date_verification',
+  ],
+  sortable: ['id', 'client_id', 'niveau_risque', 'date_verification', 'created_at'],
+});
+
+// Champs modifiables librement sur un client (code_client est géré à part : voir
+// createClient / updateClient ci-dessous).
+const CLIENT_FIELDS = [
+  'nom', 'prenom', 'telephone', 'email', 'adresse',
+  'date_naissance', 'type_piece', 'numero_piece', 'photo_url',
+  'is_casino_player', 'statut',
+];
+
+function pickClientFields(data = {}) {
+  const out = {};
+  for (const field of CLIENT_FIELDS) {
+    if (data[field] !== undefined) out[field] = data[field];
   }
-  const client = await createClient(req.body);
-  return created(res, renderClient(client));
+  return out;
 }
 
-// PUT /api/clients/:id — code_client ne peut plus être modifié une fois attribué
-// (voir clientModel.updateClient, qui ignore silencieusement toute tentative).
-async function updateClientHandler(req, res) {
-  if (req.body?.nom !== undefined && !String(req.body.nom).trim()) {
-    throw ApiError.badRequest('Le nom est requis');
-  }
-  const client = await updateClient(req.params.id, req.body);
-  if (!client) throw ApiError.notFound(`Client #${req.params.id} introuvable`);
-  return ok(res, renderClient(client));
-}
+// Crée un client. `nom` est le seul champ obligatoire (validé côté contrôleur).
+// `code_client` : utilisé tel quel s'il est fourni, sinon auto-généré à partir de
+// l'id auto-incrémenté une fois la ligne créée (garantit l'unicité sans compteur
+// séparé à synchroniser).
+async function createClient(data = {}) {
+  const fields = pickClientFields(data);
+  return withTransaction(async (conn) => {
+    const [ins] = await conn.query('INSERT INTO clients SET ?', [fields]);
+    const id = ins.insertId;
 
-async function getOneWithAccount(req, res) {
-  const client = await Clients.findById(req.params.id);
-  if (!client) throw ApiError.notFound(`Client #${req.params.id} introuvable`);
-  const [account, kyc] = await Promise.all([
-    findByClientId(req.params.id),
-    findKycByClientId(req.params.id),
-  ]);
-  return ok(res, renderClientWithKyc(client, account, kyc));
-}
+    const providedCode = data.code_client && String(data.code_client).trim();
+    const finalCode = providedCode || `CLI-${String(id).padStart(6, '0')}`;
+    await conn.query('UPDATE clients SET code_client = ? WHERE id = ?', [finalCode, id]);
 
-async function searchClients(req, res) {
-  const term = req.query.q;
-  if (!term || term.length < 2) throw ApiError.badRequest('Le paramètre "q" doit contenir au moins 2 caractères');
-  const rows = await search(term, Number(req.query.limit) || 20);
-  return ok(res, rows.map(renderClient));
-}
-
-async function getAccount(req, res) {
-  const account = await findByClientId(req.params.id);
-  if (!account) throw ApiError.notFound('Aucun compte pour ce client');
-  return ok(res, account);
-}
-
-async function creditAccount(req, res) {
-  const { montant, points, motif } = req.body;
-  if (!montant) throw ApiError.badRequest('montant requis');
-  const account = await adjustAccountBalance(req.params.id, Math.abs(montant), { points, motif });
-  return ok(res, account);
-}
-
-async function debitAccount(req, res) {
-  const { montant, motif } = req.body;
-  if (!montant) throw ApiError.badRequest('montant requis');
-  const account = await adjustAccountBalance(req.params.id, -Math.abs(montant), { motif });
-  return ok(res, account);
-}
-
-async function loyaltyHistory(req, res) {
-  const rows = await LoyaltyPoints.findAll({ whereSql: 'WHERE client_id = ?', whereValues: [req.params.id], orderBy: '`created_at` DESC' });
-  return ok(res, rows);
-}
-
-// GET /api/clients/:id/kyc — fiche KYC (conformité LBC/FT)
-async function getKyc(req, res) {
-  const client = await Clients.findById(req.params.id);
-  if (!client) throw ApiError.notFound(`Client #${req.params.id} introuvable`);
-  const kyc = await findKycByClientId(req.params.id);
-  return ok(res, renderKyc(kyc));
-}
-
-// PUT /api/clients/:id/kyc — crée ou met à jour la fiche KYC (upsert)
-async function saveKyc(req, res) {
-  const client = await Clients.findById(req.params.id);
-  if (!client) throw ApiError.notFound(`Client #${req.params.id} introuvable`);
-
-  if (req.body.niveau_risque && !NIVEAUX_RISQUE.includes(req.body.niveau_risque)) {
-    throw ApiError.badRequest(`niveau_risque doit être l'un de : ${NIVEAUX_RISQUE.join(', ')}`);
-  }
-
-  // NOTE: adapter `req.user?.id_admin` si le payload JWT expose l'id de l'agent
-  // sous un autre nom (ex: req.user?.id).
-  const kyc = await upsertKyc(req.params.id, {
-    ...req.body,
-    agent_verificateur: req.body.agent_verificateur ?? req.user?.id_admin ?? null,
-    date_verification: req.body.date_verification || new Date().toISOString().slice(0, 10),
+    const [rows] = await conn.query('SELECT * FROM clients WHERE id = ?', [id]);
+    return rows[0];
   });
-  return ok(res, renderKyc(kyc));
 }
 
-// GET /api/clients/:id/kyc/signature — dernière signature électronique liée à la déclaration KYC
-async function getKycSignature(req, res) {
-  const client = await Clients.findById(req.params.id);
-  if (!client) throw ApiError.notFound(`Client #${req.params.id} introuvable`);
-  const signature = await findLatestSignature('client_kyc', req.params.id);
-  return ok(res, signature);
+// Met à jour un client. Le code_client est immuable une fois attribué : toute
+// valeur reçue dans data.code_client est ignorée si le client en a déjà un.
+// Retourne null si le client n'existe pas (le contrôleur transforme ça en 404).
+async function updateClient(id, data = {}) {
+  const [existingRows] = await pool.query('SELECT code_client FROM clients WHERE id = ?', [id]);
+  const existing = existingRows[0];
+  if (!existing) return null;
+
+  const payload = pickClientFields(data);
+
+  const providedCode = data.code_client && String(data.code_client).trim();
+  if (!existing.code_client && providedCode) {
+    payload.code_client = providedCode;
+  }
+
+  if (Object.keys(payload).length > 0) {
+    await pool.query('UPDATE clients SET ? WHERE id = ?', [payload, id]);
+  }
+
+  const [rows] = await pool.query('SELECT * FROM clients WHERE id = ?', [id]);
+  return rows[0];
 }
 
-// GET /api/clients/:id/kyc/signature/history — historique complet des signatures KYC de ce client
-async function getKycSignatureHistory(req, res) {
-  const client = await Clients.findById(req.params.id);
-  if (!client) throw ApiError.notFound(`Client #${req.params.id} introuvable`);
-  const rows = await findSignatureHistory('client_kyc', req.params.id);
-  return ok(res, rows);
+async function findByClientId(id) {
+  const [rows] = await pool.query('SELECT * FROM client_accounts WHERE client_id = ? LIMIT 1', [id]);
+  return rows[0] || null;
 }
 
-// POST /api/clients/:id/kyc/signature — enregistre une NOUVELLE signature (jamais un remplacement)
-async function saveKycSignature(req, res) {
-  const client = await Clients.findById(req.params.id);
-  if (!client) throw ApiError.notFound(`Client #${req.params.id} introuvable`);
-  const { signature_data } = req.body;
-  if (!signature_data) throw ApiError.badRequest('signature_data requis');
-
-  const signature = await createSignature({
-    signableType: 'client_kyc',
-    signableId: req.params.id,
-    clientId: req.params.id,
-    signatureData: signature_data,
-  });
-  return created(res, signature);
+// Recherche multi-critères (nom, prénom, code_client, téléphone, email)
+async function search(term, limit = 20) {
+  const like = `%${term}%`;
+  const [rows] = await pool.query(
+    `SELECT * FROM clients
+     WHERE nom LIKE ? OR prenom LIKE ? OR code_client LIKE ? OR telephone LIKE ? OR email LIKE ?
+     ORDER BY nom ASC LIMIT ?`,
+    [like, like, like, like, like, limit]
+  );
+  return rows;
 }
 
-module.exports = {
-  clientsCrud, createClientHandler, updateClientHandler,
-  getOneWithAccount, searchClients, getAccount, creditAccount, debitAccount, loyaltyHistory,
-  getKyc, saveKyc, getKycSignature, getKycSignatureHistory, saveKycSignature,
-  ClientAccountsCrud: createCrudController(ClientAccounts, { filterable: ['client_id'] }),
-};    let account = accRows[0];
+// Crédite/débite le compte client et journalise le point de fidélité si fourni,
+// dans une seule transaction (évite les incohérences en cas d'erreur partielle).
+async function adjustAccountBalance(clientId, delta, { points, motif } = {}) {
+  return withTransaction(async (conn) => {
+    const [accRows] = await conn.query('SELECT * FROM client_accounts WHERE client_id = ? FOR UPDATE', [clientId]);
+    let account = accRows[0];
     if (!account) {
       const [ins] = await conn.query('INSERT INTO client_accounts (client_id, solde) VALUES (?, 0)', [clientId]);
       account = { id: ins.insertId, client_id: clientId, solde: 0 };
@@ -209,6 +188,7 @@ async function upsertKyc(clientId, data = {}) {
 
 module.exports = {
   Clients, ClientAccounts, LoyaltyPoints, ClientKyc,
+  createClient, updateClient,
   findByClientId, search, adjustAccountBalance,
   findKycByClientId, upsertKyc,
 };
