@@ -135,7 +135,7 @@ async function restaurantPurchaseDetailHandler(req, res) {
 async function createRestaurantPurchaseHandler(req, res) {
   const { supplier_id, items } = req.body || {};
   if (!supplier_id || !Array.isArray(items) || !items.length) {
-    throw ApiError.badRequest('supplier_id et au moins une ligne d�achat sont requis');
+    throw ApiError.badRequest('supplier_id et au moins une ligne d\'achat sont requis');
   }
   for (const item of items) {
     if (!item.product_id || !item.location_id || Number(item.quantite) <= 0 || Number(item.prix_unitaire) < 0) {
@@ -181,9 +181,150 @@ async function createRestaurantPurchaseHandler(req, res) {
 
   return created(res, purchase);
 }
+
+async function menuHandler(req, res) {
+  const [rows] = await pool.query(
+    `SELECT p.*, c.nom AS category_nom 
+     FROM products p 
+     LEFT JOIN categories c ON c.id = p.category_id 
+     WHERE p.actif = 1 AND p.type_produit = 'MENU' 
+     ORDER BY c.nom, p.nom`
+  );
+  return ok(res, rows);
+}
+
+async function updateOrderStatusHandler(req, res) {
+  const { statut } = req.body;
+  if (!statut) throw ApiError.badRequest('statut est requis');
+  
+  const [result] = await pool.query(
+    'UPDATE orders SET statut = ? WHERE id = ?',
+    [statut, req.params.id]
+  );
+  if (result.affectedRows === 0) throw ApiError.notFound(`Commande #${req.params.id} introuvable`);
+  
+  const [[order]] = await pool.query('SELECT * FROM orders WHERE id = ?', [req.params.id]);
+  return ok(res, order);
+}
+
+async function openCashierHandler(req, res) {
+  const { nom, user_id, fond_initial } = req.body;
+  if (!nom || !user_id || fond_initial === undefined) {
+    throw ApiError.badRequest('nom, user_id et fond_initial sont requis');
+  }
+  
+  const [cashierResult] = await pool.query(
+    'INSERT INTO restaurant_cashiers (nom, statut) VALUES (?, "OUVERT")',
+    [nom]
+  );
+  const cashierId = cashierResult.insertId;
+  
+  const [sessionResult] = await pool.query(
+    'INSERT INTO restaurant_sessions (cashier_id, user_id, fond_initial, ouverture_at) VALUES (?, ?, ?, NOW())',
+    [cashierId, user_id, fond_initial]
+  );
+  
+  return created(res, { cashier_id: cashierId, session_id: sessionResult.insertId });
+}
+
+async function closeCashierHandler(req, res) {
+  const { session_id, fond_final } = req.body;
+  if (!session_id || fond_final === undefined) {
+    throw ApiError.badRequest('session_id et fond_final sont requis');
+  }
+  
+  const [result] = await pool.query(
+    'UPDATE restaurant_sessions SET fond_final = ?, fermeture_at = NOW() WHERE id = ? AND fermeture_at IS NULL',
+    [fond_final, session_id]
+  );
+  if (result.affectedRows === 0) throw ApiError.notFound('Session non trouvée ou déjà fermée');
+  
+  await pool.query(
+    'UPDATE restaurant_cashiers SET statut = "FERME" WHERE id = (SELECT cashier_id FROM restaurant_sessions WHERE id = ?)',
+    [session_id]
+  );
+  
+  return ok(res, { message: 'Session fermée' });
+}
+
+async function cashierStatusHandler(req, res) {
+  const [cashiers] = await pool.query(
+    `SELECT c.*, 
+            (SELECT s.id FROM restaurant_sessions s WHERE s.cashier_id = c.id AND s.fermeture_at IS NULL LIMIT 1) as current_session_id,
+            (SELECT s.user_id FROM restaurant_sessions s WHERE s.cashier_id = c.id AND s.fermeture_at IS NULL LIMIT 1) as current_user_id
+     FROM restaurant_cashiers c`
+  );
+  return ok(res, cashiers);
+}
+
+async function processPaymentHandler(req, res) {
+  const { order_id, montant, moyen_paiement, client_id } = req.body;
+  if (!order_id || !montant || !moyen_paiement) {
+    throw ApiError.badRequest('order_id, montant et moyen_paiement sont requis');
+  }
+  
+  const [result] = await pool.query(
+    'INSERT INTO payments (order_id, montant, moyen_paiement, client_id, date_paiement) VALUES (?, ?, ?, ?, NOW())',
+    [order_id, montant, moyen_paiement, client_id || null]
+  );
+  
+  await pool.query(
+    'UPDATE orders SET statut = "PAYE" WHERE id = ?',
+    [order_id]
+  );
+  
+  return created(res, { payment_id: result.insertId });
+}
+
+async function billToRoomHandler(req, res) {
+  const { order_id, room_id } = req.body;
+  if (!order_id || !room_id) {
+    throw ApiError.badRequest('order_id et room_id sont requis');
+  }
+  
+  const [result] = await pool.query(
+    'INSERT INTO invoices (client_id, montant_total, statut, date_facture) VALUES ((SELECT client_id FROM stays WHERE room_id = ? AND date_depart IS NULL LIMIT 1), (SELECT total FROM orders WHERE id = ?), "EMISE", NOW())',
+    [room_id, order_id]
+  );
+  
+  await pool.query(
+    'UPDATE orders SET statut = "FACTURE" WHERE id = ?',
+    [order_id]
+  );
+  
+  return created(res, { invoice_id: result.insertId });
+}
+
+async function statsHandler(req, res) {
+  const { date_debut, date_fin } = req.query;
+  if (!date_debut || !date_fin) {
+    throw ApiError.badRequest('date_debut et date_fin sont requis');
+  }
+  
+  const [[ordersStats]] = await pool.query(
+    `SELECT COUNT(*) as total_orders, SUM(total) as total_revenue 
+     FROM orders 
+     WHERE date_commande BETWEEN ? AND ?`,
+    [date_debut, date_fin]
+  );
+  
+  const [[paymentsStats]] = await pool.query(
+    `SELECT COUNT(*) as total_payments, SUM(montant) as total_collected 
+     FROM payments 
+     WHERE date_paiement BETWEEN ? AND ?`,
+    [date_debut, date_fin]
+  );
+  
+  return ok(res, {
+    orders: ordersStats,
+    payments: paymentsStats
+  });
+}
 module.exports = {
   tablesCrud, ordersCrud, orderItemsCrud, recipesCrud, recipeItemsCrud, cashiersCrud, sessionsCrud,
   createOrderHandler, orderDetailHandler, ordersInProgressHandler, recipeRequirementsHandler,
   restaurantStockHandler, restaurantStockMovementsHandler, adjustRestaurantStockHandler,
   listRestaurantPurchasesHandler, restaurantPurchaseDetailHandler, createRestaurantPurchaseHandler,
+  menuHandler, updateOrderStatusHandler, openCashierHandler, closeCashierHandler,
+  cashierStatusHandler, processPaymentHandler, billToRoomHandler, statsHandler,
 };

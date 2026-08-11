@@ -8,8 +8,8 @@ const RoomTypes = createCrudModel({
 
 const Rooms = createCrudModel({
   table: 'rooms', pk: 'id',
-  fields: ['room_type_id', 'numero', 'capacite', 'prix_nuit', 'statut'],
-  sortable: ['id', 'numero', 'statut', 'prix_nuit'],
+  fields: ['room_type_id', 'numero', 'capacite', 'prix_nuit', 'statut', 'etage'],
+  sortable: ['id', 'numero', 'statut', 'prix_nuit', 'etage'],
 });
 
 const Equipments = createCrudModel({
