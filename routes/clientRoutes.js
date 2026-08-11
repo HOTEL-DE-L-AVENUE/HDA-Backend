@@ -22,8 +22,9 @@ router.post('/:id/kyc/signature', ctrl.saveKycSignature);         // POST nouvel
 // auto-généré et immuable) — doit précéder le CRUD générique ci-dessous.
 router.post('/', ctrl.createClientHandler);       // POST /api/clients
 router.put('/:id', ctrl.updateClientHandler);     // PUT /api/clients/:id
+router.delete('/:id', ctrl.deleteClientHandler);  // DELETE /api/clients/:id (soft delete support)
 
-// CRUD standard sur /api/clients (GET liste, GET /:id, DELETE /:id, etc.)
+// CRUD standard sur /api/clients (GET liste, GET /:id, etc. - DELETE est remplacé par deleteClientHandler)
 router.use('/', createCrudRouter(ctrl.clientsCrud));
 
 module.exports = router;
