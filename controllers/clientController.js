@@ -10,6 +10,7 @@ const { createCrudController } = require('./controllerFactory');
 const { renderClient, renderClientWithKyc, renderKyc } = require('../views/clientView');
 const ApiError = require('../utils/ApiError');
 const { ok, created } = require('../utils/apiResponse');
+const { pool } = require('../config/db');
 
 const NIVEAUX_RISQUE = ['FAIBLE', 'MOYEN', 'ELEVE'];
 
@@ -140,8 +141,49 @@ async function saveKycSignature(req, res) {
   return created(res, signature);
 }
 
+// Custom delete handler with soft delete support
+async function deleteClientHandler(req, res) {
+  const client = await Clients.findById(req.params.id);
+  if (!client) throw ApiError.notFound(`Client #${req.params.id} introuvable`);
+
+  // Check for related records in key tables
+  const [relatedReservations, relatedOrders, relatedPayments, relatedCasinoRecords] = await Promise.all([
+    pool.query('SELECT COUNT(*) as count FROM reservations WHERE client_id = ?', [req.params.id]),
+    pool.query('SELECT COUNT(*) as count FROM orders WHERE client_id = ?', [req.params.id]),
+    pool.query('SELECT COUNT(*) as count FROM payments WHERE client_id = ?', [req.params.id]),
+    pool.query('SELECT COUNT(*) as count FROM casino_visits WHERE client_id = ?', [req.params.id]),
+  ]);
+
+  const totalRelated = 
+    (relatedReservations[0][0]?.count || 0) + 
+    (relatedOrders[0][0]?.count || 0) + 
+    (relatedPayments[0][0]?.count || 0) + 
+    (relatedCasinoRecords[0][0]?.count || 0);
+
+  if (totalRelated === 0) {
+    // No related records - perform hard delete
+    await Clients.remove(req.params.id);
+    return ok(res, { 
+      success: true, 
+      message: 'Client supprimé définitivement',
+      deleted: true,
+      deactivated: false
+    });
+  } else {
+    // Has related records - perform soft delete (deactivate)
+    await Clients.update(req.params.id, { statut: 'INACTIF' });
+    return ok(res, { 
+      success: true, 
+      message: `Client désactivé (${totalRelated} enregistrements liés conservés)`,
+      deleted: false,
+      deactivated: true,
+      relatedCount: totalRelated
+    });
+  }
+}
+
 module.exports = {
-  clientsCrud, createClientHandler, updateClientHandler,
+  clientsCrud, createClientHandler, updateClientHandler, deleteClientHandler,
   getOneWithAccount, searchClients, getAccount, creditAccount, debitAccount, loyaltyHistory,
   getKyc, saveKyc, getKycSignature, getKycSignatureHistory, saveKycSignature,
   ClientAccountsCrud: createCrudController(ClientAccounts, { filterable: ['client_id'] }),
