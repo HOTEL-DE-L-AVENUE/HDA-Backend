@@ -1,4 +1,3 @@
-// models/hebergementModel.js
 const { pool, withTransaction } = require('../config/db');
 const { createCrudModel } = require('./crudFactory');
 
@@ -97,12 +96,15 @@ async function isRoomAvailable(roomId, dateArrivee, dateDepart, excludeReservati
 }
 
 // Crée une réservation + ses accompagnants dans une transaction
-async function createReservationWithGuests({ clientId, roomId, dateArrivee, dateDepart, montantTotal, guests = [] }) {
+async function createReservationWithGuests({ clientId, roomId, dateArrivee, dateDepart, montantTotal, statut, guests = [] }) {
   return withTransaction(async (conn) => {
+    // Utilise le statut envoyé par le contrôleur ou 'EN_COURS' par défaut
+    const statusValue = statut || 'EN_COURS';
+
     const [result] = await conn.query(
       `INSERT INTO reservations (client_id, room_id, date_arrivee, date_depart, montant_total, statut)
-       VALUES (?, ?, ?, ?, ?, 'CONFIRMEE')`,
-      [clientId, roomId, dateArrivee, dateDepart, montantTotal]
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [clientId, roomId, dateArrivee, dateDepart, montantTotal, statusValue]
     );
     const reservationId = result.insertId;
     for (const g of guests) {
@@ -118,7 +120,7 @@ async function createReservationWithGuests({ clientId, roomId, dateArrivee, date
   });
 }
 
-// Check-in : crée le séjour et passe la chambre en "OCCUPEE"
+// Check-in : crée le séjour, passe la réservation en "CONFIRMEE" et la chambre en "OCCUPEE"
 async function checkIn(reservationId) {
   return withTransaction(async (conn) => {
     const [resRows] = await conn.query('SELECT * FROM reservations WHERE id = ?', [reservationId]);
@@ -129,6 +131,7 @@ async function checkIn(reservationId) {
       'INSERT INTO stays (reservation_id, checkin_at) VALUES (?, NOW())',
       [reservationId]
     );
+    await conn.query('UPDATE reservations SET statut = "CONFIRMEE" WHERE id = ?', [reservationId]);
     await conn.query('UPDATE rooms SET statut = "OCCUPEE" WHERE id = ?', [reservation.room_id]);
     await conn.query(
       `INSERT INTO room_status_history (room_id, ancien_statut, nouveau_statut, changed_at)
@@ -140,14 +143,15 @@ async function checkIn(reservationId) {
   });
 }
 
-// Check-out : clôture le séjour et passe la chambre en "NETTOYAGE"
+// Check-out : clôture le séjour, passe la réservation en "TERMINEE" et la chambre en "NETTOYAGE"
 async function checkOut(stayId) {
   return withTransaction(async (conn) => {
-    const [stayRows] = await conn.query('SELECT s.*, r.room_id FROM stays s JOIN reservations r ON r.id = s.reservation_id WHERE s.id = ?', [stayId]);
+    const [stayRows] = await conn.query('SELECT s.*, r.room_id, r.id as reservation_id FROM stays s JOIN reservations r ON r.id = s.reservation_id WHERE s.id = ?', [stayId]);
     const stay = stayRows[0];
     if (!stay) throw new Error(`Séjour #${stayId} introuvable`);
 
     await conn.query('UPDATE stays SET checkout_at = NOW() WHERE id = ?', [stayId]);
+    await conn.query('UPDATE reservations SET statut = "TERMINEE" WHERE id = ?', [stay.reservation_id]);
     await conn.query('UPDATE rooms SET statut = "NETTOYAGE" WHERE id = ?', [stay.room_id]);
     await conn.query(
       `INSERT INTO room_status_history (room_id, ancien_statut, nouveau_statut, changed_at)
@@ -160,8 +164,6 @@ async function checkOut(stayId) {
 }
 
 // Met à jour uniquement le statut d'une maintenance.
-// Si le nouveau statut est TERMINE (ou ANNULE) et qu'aucune date_resolution
-// n'est encore renseignée, on la fixe automatiquement à NOW().
 async function updateMaintenanceStatus(id, statut) {
   const [existing] = await pool.query('SELECT * FROM room_maintenance WHERE id = ?', [id]);
   if (!existing[0]) throw new Error(`Maintenance #${id} introuvable`);
@@ -180,8 +182,7 @@ async function updateMaintenanceStatus(id, statut) {
   return updated[0];
 }
 
-// Statistiques agrégées des maintenances : totaux, répartition par statut et par
-// type d'intervention, coût cumulé.
+// Statistiques agrégées des maintenances
 async function getMaintenanceStats() {
   const [totals] = await pool.query(
     `SELECT COUNT(*) AS total, COALESCE(SUM(cout), 0) AS cout_total FROM room_maintenance`
@@ -202,8 +203,7 @@ async function getMaintenanceStats() {
   };
 }
 
-// Statistiques agrégées des réservations : totaux, chiffre d'affaires, répartition
-// par statut.
+// Statistiques agrégées des réservations
 async function getReservationStats() {
   const [totals] = await pool.query(
     `SELECT COUNT(*) AS total, COALESCE(SUM(montant_total), 0) AS montant_total,
@@ -222,8 +222,7 @@ async function getReservationStats() {
   };
 }
 
-// Met à jour uniquement le statut d'une chambre, en journalisant le changement
-// dans room_status_history (comme le font déjà checkIn/checkOut).
+// Met à jour uniquement le statut d'une chambre
 async function updateRoomStatus(id, statut) {
   const [existing] = await pool.query('SELECT * FROM rooms WHERE id = ?', [id]);
   if (!existing[0]) throw new Error(`Chambre #${id} introuvable`);
@@ -242,14 +241,14 @@ async function updateRoomStatus(id, statut) {
   });
 }
 
-// Récupère un équipement par son code (unique)
+// Récupère un équipement par son code
 async function getEquipmentByCode(code) {
   const [rows] = await pool.query('SELECT * FROM equipments WHERE code = ?', [code]);
   if (!rows[0]) throw new Error(`Équipement de code "${code}" introuvable`);
   return rows[0];
 }
 
-// Liste des catégories d'équipements distinctes (pour peupler des filtres/selects)
+// Liste des catégories d'équipements distinctes
 async function getEquipmentCategories() {
   const [rows] = await pool.query(
     `SELECT DISTINCT categorie FROM equipments
@@ -258,8 +257,7 @@ async function getEquipmentCategories() {
   return rows.map((r) => r.categorie);
 }
 
-// Statistiques agrégées des équipements : total au référentiel, répartition par
-// catégorie, et répartition par statut des installations en chambre (room_equipments).
+// Statistiques agrégées des équipements
 async function getEquipmentStats() {
   const [totals] = await pool.query('SELECT COUNT(*) AS total FROM equipments');
   const [parCategorie] = await pool.query(
@@ -285,8 +283,7 @@ async function updateRoomEquipmentStatus(id, statut) {
   return updated[0];
 }
 
-// Statistiques agrégées sur le parc de chambres : total, répartition par statut,
-// taux d'occupation, répartition par type de chambre.
+// Statistiques agrégées sur le parc de chambres
 async function getRoomStats() {
   const [totals] = await pool.query('SELECT COUNT(*) AS total FROM rooms');
   const [parStatut] = await pool.query('SELECT statut, COUNT(*) AS total FROM rooms GROUP BY statut');
@@ -306,9 +303,7 @@ async function getRoomStats() {
   };
 }
 
-// Met à jour uniquement le statut d'une tâche de housekeeping.
-// Si le nouveau statut est TERMINE et qu'aucune completed_at n'est encore posée,
-// on la fixe automatiquement à NOW().
+// Met à jour uniquement le statut d'une tâche de housekeeping
 async function updateHousekeepingStatus(id, statut) {
   const [existing] = await pool.query('SELECT * FROM housekeeping_tasks WHERE id = ?', [id]);
   if (!existing[0]) throw new Error(`Tâche de housekeeping #${id} introuvable`);
@@ -327,8 +322,7 @@ async function updateHousekeepingStatus(id, statut) {
   return updated[0];
 }
 
-// Statistiques agrégées des tâches de housekeeping : total, répartition par
-// statut et par type de tâche.
+// Statistiques agrégées des tâches de housekeeping
 async function getHousekeepingStats() {
   const [totals] = await pool.query('SELECT COUNT(*) AS total FROM housekeeping_tasks');
   const [parStatut] = await pool.query(
