@@ -43,8 +43,15 @@ async function login(req, res) {
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN || '8h' }
   );
+
+  const refreshToken = jwt.sign(
+    { id_admin: user.id_admin },
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d' }
+  );
+
   await logAction({ userId: user.id_admin, action: 'LOGIN', entite: 'users', entiteId: user.id_admin });
-  return ok(res, {success : true, message: 'Connexion réussie', token, user: renderUser(user) });
+  return ok(res, {success : true, message: 'Connexion réussie', token, refreshToken, user: renderUser(user) });
 }
 
 async function me(req, res) {
@@ -54,17 +61,57 @@ async function me(req, res) {
 }
 
 async function changePassword(req, res) {
-  const { ancien_mot_de_passe, nouveau_mot_de_passe } = req.body;
+  const { oldPassword, newPassword } = req.body;
   const user = await Users.findById(req.user.id_admin);
   if (!user) throw ApiError.notFound();
 
-  const valid = await bcrypt.compare(ancien_mot_de_passe, user.mot_de_passe);
+  const valid = await bcrypt.compare(oldPassword, user.mot_de_passe);
   if (!valid) throw ApiError.unauthorized('Ancien mot de passe incorrect');
 
-  const hash = await bcrypt.hash(nouveau_mot_de_passe, 10);
+  const hash = await bcrypt.hash(newPassword, 10);
   await Users.update(user.id_admin, { mot_de_passe: hash });
   await logAction({ userId: user.id_admin, action: 'CHANGE_PASSWORD', entite: 'users', entiteId: user.id_admin });
-  return ok(res, { message: 'Mot de passe mis à jour' });
+  return ok(res, { success: true, message: 'Mot de passe mis à jour' });
+}
+
+async function refreshToken(req, res) {
+  const { refreshToken } = req.body;
+  if (!refreshToken) throw ApiError.badRequest('Refresh token requis');
+
+  try {
+    const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
+    const user = await Users.findById(decoded.id_admin);
+    if (!user || user.statut !== 'actif') throw ApiError.unauthorized('Token invalide');
+
+    const newToken = jwt.sign(
+      { id_admin: user.id_admin, role: user.role, email: user.email },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN || '8h' }
+    );
+
+    return ok(res, { success: true, token: newToken });
+  } catch (error) {
+    throw ApiError.unauthorized('Refresh token invalide ou expiré');
+  }
+}
+
+async function logout(req, res) {
+  const { refreshToken } = req.body;
+  if (refreshToken) {
+    try {
+      const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
+      await logAction({ userId: decoded.id_admin, action: 'LOGOUT', entite: 'users', entiteId: decoded.id_admin });
+    } catch (error) {
+      // Token invalid but still proceed with logout
+    }
+  }
+  return ok(res, { success: true, message: 'Déconnexion réussie' });
+}
+
+async function profile(req, res) {
+  const user = await Users.findById(req.user.id_admin);
+  if (!user) throw ApiError.notFound('Utilisateur introuvable');
+  return ok(res, { success: true, user: renderUser(user) });
 }
 
 // --- Logs et notifications ---------------------------------------------------
@@ -83,5 +130,5 @@ async function listAuditLogs(req, res) {
 const notificationsCrud = createCrudController(Notifications, { filterable: ['statut'] });
 
 module.exports = {
-  usersCrud, register, login, me, changePassword, listAuditLogs, notificationsCrud, renderUserList,
+  usersCrud, register, login, me, changePassword, refreshToken, logout, profile, listAuditLogs, notificationsCrud, renderUserList,
 };
