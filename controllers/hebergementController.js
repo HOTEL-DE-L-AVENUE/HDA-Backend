@@ -33,7 +33,7 @@ async function availableRoomsHandler(req, res) {
 }
 
 async function createReservationHandler(req, res) {
-  const { client_id, room_id, date_arrivee, date_depart, montant_total, guests } = req.body;
+  const { client_id, room_id, date_arrivee, date_depart, montant_total, guests, statut } = req.body;
   if (!client_id || !room_id || !date_arrivee || !date_depart) {
     throw ApiError.badRequest('client_id, room_id, date_arrivee, date_depart sont requis');
   }
@@ -41,8 +41,13 @@ async function createReservationHandler(req, res) {
   if (!disponible) throw ApiError.conflict('Chambre non disponible sur cette période');
 
   const reservation = await heb.createReservationWithGuests({
-    clientId: client_id, roomId: room_id, dateArrivee: date_arrivee, dateDepart: date_depart,
-    montantTotal: montant_total, guests: guests || [],
+    clientId: client_id,
+    roomId: room_id,
+    dateArrivee: date_arrivee,
+    dateDepart: date_depart,
+    montantTotal: montant_total,
+    statut: statut || 'EN_COURS',
+    guests: guests || [],
   });
   return created(res, reservation);
 }
@@ -157,4 +162,15 @@ module.exports = {
   updateRoomStatusHandler, equipmentByCodeHandler, equipmentCategoriesHandler,
   equipmentStatsHandler, updateRoomEquipmentStatusHandler,
   roomStatsHandler, updateHousekeepingStatusHandler, housekeepingStatsHandler,
+};
+
+const hebergementModel = require('../models/hebergementModel');
+
+exports.checkIn = async (req, res) => {
+  try {
+    const stay = await hebergementModel.checkIn(req.params.id);
+    res.status(200).json({ message: 'Check-in réussi', stay });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 };
