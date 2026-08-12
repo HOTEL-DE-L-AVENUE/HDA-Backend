@@ -15,9 +15,9 @@ const cashiersCrud = createCrudController(resto.RestaurantCashiers, { filterable
 const sessionsCrud = createCrudController(resto.RestaurantSessions, { filterable: ['cashier_id', 'user_id'] });
 
 async function createOrderHandler(req, res) {
-  const { client_id, items } = req.body;
+  const { client_id, table_id, items } = req.body;
   if (!items || !items.length) throw ApiError.badRequest('items requis (au moins une ligne)');
-  const order = await resto.createOrderWithItems({ clientId: client_id, items });
+  const order = await resto.createOrderWithItems({ clientId: client_id, tableId: table_id, items });
   return created(res, order);
 }
 
@@ -135,7 +135,7 @@ async function restaurantPurchaseDetailHandler(req, res) {
 async function createRestaurantPurchaseHandler(req, res) {
   const { supplier_id, items } = req.body || {};
   if (!supplier_id || !Array.isArray(items) || !items.length) {
-    throw ApiError.badRequest('supplier_id et au moins une ligne d’achat sont requis');
+    throw ApiError.badRequest('supplier_id et au moins une ligne dï¿½achat sont requis');
   }
   for (const item of items) {
     if (!item.product_id || !item.location_id || Number(item.quantite) <= 0 || Number(item.prix_unitaire) < 0) {

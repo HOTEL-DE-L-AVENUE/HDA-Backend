@@ -11,7 +11,7 @@ const TablesRestaurant = createCrudModel({
 // `orders` est une table générique partagée entre modules (source_module)
 const Orders = createCrudModel({
   table: 'orders', pk: 'id',
-  fields: ['client_id', 'source_module', 'montant_total', 'statut', 'created_at'],
+  fields: ['client_id', 'table_id', 'source_module', 'montant_total', 'statut', 'created_at'],
   sortable: ['id', 'created_at', 'montant_total', 'statut'],
 });
 
@@ -48,14 +48,14 @@ const RestaurantSessions = createCrudModel({
 // --- Logique métier -------------------------------------------------------
 
 // Crée une commande + ses lignes, calcule le montant_total automatiquement.
-async function createOrderWithItems({ clientId, items }) {
+async function createOrderWithItems({ clientId, tableId, items }) {
   return withTransaction(async (conn) => {
     const montantTotal = items.reduce((sum, it) => sum + Number(it.quantite) * Number(it.prix_unitaire), 0);
 
     const [result] = await conn.query(
-      `INSERT INTO orders (client_id, source_module, montant_total, statut, created_at)
-       VALUES (?, 'RESTAURANT', ?, 'EN_COURS', NOW())`,
-      [clientId, montantTotal]
+      `INSERT INTO orders (client_id, table_id, source_module, montant_total, statut, created_at)
+       VALUES (?, ?, 'RESTAURANT', ?, 'EN_COURS', NOW())`,
+      [clientId, tableId, montantTotal]
     );
     const orderId = result.insertId;
 
