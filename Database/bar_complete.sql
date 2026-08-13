@@ -1,6 +1,23 @@
---             Bar & Lounge Module — Complete SQL Script
+-- ============================================================
+-- Bar & Lounge Module — Script SQL Optimisé et Nettoyé
+-- Suppression des tables redondantes (bar_orders, bar_order_items) 
+-- au profit de bar_transactions, et intégration des triggers de stock.
+-- ============================================================
 
-CREATE TABLE IF NOT EXISTS `bar_products` (
+SET FOREIGN_KEY_CHECKS = 0;
+
+DROP TABLE IF EXISTS `bar_transactions`;
+DROP TABLE IF EXISTS `bar_stock`;
+DROP TABLE IF EXISTS `bar_products`;
+DROP TABLE IF EXISTS `bar_sessions`;
+DROP TABLE IF EXISTS `bar_cashiers`;
+DROP TABLE IF EXISTS `bar_tables`;
+DROP TABLE IF EXISTS `bar_clients`;
+
+SET FOREIGN_KEY_CHECKS = 1;
+
+-- 1. Table des produits du bar
+CREATE TABLE `bar_products` (
   `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
   `nom` varchar(150) NOT NULL,
   `ingredients` text DEFAULT NULL,
@@ -14,11 +31,8 @@ CREATE TABLE IF NOT EXISTS `bar_products` (
   KEY `idx_bar_products_categorie` (`categorie`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- --------------------------------------------------------
--- Structure de la table `bar_stock`
--- --------------------------------------------------------
-
-CREATE TABLE IF NOT EXISTS `bar_stock` (
+-- 2. Table des stocks du bar
+CREATE TABLE `bar_stock` (
   `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
   `product_id` bigint(20) UNSIGNED NOT NULL,
   `quantite` int(11) NOT NULL DEFAULT 0,
@@ -30,11 +44,8 @@ CREATE TABLE IF NOT EXISTS `bar_stock` (
   CONSTRAINT `fk_bar_stock_product` FOREIGN KEY (`product_id`) REFERENCES `bar_products` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- --------------------------------------------------------
--- Structure de la table `bar_cashiers`
--- --------------------------------------------------------
-
-CREATE TABLE IF NOT EXISTS `bar_cashiers` (
+-- 3. Table des caissiers
+CREATE TABLE `bar_cashiers` (
   `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
   `nom` varchar(100) NOT NULL,
   `statut` enum('ACTIF','INACTIF') DEFAULT 'ACTIF',
@@ -42,11 +53,8 @@ CREATE TABLE IF NOT EXISTS `bar_cashiers` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- --------------------------------------------------------
--- Structure de la table `bar_sessions`
--- --------------------------------------------------------
-
-CREATE TABLE IF NOT EXISTS `bar_sessions` (
+-- 4. Table des sessions de caisse
+CREATE TABLE `bar_sessions` (
   `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
   `cashier_id` bigint(20) UNSIGNED DEFAULT NULL,
   `user_id` bigint(20) UNSIGNED DEFAULT NULL,
@@ -59,11 +67,8 @@ CREATE TABLE IF NOT EXISTS `bar_sessions` (
   CONSTRAINT `fk_bar_sessions_cashier` FOREIGN KEY (`cashier_id`) REFERENCES `bar_cashiers` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- --------------------------------------------------------
--- Structure de la table `bar_clients`
--- --------------------------------------------------------
-
-CREATE TABLE IF NOT EXISTS `bar_clients` (
+-- 5. Table des clients du bar
+CREATE TABLE `bar_clients` (
   `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
   `nom` varchar(100) NOT NULL,
   `prenom` varchar(100) DEFAULT NULL,
@@ -74,11 +79,8 @@ CREATE TABLE IF NOT EXISTS `bar_clients` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- --------------------------------------------------------
--- Structure de la table `bar_tables`
--- --------------------------------------------------------
-
-CREATE TABLE IF NOT EXISTS `bar_tables` (
+-- 6. Table des tables du bar
+CREATE TABLE `bar_tables` (
   `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
   `numero` varchar(20) DEFAULT NULL,
   `capacite` int(11) DEFAULT NULL,
@@ -86,11 +88,8 @@ CREATE TABLE IF NOT EXISTS `bar_tables` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- --------------------------------------------------------
--- Structure de la table `bar_transactions` — commandes caisse
--- --------------------------------------------------------
-
-CREATE TABLE IF NOT EXISTS `bar_transactions` (
+-- 7. Table unique centralisée des transactions / lignes de commande
+CREATE TABLE `bar_transactions` (
   `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
   `session_id` bigint(20) UNSIGNED DEFAULT NULL,
   `client_id` bigint(20) UNSIGNED DEFAULT NULL,
@@ -112,39 +111,44 @@ CREATE TABLE IF NOT EXISTS `bar_transactions` (
   CONSTRAINT `fk_bar_transactions_table` FOREIGN KEY (`table_id`) REFERENCES `bar_tables` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- --------------------------------------------------------
--- Structure de la table `bar_orders`
--- --------------------------------------------------------
+-- ============================================================
+-- Triggers pour la gestion automatique du stock en temps réel
+-- ============================================================
 
-CREATE TABLE IF NOT EXISTS `bar_orders` (
-  `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
-  `client_name` varchar(150) DEFAULT NULL,
-  `table_id` bigint(20) UNSIGNED DEFAULT NULL,
-  `statut` varchar(30) DEFAULT 'EN_ATTENTE',
-  `montant_total` decimal(10,2) DEFAULT 0.00,
-  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `idx_bar_orders_table_id` (`table_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+DELIMITER //
 
--- --------------------------------------------------------
--- Structure de la table `bar_order_items`
--- --------------------------------------------------------
+DROP TRIGGER IF EXISTS trg_bar_stock_after_insert//
+CREATE TRIGGER trg_bar_stock_after_insert
+AFTER INSERT ON bar_transactions
+FOR EACH ROW
+BEGIN
+    IF NEW.statut IN ('SERVIE', 'PAYEE') THEN
+        UPDATE bar_stock 
+        SET quantite = quantite - NEW.quantite
+        WHERE product_id = NEW.product_id;
+    END IF;
+END //
 
-CREATE TABLE IF NOT EXISTS `bar_order_items` (
-  `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
-  `order_id` bigint(20) UNSIGNED NOT NULL,
-  `nom` varchar(150) DEFAULT NULL,
-  `quantite` int(11) DEFAULT 1,
-  `prix` decimal(10,2) DEFAULT 0.00,
-  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `idx_bar_order_items_order_id` (`order_id`),
-  CONSTRAINT `fk_bar_order_items_order` FOREIGN KEY (`order_id`) REFERENCES `bar_orders` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+DROP TRIGGER IF EXISTS trg_bar_stock_after_update//
+CREATE TRIGGER trg_bar_stock_after_update
+AFTER UPDATE ON bar_transactions
+FOR EACH ROW
+BEGIN
+    IF NEW.statut IN ('SERVIE', 'PAYEE') AND OLD.statut NOT IN ('SERVIE', 'PAYEE') THEN
+        UPDATE bar_stock 
+        SET quantite = quantite - NEW.quantite
+        WHERE product_id = NEW.product_id;
+    ELSEIF NEW.statut = 'ANNULEE' AND OLD.statut IN ('SERVIE', 'PAYEE') THEN
+        UPDATE bar_stock 
+        SET quantite = quantite + NEW.quantite
+        WHERE product_id = NEW.product_id;
+    END IF;
+END //
+
+DELIMITER ;
 
 -- ============================================================
--- Données de test — Bar Products
+-- Insertion des données de test
 -- ============================================================
 
 INSERT IGNORE INTO `bar_products` (`id`, `nom`, `ingredients`, `prix`, `categorie`, `alcool`, `type_produit`, `source_module`) VALUES
@@ -170,10 +174,6 @@ INSERT IGNORE INTO `bar_stock` (`product_id`, `quantite`, `seuil_minimum`, `unit
 (8, 200, 50, 'bouteilles'),
 (9, 100, 20, 'bouteilles'),
 (10, 500, 100, 'verres');
-
--- ============================================================
--- Données de test — Bar Tables & Clients
--- ============================================================
 
 INSERT IGNORE INTO `bar_clients` (`id`, `nom`, `prenom`, `telephone`, `email`, `statut`) VALUES
 (1, 'Razafy', 'Jean', '+261 34 12 345 67', 'jean@example.com', 'ACTIF'),
