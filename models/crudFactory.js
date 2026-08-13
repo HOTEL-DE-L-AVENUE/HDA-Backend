@@ -19,7 +19,16 @@ function createCrudModel({ table, pk = 'id', fields, sortable }) {
   const sortableCols = sortable || [pk, ...fields];
 
   async function findAll({ whereSql = '', whereValues = [], orderBy = `\`${pk}\` DESC`, limit, offset } = {}) {
-    let sql = `SELECT * FROM \`${table}\` ${whereSql} ORDER BY ${orderBy}`;
+    let sql = `SELECT * FROM \`${table}\``;
+    if (whereSql) {
+      // Check if whereSql already starts with WHERE
+      if (!whereSql.trim().toUpperCase().startsWith('WHERE')) {
+        sql += ` WHERE ${whereSql}`;
+      } else {
+        sql += ` ${whereSql}`;
+      }
+    }
+    sql += ` ORDER BY ${orderBy}`;
     const values = [...whereValues];
     if (limit !== undefined) {
       sql += ' LIMIT ? OFFSET ?';
@@ -30,7 +39,16 @@ function createCrudModel({ table, pk = 'id', fields, sortable }) {
   }
 
   async function count({ whereSql = '', whereValues = [] } = {}) {
-    const [rows] = await pool.query(`SELECT COUNT(*) AS total FROM \`${table}\` ${whereSql}`, whereValues);
+    let sql = `SELECT COUNT(*) AS total FROM \`${table}\``;
+    if (whereSql) {
+      // Check if whereSql already starts with WHERE
+      if (!whereSql.trim().toUpperCase().startsWith('WHERE')) {
+        sql += ` WHERE ${whereSql}`;
+      } else {
+        sql += ` ${whereSql}`;
+      }
+    }
+    const [rows] = await pool.query(sql, whereValues);
     return rows[0].total;
   }
 
