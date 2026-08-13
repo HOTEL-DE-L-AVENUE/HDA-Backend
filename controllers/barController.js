@@ -11,7 +11,26 @@ const { ok, created } = require('../utils/apiResponse');
 const tablesCrud = createCrudController(BarTables, { filterable: ['statut'] });
 const cashiersCrud = createCrudController(BarCashiers, { filterable: ['statut'] });
 const sessionsCrud = createCrudController(BarSessions, { filterable: ['cashier_id', 'user_id'] });
-const productsCrud = createCrudController(barProductModel.barProducts, { filterable: ['categorie', 'alcool'] });
+
+// On garde le CRUD générique pour update/delete/get, mais on va surcharger la création
+const productsCrud = {
+  ...createCrudController(barProductModel.barProducts, { filterable: ['categorie', 'alcool'] }),
+  create: async (req, res) => {
+    // Utilise la fonction dédiée qui enregistre à la fois dans bar_products ET bar_stock
+    const product = await barProductModel.addBarProductWithStock(req.body);
+    return created(res, product);
+  },
+  update: async (req, res) => {
+    const { id } = req.params;
+    const product = await barProductModel.updateBarProductWithStock(id, req.body);
+    return ok(res, product);
+  },
+  delete: async (req, res) => {
+    const { id } = req.params;
+    await barProductModel.deleteBarProductWithStock(id);
+    return ok(res, { message: 'Supprimé' });
+  }
+};
 
 async function tablesStatsHandler(req, res) {
   const stats = await tablesStats();
@@ -141,8 +160,9 @@ async function createBarOrderHandler(req, res) {
 async function deleteBarOrderHandler(req, res) {
   const deleted = await deleteBarOrder(req.params.id);
   if (!deleted) throw ApiError.notFound(`Commande #${req.params.id} introuvable`);
-  return ok(res, { message: 'Commande supprim�e' });
+  return ok(res, { message: 'Commande supprimée' });
 }
+
 module.exports = {
   tablesCrud, cashiersCrud, sessionsCrud, productsCrud,
   tablesStatsHandler, openCashierHandler, closeCashierHandler,
