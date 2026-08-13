@@ -127,8 +127,23 @@ async function listAuditLogs(req, res) {
   return ok(res, rows, { page, limit, total });
 }
 
+async function getConnectionHistory(req, res) {
+  const { page, limit, offset } = getPagination(req.query);
+  const orderBy = getSort(req.query, AuditLogs.sortableCols, 'created_at');
+  
+  // Filter for login/logout actions for the current user
+  const whereSql = 'user_id = ? AND action IN (?, ?)';
+  const whereValues = [req.user.id_admin, 'LOGIN', 'LOGOUT'];
+  
+  const [rows, total] = await Promise.all([
+    AuditLogs.findAll({ whereSql, whereValues, orderBy, limit, offset }),
+    AuditLogs.count({ whereSql, whereValues }),
+  ]);
+  return ok(res, rows, { page, limit, total });
+}
+
 const notificationsCrud = createCrudController(Notifications, { filterable: ['statut'] });
 
 module.exports = {
-  usersCrud, register, login, me, changePassword, refreshToken, logout, profile, listAuditLogs, notificationsCrud, renderUserList,
+  usersCrud, register, login, me, changePassword, refreshToken, logout, profile, listAuditLogs, getConnectionHistory, notificationsCrud, renderUserList,
 };
