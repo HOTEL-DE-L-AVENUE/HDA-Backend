@@ -153,6 +153,62 @@ async function housekeepingStatsHandler(req, res) {
   return ok(res, stats);
 }
 
+// --- Minibar Stock Management Handlers ---
+
+async function transferStockToMinibarHandler(req, res) {
+  const { product_id, source_location_id, quantity, room_id } = req.body;
+  if (!product_id || !source_location_id || !quantity || !room_id) {
+    throw ApiError.badRequest('product_id, source_location_id, quantity, room_id sont requis');
+  }
+  const result = await heb.transferStockToMinibar({
+    productId: product_id,
+    sourceLocationId: source_location_id,
+    quantity: quantity,
+    roomId: room_id,
+    userId: req.user?.id,
+  });
+  return ok(res, result);
+}
+
+async function handleMinibarConsumptionHandler(req, res) {
+  const { room_id, product_id, quantity, client_id, price } = req.body;
+  if (!room_id || !product_id || !quantity || !client_id || !price) {
+    throw ApiError.badRequest('room_id, product_id, quantity, client_id, price sont requis');
+  }
+  const consumptionId = await heb.handleMinibarConsumption({
+    roomId: room_id,
+    productId: product_id,
+    quantity: quantity,
+    clientId: client_id,
+    price: price,
+  });
+  return created(res, { id: consumptionId, message: 'Consommation enregistrée avec succès' });
+}
+
+async function getMinibarWithAlertsHandler(req, res) {
+  const items = await heb.getMinibarWithAlerts();
+  return ok(res, items);
+}
+
+async function restockMinibarHandler(req, res) {
+  const { room_id, product_id, quantity } = req.body;
+  if (!room_id || !product_id || !quantity) {
+    throw ApiError.badRequest('room_id, product_id, quantity sont requis');
+  }
+  const result = await heb.restockMinibar({
+    roomId: room_id,
+    productId: product_id,
+    quantity: quantity,
+    userId: req.user?.id,
+  });
+  return ok(res, result);
+}
+
+async function getLowStockMinibarHandler(req, res) {
+  const items = await heb.getLowStockMinibarItems();
+  return ok(res, items);
+}
+
 module.exports = {
   roomTypesCrud, roomsCrud, equipmentsCrud, roomEquipmentsCrud, roomMaintenanceCrud,
   roomMinibarCrud, roomStatusHistoryCrud, reservationsCrud, reservationGuestsCrud,
@@ -162,6 +218,7 @@ module.exports = {
   updateRoomStatusHandler, equipmentByCodeHandler, equipmentCategoriesHandler,
   equipmentStatsHandler, updateRoomEquipmentStatusHandler,
   roomStatsHandler, updateHousekeepingStatusHandler, housekeepingStatsHandler,
+  transferStockToMinibarHandler, handleMinibarConsumptionHandler, getMinibarWithAlertsHandler, restockMinibarHandler, getLowStockMinibarHandler,
 };
 
 const hebergementModel = require('../models/hebergementModel');

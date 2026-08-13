@@ -40,4 +40,11 @@ router.use('/housekeeping', createCrudRouter(ctrl.housekeepingCrud));
 router.use('/lost-and-found', createCrudRouter(ctrl.lostAndFoundCrud));
 router.use('/minibar-consumptions', createCrudRouter(ctrl.minibarConsumptionsCrud));
 
+// Minibar stock management routes
+router.post('/minibar/transfer-stock', ctrl.transferStockToMinibarHandler);     // POST /api/hebergement/minibar/transfer-stock
+router.post('/minibar/consume', ctrl.handleMinibarConsumptionHandler);          // POST /api/hebergement/minibar/consume
+router.get('/minibar/alerts', ctrl.getMinibarWithAlertsHandler);                // GET /api/hebergement/minibar/alerts
+router.get('/minibar/low-stock', ctrl.getLowStockMinibarHandler);               // GET /api/hebergement/minibar/low-stock
+router.post('/minibar/restock', ctrl.restockMinibarHandler);                    // POST /api/hebergement/minibar/restock
+
 module.exports = router;

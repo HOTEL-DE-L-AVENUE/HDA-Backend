@@ -1,5 +1,6 @@
 const { pool, withTransaction } = require('../config/db');
 const { createCrudModel } = require('./crudFactory');
+const stockModel = require('./stockModel');
 
 const RoomTypes = createCrudModel({
   table: 'room_types', pk: 'id', fields: ['nom', 'description'], sortable: ['id', 'nom'],
@@ -74,9 +75,67 @@ const LostAndFound = createCrudModel({
 
 const MinibarConsumptions = createCrudModel({
   table: 'minibar_consumptions', pk: 'id',
-  fields: ['room_id', 'client_id', 'product_id', 'quantite', 'prix_unitaire', 'montant', 'facturee', 'consumed_at'],
+  fields: ['room_id', 'client_id', 'product_id', 'quantite', 'prix_unitaire', 'montant', 'facturee'],
   sortable: ['id', 'consumed_at', 'facturee'],
 });
+
+// Custom create method for minibar consumptions to auto-set consumed_at
+MinibarConsumptions.create = async function(data) {
+  const cols = this.fields.filter((f) => data[f] !== undefined);
+  if (!cols.length) throw new Error(`Aucun champ valide fourni pour ${this.table}`);
+  
+  // Auto-calculate montant if not provided
+  if (!data.montant && data.quantite && data.prix_unitaire) {
+    data.montant = data.quantite * data.prix_unitaire;
+  }
+  
+  // Convert boolean facturee to integer for database
+  if (data.facturee !== undefined && typeof data.facturee === 'boolean') {
+    data.facturee = data.facturee ? 1 : 0;
+  }
+  
+  const placeholders = cols.map(() => '?').join(', ') + ', NOW()';
+  const values = cols.map((c) => data[c]);
+  const sqlCols = cols.map((c) => `\`${c}\``).join(', ') + ', `consumed_at`';
+  
+  const [result] = await pool.query(
+    `INSERT INTO \`${this.table}\` (${sqlCols}) VALUES (${placeholders})`,
+    values
+  );
+  return this.findById(result.insertId);
+};
+
+// Custom update method to handle boolean to integer conversion
+const originalUpdate = MinibarConsumptions.update;
+MinibarConsumptions.update = async function(id, data) {
+  // Convert boolean facturee to integer for database
+  if (data.facturee !== undefined && typeof data.facturee === 'boolean') {
+    data.facturee = data.facturee ? 1 : 0;
+  }
+  return originalUpdate.call(this, id, data);
+};
+
+// Custom findById to convert integer facturee back to boolean
+const originalFindById = MinibarConsumptions.findById;
+MinibarConsumptions.findById = async function(id) {
+  const row = await originalFindById.call(this, id);
+  if (row && row.facturee !== undefined) {
+    row.facturee = row.facturee === 1 || row.facturee === true;
+  }
+  return row;
+};
+
+// Custom findAll to convert integer facturee back to boolean
+const originalFindAll = MinibarConsumptions.findAll;
+MinibarConsumptions.findAll = async function(options) {
+  const rows = await originalFindAll.call(this, options);
+  return rows.map(row => {
+    if (row && row.facturee !== undefined) {
+      row.facturee = row.facturee === 1 || row.facturee === true;
+    }
+    return row;
+  });
+};
 
 // --- Logique métier -------------------------------------------------------
 
@@ -349,6 +408,181 @@ async function availableRooms({ typeId } = {}) {
   return rows;
 }
 
+// --- Minibar Stock Management ---
+
+// Transfer stock from source location (restaurant/bar) to hotel minibar location
+async function transferStockToMinibar({ productId, sourceLocationId, quantity, roomId, userId }) {
+  return withTransaction(async (conn) => {
+    // Check if there's enough stock in source location
+    const [sourceStock] = await conn.query(
+      'SELECT quantite FROM stocks WHERE product_id = ? AND location_id = ? FOR UPDATE',
+      [productId, sourceLocationId]
+    );
+    
+    if (!sourceStock[0] || sourceStock[0].quantite < quantity) {
+      throw new Error('Stock insuffisant dans la source');
+    }
+
+    // Deduct from source location
+    await conn.query(
+      'UPDATE stocks SET quantite = quantite - ? WHERE product_id = ? AND location_id = ?',
+      [quantity, productId, sourceLocationId]
+    );
+
+    // Add to hotel location (location_id = 5 for Hotel)
+    const [hotelStock] = await conn.query(
+      'SELECT quantite FROM stocks WHERE product_id = ? AND location_id = 5 FOR UPDATE',
+      [productId]
+    );
+    
+    if (hotelStock[0]) {
+      await conn.query(
+        'UPDATE stocks SET quantite = quantite + ? WHERE product_id = ? AND location_id = 5',
+        [quantity, productId]
+      );
+    } else {
+      await conn.query(
+        'INSERT INTO stocks (product_id, location_id, quantite) VALUES (?, 5, ?)',
+        [productId, quantity]
+      );
+    }
+
+    // Record stock movement
+    await conn.query(
+      `INSERT INTO stock_movements (product_id, location_id, type_mouvement, quantite, source_module, reference_id, created_at)
+       VALUES (?, 5, 'ENTREE', ?, 'MINIBAR', ?, NOW())`,
+      [productId, quantity, roomId]
+    );
+
+    // Record stock movement from source
+    await conn.query(
+      `INSERT INTO stock_movements (product_id, location_id, type_mouvement, quantite, source_module, reference_id, created_at)
+       VALUES (?, ?, 'SORTIE', ?, 'MINIBAR', ?, NOW())`,
+      [productId, sourceLocationId, quantity, roomId]
+    );
+
+    return { success: true, message: 'Stock transféré avec succès' };
+  });
+}
+
+// Handle minibar consumption with stock movement tracking
+async function handleMinibarConsumption({ roomId, productId, quantity, clientId, price }) {
+  return withTransaction(async (conn) => {
+    // Check if product exists in room minibar
+    const [minibarItem] = await conn.query(
+      'SELECT quantite FROM room_minibar WHERE room_id = ? AND product_id = ? FOR UPDATE',
+      [roomId, productId]
+    );
+
+    if (!minibarItem[0] || minibarItem[0].quantite < quantity) {
+      throw new Error('Stock insuffisant dans le minibar');
+    }
+
+    // Deduct from room minibar
+    await conn.query(
+      'UPDATE room_minibar SET quantite = quantite - ? WHERE room_id = ? AND product_id = ?',
+      [quantity, roomId, productId]
+    );
+
+    // Deduct from hotel stock location
+    await conn.query(
+      'UPDATE stocks SET quantite = quantite - ? WHERE product_id = ? AND location_id = 5',
+      [quantity, productId]
+    );
+
+    // Record consumption
+    const montant = quantity * price;
+    const [consumption] = await conn.query(
+      `INSERT INTO minibar_consumptions (room_id, client_id, product_id, quantite, prix_unitaire, montant, facturee, consumed_at)
+       VALUES (?, ?, ?, ?, ?, ?, 0, NOW())`,
+      [roomId, clientId, productId, quantity, price, montant]
+    );
+
+    // Record stock movement
+    await conn.query(
+      `INSERT INTO stock_movements (product_id, location_id, type_mouvement, quantite, source_module, reference_id, created_at)
+       VALUES (?, 5, 'SORTIE', ?, 'MINIBAR_CONSUMPTION', ?, NOW())`,
+      [productId, quantity, consumption.insertId]
+    );
+
+    return consumption.insertId;
+  });
+}
+
+// Get minibar items with low stock alerts
+async function getMinibarWithAlerts() {
+  const [rows] = await pool.query(`
+    SELECT rm.*, p.nom as product_nom, p.prix_vente, r.numero as room_numero,
+           CASE WHEN rm.quantite <= rm.seuil_alerte THEN 1 ELSE 0 END as alert
+    FROM room_minibar rm
+    JOIN products p ON rm.product_id = p.id
+    JOIN rooms r ON rm.room_id = r.id
+    ORDER BY alert DESC, r.numero, p.nom
+  `);
+  return rows;
+}
+
+// Get only low stock minibar items for notifications
+async function getLowStockMinibarItems() {
+  const [rows] = await pool.query(`
+    SELECT rm.*, p.nom as product_nom, p.prix_vente, r.numero as room_numero
+    FROM room_minibar rm
+    JOIN products p ON rm.product_id = p.id
+    JOIN rooms r ON rm.room_id = r.id
+    WHERE rm.quantite <= rm.seuil_alerte
+    ORDER BY rm.quantite ASC, r.numero, p.nom
+  `);
+  return rows;
+}
+
+// Restock minibar from hotel stock location
+async function restockMinibar({ roomId, productId, quantity, userId }) {
+  return withTransaction(async (conn) => {
+    // Check hotel stock
+    const [hotelStock] = await conn.query(
+      'SELECT quantite FROM stocks WHERE product_id = ? AND location_id = 5 FOR UPDATE',
+      [productId]
+    );
+
+    if (!hotelStock[0] || hotelStock[0].quantite < quantity) {
+      throw new Error('Stock insuffisant dans le stock hôtel');
+    }
+
+    // Deduct from hotel stock
+    await conn.query(
+      'UPDATE stocks SET quantite = quantite - ? WHERE product_id = ? AND location_id = 5',
+      [quantity, productId]
+    );
+
+    // Add to room minibar
+    const [minibarItem] = await conn.query(
+      'SELECT quantite FROM room_minibar WHERE room_id = ? AND product_id = ? FOR UPDATE',
+      [roomId, productId]
+    );
+
+    if (minibarItem[0]) {
+      await conn.query(
+        'UPDATE room_minibar SET quantite = quantite + ? WHERE room_id = ? AND product_id = ?',
+        [quantity, roomId, productId]
+      );
+    } else {
+      await conn.query(
+        'INSERT INTO room_minibar (room_id, product_id, quantite, seuil_alerte) VALUES (?, ?, ?, 1)',
+        [roomId, productId, quantity]
+      );
+    }
+
+    // Record stock movement
+    await conn.query(
+      `INSERT INTO stock_movements (product_id, location_id, type_mouvement, quantite, source_module, reference_id, created_at)
+       VALUES (?, 5, 'SORTIE', ?, 'MINIBAR_RESTOCK', ?, NOW())`,
+      [productId, quantity, roomId]
+    );
+
+    return { success: true, message: 'Minibar réapprovisionné avec succès' };
+  });
+}
+
 module.exports = {
   RoomTypes, Rooms, Equipments, RoomEquipments, RoomMaintenance, RoomMinibar,
   RoomStatusHistory, Reservations, ReservationGuests, Stays, HousekeepingTasks,
@@ -357,4 +591,5 @@ module.exports = {
   updateMaintenanceStatus, getMaintenanceStats, getReservationStats,
   updateRoomStatus, getEquipmentByCode, getEquipmentCategories, getEquipmentStats,
   updateRoomEquipmentStatus, getRoomStats, updateHousekeepingStatus, getHousekeepingStats,
+  transferStockToMinibar, handleMinibarConsumption, getMinibarWithAlerts, getLowStockMinibarItems, restockMinibar,
 };
