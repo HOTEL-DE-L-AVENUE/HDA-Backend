@@ -13,6 +13,7 @@ router.use('/locations', createCrudRouter(ctrl.stockLocationsCrud));
 
 router.get('/alerts/low-stock', ctrl.lowStockHandler);            // GET /api/stock/alerts/low-stock?threshold=
 router.get('/products/:id/stock', ctrl.stockByProductHandler);    // GET /api/stock/products/:id/stock
+router.get('/stocks/with-products', ctrl.getProductsWithStockHandler); // GET /api/stock/stocks/with-products?location_id=
 router.use('/stocks', createCrudRouter(ctrl.stocksCrud));
 
 router.post('/movements', ctrl.movementHandler);                  // POST /api/stock/movements

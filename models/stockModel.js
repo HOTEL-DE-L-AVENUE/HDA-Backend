@@ -32,6 +32,26 @@ const Stocks = createCrudModel({
   sortable: ['id', 'quantite'],
 });
 
+// Custom method to get stocks with product information
+async function getProductsWithStock(locationId = null) {
+  let sql = `
+    SELECT s.*, p.nom as product_nom, p.unite as product_unite, p.code as product_code
+    FROM stocks s
+    JOIN products p ON p.id = s.product_id
+  `;
+  const params = [];
+  
+  if (locationId) {
+    sql += ' WHERE s.location_id = ?';
+    params.push(locationId);
+  }
+  
+  sql += ' ORDER BY s.quantite ASC';
+  
+  const [rows] = await pool.query(sql, params);
+  return rows;
+}
+
 const StockMovements = createCrudModel({
   table: 'stock_movements', pk: 'id',
   fields: ['product_id', 'location_id', 'type_mouvement', 'quantite', 'source_module', 'reference_id', 'created_at'],
@@ -141,5 +161,5 @@ async function stockByProduct(productId) {
 module.exports = {
   Categories, ProductTypes, Units, Products, StockLocations, Stocks, StockMovements,
   Suppliers, Purchases, PurchaseItems,
-  recordMovement, createPurchaseWithItems, lowStock, stockByProduct,
+  recordMovement, createPurchaseWithItems, lowStock, stockByProduct, getProductsWithStock,
 };
