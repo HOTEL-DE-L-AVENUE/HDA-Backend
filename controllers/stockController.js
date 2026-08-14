@@ -98,6 +98,19 @@ async function stockByProductHandler(req, res, next) {
   }
 }
 
+/**
+ * Récupère les stocks avec informations produits
+ */
+async function getProductsWithStockHandler(req, res, next) {
+  try {
+    const location_id = req.query.location_id ? Number(req.query.location_id) : null;
+    const rows = await stock.getProductsWithStock(location_id);
+    return ok(res, rows);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   categoriesCrud,
   productTypesCrud,
@@ -113,4 +126,5 @@ module.exports = {
   createPurchaseHandler,
   lowStockHandler,
   stockByProductHandler,
+  getProductsWithStockHandler,
 };

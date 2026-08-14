@@ -1,9 +1,10 @@
-// src/Database/seed.js
+// Database/seed.js
 const SeedUser = require('./seedUser');
-const SeedCategory = require('./seedCategory');
+const SeedCategory = require('./SeedCategories');
 const SeedStockLocation = require('./seedStockLocation');
 const SeedUnit = require('./seedUnit');
 const SeedProductType = require('./seedProductType');
+const SeedProducts = require('./seedProducts');
 
 /**
  * Script principal pour exécuter tous les seeders
@@ -28,8 +29,13 @@ async function runAllSeeders() {
     const seedUnit = new SeedUnit();
     await seedUnit.run();
 
+    // 5. Seeder des types de produits
     const seedProductType = new SeedProductType();
     await seedProductType.run();
+
+    // 6. Seeder des produits
+    const seedProducts = new SeedProducts();
+    await seedProducts.run();
 
     console.log('\n🎉 Tous les seeders ont été exécutés avec succès !');
     

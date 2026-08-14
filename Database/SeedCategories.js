@@ -1,5 +1,5 @@
-// src/Database/seedCategory.js
-const { pool } = require('../Config/connectDatabase');
+// Database/seedCategory.js
+const { pool } = require('../config/db');
 
 /**
  * Seeder pour la table categories

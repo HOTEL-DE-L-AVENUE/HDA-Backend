@@ -1,5 +1,5 @@
-// src/Database/seedUnit.js
-const { pool } = require('../Config/connectDatabase');
+// Database/seedUnit.js
+const { pool } = require('../config/db');
 
 /**
  * Seeder pour la table units

@@ -146,19 +146,56 @@ async function deleteClientHandler(req, res) {
   const client = await Clients.findById(req.params.id);
   if (!client) throw ApiError.notFound(`Client #${req.params.id} introuvable`);
 
-  // Check for related records in key tables
-  const [relatedReservations, relatedOrders, relatedPayments, relatedCasinoRecords] = await Promise.all([
+  // Check for related records in ALL tables that reference clients.id
+  // Note: client_kyc has ON DELETE CASCADE and signatures has ON DELETE SET NULL, so they don't block deletion
+  const [
+    relatedReservations, relatedOrders, relatedPayments, relatedCasinoVisits,
+    relatedCasinoCards, relatedCasinoCashOps, relatedCasinoChipTx, relatedCasinoProfiles,
+    relatedCasinoCredits, relatedCasinoIncidents, relatedCasinoScores, relatedCasinoTableCaves,
+    relatedCasinoTableProlongations, relatedClientAccounts, relatedFinancialTx, relatedInvoices,
+    relatedLostAndFound, relatedLoyaltyPoints, relatedMinibarConsumptions
+  ] = await Promise.all([
     pool.query('SELECT COUNT(*) as count FROM reservations WHERE client_id = ?', [req.params.id]),
     pool.query('SELECT COUNT(*) as count FROM orders WHERE client_id = ?', [req.params.id]),
     pool.query('SELECT COUNT(*) as count FROM payments WHERE client_id = ?', [req.params.id]),
     pool.query('SELECT COUNT(*) as count FROM casino_visits WHERE client_id = ?', [req.params.id]),
+    pool.query('SELECT COUNT(*) as count FROM casino_cards WHERE client_id = ?', [req.params.id]),
+    pool.query('SELECT COUNT(*) as count FROM casino_cash_operations WHERE client_id = ?', [req.params.id]),
+    pool.query('SELECT COUNT(*) as count FROM casino_chip_transactions WHERE client_id = ?', [req.params.id]),
+    pool.query('SELECT COUNT(*) as count FROM casino_client_profiles WHERE client_id = ?', [req.params.id]),
+    pool.query('SELECT COUNT(*) as count FROM casino_credits WHERE client_id = ?', [req.params.id]),
+    pool.query('SELECT COUNT(*) as count FROM casino_incidents WHERE client_id = ?', [req.params.id]),
+    pool.query('SELECT COUNT(*) as count FROM casino_scores WHERE client_id = ?', [req.params.id]),
+    pool.query('SELECT COUNT(*) as count FROM casino_table_caves WHERE client_id = ?', [req.params.id]),
+    pool.query('SELECT COUNT(*) as count FROM casino_table_prolongations WHERE client_id = ?', [req.params.id]),
+    pool.query('SELECT COUNT(*) as count FROM client_accounts WHERE client_id = ?', [req.params.id]),
+    pool.query('SELECT COUNT(*) as count FROM financial_transactions WHERE client_id = ?', [req.params.id]),
+    pool.query('SELECT COUNT(*) as count FROM invoices WHERE client_id = ?', [req.params.id]),
+    pool.query('SELECT COUNT(*) as count FROM lost_and_found WHERE client_id = ?', [req.params.id]),
+    pool.query('SELECT COUNT(*) as count FROM loyalty_points WHERE client_id = ?', [req.params.id]),
+    pool.query('SELECT COUNT(*) as count FROM minibar_consumptions WHERE client_id = ?', [req.params.id]),
   ]);
 
   const totalRelated = 
     (relatedReservations[0][0]?.count || 0) + 
     (relatedOrders[0][0]?.count || 0) + 
     (relatedPayments[0][0]?.count || 0) + 
-    (relatedCasinoRecords[0][0]?.count || 0);
+    (relatedCasinoVisits[0][0]?.count || 0) +
+    (relatedCasinoCards[0][0]?.count || 0) +
+    (relatedCasinoCashOps[0][0]?.count || 0) +
+    (relatedCasinoChipTx[0][0]?.count || 0) +
+    (relatedCasinoProfiles[0][0]?.count || 0) +
+    (relatedCasinoCredits[0][0]?.count || 0) +
+    (relatedCasinoIncidents[0][0]?.count || 0) +
+    (relatedCasinoScores[0][0]?.count || 0) +
+    (relatedCasinoTableCaves[0][0]?.count || 0) +
+    (relatedCasinoTableProlongations[0][0]?.count || 0) +
+    (relatedClientAccounts[0][0]?.count || 0) +
+    (relatedFinancialTx[0][0]?.count || 0) +
+    (relatedInvoices[0][0]?.count || 0) +
+    (relatedLostAndFound[0][0]?.count || 0) +
+    (relatedLoyaltyPoints[0][0]?.count || 0) +
+    (relatedMinibarConsumptions[0][0]?.count || 0);
 
   if (totalRelated === 0) {
     // No related records - perform hard delete
