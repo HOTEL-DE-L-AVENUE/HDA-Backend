@@ -13,10 +13,29 @@ const { notFoundHandler, errorHandler } = require('./middlewares/errorHandler');
 
 const app = express();
 
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:3001',
+  'https://hda-frontend-ecru.vercel.app',
+  ...(process.env.CORS_ORIGIN || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+];
+
 app.use(helmet());
-app.use(cors({ 
-  origin: ['http://localhost:3000', 'http://localhost:3001', 'http://127.0.0.1:3000', 'http://127.0.0.1:3001'],
-  credentials: true 
+app.use(cors({
+  origin(origin, callback) {
+    // Les requêtes sans Origin (Postman, appels serveur à serveur) restent autorisées.
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error(`Origin CORS non autorisée : ${origin}`));
+  },
+  credentials: true,
 }));
 app.use(morgan('dev'));
 app.use(express.json({ limit: '5mb' }));
