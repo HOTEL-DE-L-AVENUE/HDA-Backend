@@ -1,6 +1,6 @@
-// src/Database/seedUser.js
+// Database/seedUser.js
 const bcrypt = require('bcryptjs');
-const { pool } = require('../Config/connectDatabase');
+const { pool } = require('../config/db');
 
 /**
  * Seeder pour la table admin

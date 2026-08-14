@@ -1,5 +1,5 @@
-// src/Database/seedProductType.js
-const { pool } = require('../Config/connectDatabase');
+// Database/seedProductType.js
+const { pool } = require('../config/db');
 
 /**
  * Seeder pour la table product_types

@@ -1,6 +1,6 @@
-// src/Database/seed.js
+// Database/seed.js
 const SeedUser = require('./seedUser');
-const SeedCategory = require('./seedCategory');
+const SeedCategory = require('./SeedCategories');
 const SeedStockLocation = require('./seedStockLocation');
 const SeedUnit = require('./seedUnit');
 const SeedProductType = require('./seedProductType');

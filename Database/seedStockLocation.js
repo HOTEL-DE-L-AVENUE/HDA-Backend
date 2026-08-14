@@ -1,5 +1,5 @@
-// src/Database/seedStockLocation.js
-const { pool } = require('../Config/connectDatabase');
+// Database/seedStockLocation.js
+const { pool } = require('../config/db');
 
 /**
  * Seeder pour la table stock_locations
