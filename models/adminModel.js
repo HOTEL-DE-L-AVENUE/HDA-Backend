@@ -5,8 +5,8 @@ const { createCrudModel } = require('./crudFactory');
 const Users = createCrudModel({
   table: 'users',
   pk: 'id_admin',
-  fields: ['nom', 'prenom', 'email', 'mot_de_passe', 'role', 'statut'],
-  sortable: ['id_admin', 'nom', 'prenom', 'email', 'role', 'statut', 'date_creation'],
+  fields: ['nom', 'prenom', 'email', 'mot_de_passe', 'role', 'module', 'statut'],
+  sortable: ['id_admin', 'nom', 'prenom', 'email', 'role', 'module', 'statut', 'date_creation'],
 });
 
 async function findUserByEmail(email) {

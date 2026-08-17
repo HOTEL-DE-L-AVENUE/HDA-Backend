@@ -61,7 +61,10 @@ function createCrudModel({ table, pk = 'id', fields, sortable }) {
     const cols = fields.filter((f) => data[f] !== undefined);
     if (!cols.length) throw new Error(`Aucun champ valide fourni pour ${table}`);
     const placeholders = cols.map(() => '?').join(', ');
-    const values = cols.map((c) => data[c]);
+    const values = cols.map((c) => {
+      const val = data[c];
+      return typeof val === 'object' && val !== null ? JSON.stringify(val) : val;
+    });
     const [result] = await pool.query(
       `INSERT INTO \`${table}\` (${cols.map((c) => `\`${c}\``).join(', ')}) VALUES (${placeholders})`,
       values
@@ -73,7 +76,13 @@ function createCrudModel({ table, pk = 'id', fields, sortable }) {
     const cols = fields.filter((f) => data[f] !== undefined);
     if (!cols.length) return findById(id);
     const setSql = cols.map((c) => `\`${c}\` = ?`).join(', ');
-    const values = [...cols.map((c) => data[c]), id];
+    const values = [
+      ...cols.map((c) => {
+        const val = data[c];
+        return typeof val === 'object' && val !== null ? JSON.stringify(val) : val;
+      }),
+      id
+    ];
     await pool.query(`UPDATE \`${table}\` SET ${setSql} WHERE \`${pk}\` = ?`, values);
     return findById(id);
   }

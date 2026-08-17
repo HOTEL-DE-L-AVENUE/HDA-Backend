@@ -8,21 +8,69 @@ const ApiError = require('../utils/ApiError');
 const { ok, created } = require('../utils/apiResponse');
 const { getPagination, getSort, buildWhere } = require('../utils/queryHelpers');
 
-// CRUD standard sur les agents (mot de passe masqué en sortie)
-const usersCrud = createCrudController(Users, { filterable: ['role', 'statut'], view: renderUser });
+const baseUsersCrud = createCrudController(Users, { filterable: ['role', 'statut'], view: renderUser });
+
+// Personnalisation de la suppression et du listage pour masquer les utilisateurs désactivés/supprimés
+const customDeleteMethod = async (req, res) => {
+  const userId = req.params.id || req.params.id_admin;
+
+  try {
+    const userToDelete = await Users.findById(userId);
+    if (!userToDelete) {
+      return ok(res, { success: true, message: 'Utilisateur déjà supprimé' });
+    }
+
+    try {
+      // 1. Tentative de suppression physique
+      await Users.delete(userId);
+      await logAction({ userId: req.user.id_admin, action: 'DELETE_USER', entite: 'users', entiteId: userId });
+      return ok(res, { success: true, message: 'Utilisateur supprimé avec succès' });
+    } catch (dbError) {
+      // 2. Si échec (conflit de clé étrangère avec les logs), on passe le statut à 'inactif'
+      console.warn('Suppression physique impossible (conflit FK), passage en statut inactif :', dbError);
+      await Users.update(userId, { statut: 'inactif' });
+      return ok(res, { success: true, message: 'Utilisateur désactivé avec succès' });
+    }
+  } catch (error) {
+    console.error('Erreur lors de la suppression :', error);
+    throw ApiError.internal('Erreur lors de la suppression de l\'utilisateur');
+  }
+};
+
+const usersCrud = {
+  ...baseUsersCrud,
+  delete: customDeleteMethod,
+  remove: customDeleteMethod,
+  getAll: async (req, res) => {
+    // Par défaut, masquer les utilisateurs inactifs pour qu'ils ne reviennent pas à l'actualisation
+    if (!req.query.statut) {
+      req.query.statut = 'actif';
+    }
+    return baseUsersCrud.getAll(req, res);
+  }
+};
 
 // --- Authentification -------------------------------------------------------
 
 async function register(req, res) {
-  const { nom, prenom, email, mot_de_passe, role } = req.body;
+  const { nom, prenom, email, mot_de_passe, role, module, statut } = req.body;
   if (!nom || !prenom || !email || !mot_de_passe) {
     throw ApiError.badRequest('nom, prenom, email et mot_de_passe sont requis');
   }
   const existing = await findUserByEmail(email);
   if (existing) throw ApiError.conflict('Un compte existe déjà avec cet email');
 
+  const formattedModule = Array.isArray(module) ? JSON.stringify(module) : (module || null);
   const hash = await bcrypt.hash(mot_de_passe, 10);
-  const user = await Users.create({ nom, prenom, email, mot_de_passe: hash, role: role || 'receptioniste', statut: 'actif' });
+  const user = await Users.create({
+    nom,
+    prenom,
+    email,
+    mot_de_passe: hash,
+    role: role || 'manager',
+    module: formattedModule,
+    statut: statut || 'actif'
+  });
   await logAction({ userId: user.id_admin, action: 'CREATE_USER', entite: 'users', entiteId: user.id_admin });
   return created(res, renderUser(user));
 }
@@ -51,7 +99,7 @@ async function login(req, res) {
   );
 
   await logAction({ userId: user.id_admin, action: 'LOGIN', entite: 'users', entiteId: user.id_admin });
-  return ok(res, {success : true, message: 'Connexion réussie', token, refreshToken, user: renderUser(user) });
+  return ok(res, { success: true, message: 'Connexion réussie', token, refreshToken, user: renderUser(user) });
 }
 
 async function me(req, res) {
@@ -130,11 +178,10 @@ async function listAuditLogs(req, res) {
 async function getConnectionHistory(req, res) {
   const { page, limit, offset } = getPagination(req.query);
   const orderBy = getSort(req.query, AuditLogs.sortableCols, 'created_at');
-  
-  // Filter for login/logout actions for the current user
+
   const whereSql = 'user_id = ? AND action IN (?, ?)';
   const whereValues = [req.user.id_admin, 'LOGIN', 'LOGOUT'];
-  
+
   const [rows, total] = await Promise.all([
     AuditLogs.findAll({ whereSql, whereValues, orderBy, limit, offset }),
     AuditLogs.count({ whereSql, whereValues }),

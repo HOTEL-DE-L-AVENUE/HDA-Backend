@@ -3,7 +3,7 @@ const bcrypt = require('bcryptjs');
 const { pool } = require('../config/db');
 
 /**
- * Seeder pour la table admin
+ * Seeder pour la table users
  * Insère tous les types d'utilisateurs avec leurs rôles
  */
 class SeedUser {
@@ -116,19 +116,6 @@ class SeedUser {
       
       console.log('\n✅ Seeder terminé avec succès !');
 
-      // Afficher les identifiants de connexion
-      console.log('\n🔑 Identifiants de connexion:');
-      console.log('   ┌─────────────────────┬─────────────────────────────────────┬────────────────────┐');
-      console.log('   │ Rôle                │ Email                               │ Mot de passe       │');
-      console.log('   ├─────────────────────┼─────────────────────────────────────┼────────────────────┤');
-      console.log('   │ admin               │ admin@hda.com                   │ admin123           │');
-      console.log('   │ manager             │ jean.manager@hda.com            │ manager123         │');
-      console.log('   │ receptioniste       │ sophie.reception@hda.com        │ reception123       │');
-      console.log('   │ caisse              │ philippe.caisse@hda.com         │ caisse123          │');
-      console.log('   │ water               │ nicolas.water@hda.com           │ water123           │');
-      console.log('   │ housekeeping        │ claire.housekeeping@hda.com     │ housekeeping123    │');
-      console.log('   └─────────────────────┴─────────────────────────────────────┴────────────────────┘');
-
     } catch (error) {
       console.error('❌ Erreur lors du seeder:', error.message);
       throw error;
@@ -136,11 +123,11 @@ class SeedUser {
   }
 
   /**
-   * Supprimer tous les utilisateurs (optionnel)
+   * Supprimer tous les utilisateurs
    */
   async truncate() {
     try {
-      await pool.query('DELETE FROM admin');
+      await pool.query('DELETE FROM users');
       console.log('🗑️  Tous les utilisateurs ont été supprimés');
     } catch (error) {
       console.error('❌ Erreur lors de la suppression:', error.message);

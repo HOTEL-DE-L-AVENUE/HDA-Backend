@@ -24,9 +24,14 @@ function createCrudController(model, { filterable = [], view } = {}) {
     return ok(res, rows.map(render), { page, limit, total, totalPages: Math.ceil(total / limit) });
   }
 
+  function getId(req) {
+    return req.params[model.pk] || req.params.id || Object.values(req.params)[0];
+  }
+
   async function getOne(req, res) {
-    const row = await model.findById(req.params.id);
-    if (!row) throw ApiError.notFound(`${model.table} #${req.params.id} introuvable`);
+    const id = getId(req);
+    const row = await model.findById(id);
+    if (!row) throw ApiError.notFound(`${model.table} #${id} introuvable`);
     return ok(res, render(row));
   }
 
@@ -36,16 +41,18 @@ function createCrudController(model, { filterable = [], view } = {}) {
   }
 
   async function update(req, res) {
-    const existing = await model.findById(req.params.id);
-    if (!existing) throw ApiError.notFound(`${model.table} #${req.params.id} introuvable`);
-    const row = await model.update(req.params.id, req.body);
+    const id = getId(req);
+    const existing = await model.findById(id);
+    if (!existing) throw ApiError.notFound(`${model.table} #${id} introuvable`);
+    const row = await model.update(id, req.body);
     return ok(res, render(row));
   }
 
   async function remove(req, res) {
-    const existing = await model.findById(req.params.id);
-    if (!existing) throw ApiError.notFound(`${model.table} #${req.params.id} introuvable`);
-    await model.remove(req.params.id);
+    const id = getId(req);
+    const existing = await model.findById(id);
+    if (!existing) throw ApiError.notFound(`${model.table} #${id} introuvable`);
+    await model.remove(id);
     return noContent(res);
   }
 
