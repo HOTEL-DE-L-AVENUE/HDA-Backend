@@ -22,7 +22,7 @@ const customDeleteMethod = async (req, res) => {
 
     try {
       // 1. Tentative de suppression physique
-      await Users.delete(userId);
+      await Users.remove(userId);
       await logAction({ userId: req.user.id_admin, action: 'DELETE_USER', entite: 'users', entiteId: userId });
       return ok(res, { success: true, message: 'Utilisateur supprimé avec succès' });
     } catch (dbError) {
