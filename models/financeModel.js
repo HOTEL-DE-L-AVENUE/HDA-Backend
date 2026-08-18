@@ -94,7 +94,40 @@ async function clientFinancialStatement(clientId) {
   return rows;
 }
 
+// Totaux issus du même grand livre que l'historique. Les valeurs de type_flux
+// ont des suffixes selon le module (ex. ENTREE_CAISSE_CASINO) : il faut donc
+// les reconnaître par préfixe, et non uniquement par égalité stricte.
+async function financialSummary() {
+  const [rows] = await pool.query(
+    `SELECT
+       COALESCE(SUM(CASE WHEN UPPER(type_flux) LIKE 'ENTREE%' THEN montant ELSE 0 END), 0) AS totalRevenu,
+       COALESCE(SUM(CASE WHEN UPPER(type_flux) LIKE 'SORTIE%' THEN montant ELSE 0 END), 0) AS totalDepenses
+     FROM financial_transactions`
+  );
+  const [modules] = await pool.query(
+    `SELECT
+       LOWER(module) AS module,
+       COALESCE(SUM(CASE WHEN UPPER(type_flux) LIKE 'ENTREE%' THEN montant ELSE 0 END), 0) AS entrees,
+       COALESCE(SUM(CASE WHEN UPPER(type_flux) LIKE 'SORTIE%' THEN montant ELSE 0 END), 0) AS sorties
+     FROM financial_transactions
+     GROUP BY LOWER(module)
+     ORDER BY module`
+  );
+  const totals = rows[0];
+  return {
+    totalRevenu: Number(totals.totalRevenu),
+    totalDepenses: Number(totals.totalDepenses),
+    soldeGlobal: Number(totals.totalRevenu) - Number(totals.totalDepenses),
+    modules: modules.map((row) => ({
+      module: row.module || 'general',
+      entrees: Number(row.entrees),
+      sorties: Number(row.sorties),
+      solde: Number(row.entrees) - Number(row.sorties),
+    })),
+  };
+}
+
 module.exports = {
   Invoices, InvoiceItems, Payments, FinancialTransactions,
-  createInvoiceWithItems, recordPayment, invoiceWithItemsAndPayments, clientFinancialStatement,
+  createInvoiceWithItems, recordPayment, invoiceWithItemsAndPayments, clientFinancialStatement, financialSummary,
 };

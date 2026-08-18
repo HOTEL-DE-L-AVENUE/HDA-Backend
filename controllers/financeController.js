@@ -38,7 +38,33 @@ async function clientStatementHandler(req, res) {
   return ok(res, rows);
 }
 
+async function financialSummaryHandler(req, res) {
+  return ok(res, await finance.financialSummary());
+}
+
+async function createFinancialTransactionHandler(req, res) {
+  const { client_id, module, type_flux, montant, reference_id, description } = req.body;
+  const normalizedModule = String(module || '').trim().toUpperCase();
+  const normalizedType = String(type_flux || '').trim().toUpperCase();
+  const amount = Number(montant);
+
+  if (!normalizedModule || !['ENTREE', 'SORTIE'].includes(normalizedType) || !Number.isFinite(amount) || amount <= 0) {
+    throw ApiError.badRequest('module, type_flux (ENTREE ou SORTIE) et un montant positif sont requis');
+  }
+
+  const row = await finance.FinancialTransactions.create({
+    client_id: client_id || null,
+    module: normalizedModule,
+    type_flux: normalizedType,
+    montant: amount,
+    reference_id: reference_id || null,
+    description: String(description || '').trim() || 'Opération financière manuelle',
+  });
+  return created(res, row);
+}
+
 module.exports = {
   invoicesCrud, invoiceItemsCrud, paymentsCrud, financialTransactionsCrud,
   createInvoiceHandler, invoiceDetailHandler, recordPaymentHandler, clientStatementHandler,
+  financialSummaryHandler, createFinancialTransactionHandler,
 };
