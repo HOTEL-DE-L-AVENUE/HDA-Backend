@@ -7,6 +7,7 @@ const { renderUser, renderUserList } = require('../views/userView');
 const ApiError = require('../utils/ApiError');
 const { ok, created } = require('../utils/apiResponse');
 const { getPagination, getSort, buildWhere } = require('../utils/queryHelpers');
+const { withTransaction } = require('../config/db');
 
 const baseUsersCrud = createCrudController(Users, { filterable: ['role', 'statut'], view: renderUser });
 
@@ -20,18 +21,26 @@ const customDeleteMethod = async (req, res) => {
       return ok(res, { success: true, message: 'Utilisateur déjà supprimé' });
     }
 
-    try {
-      // 1. Tentative de suppression physique
-      await Users.remove(userId);
-      await logAction({ userId: req.user.id_admin, action: 'DELETE_USER', entite: 'users', entiteId: userId });
-      return ok(res, { success: true, message: 'Utilisateur supprimé avec succès' });
-    } catch (dbError) {
-      // 2. Si échec (conflit de clé étrangère avec les logs), on passe le statut à 'inactif'
-      console.warn('Suppression physique impossible (conflit FK), passage en statut inactif :', dbError);
-      await Users.update(userId, { statut: 'inactif' });
-      return ok(res, { success: true, message: 'Utilisateur désactivé avec succès' });
+    if (String(userId) === String(req.user.id_admin)) {
+      throw ApiError.badRequest('Vous ne pouvez pas supprimer votre propre compte');
     }
+
+      // Conserver les historiques, sans laisser de référence bloquante vers le compte supprimé.
+      await withTransaction(async (connection) => {
+        await Promise.all([
+          connection.query('UPDATE audit_logs SET user_id = NULL WHERE user_id = ?', [userId]),
+          connection.query('UPDATE housekeeping_tasks SET assigned_user_id = NULL WHERE assigned_user_id = ?', [userId]),
+          connection.query('UPDATE restaurant_sessions SET user_id = NULL WHERE user_id = ?', [userId]),
+          connection.query('UPDATE room_maintenance SET created_by = NULL WHERE created_by = ?', [userId]),
+          connection.query('UPDATE room_status_history SET changed_by = NULL WHERE changed_by = ?', [userId]),
+        ]);
+        await connection.query('DELETE FROM users WHERE id_admin = ?', [userId]);
+      });
+
+      await logAction({ userId: req.user.id_admin, action: 'DELETE_USER', entite: 'users', entiteId: userId });
+    return ok(res, { success: true, message: 'Utilisateur supprimé avec succès' });
   } catch (error) {
+    if (error instanceof ApiError) throw error;
     console.error('Erreur lors de la suppression :', error);
     throw ApiError.internal('Erreur lors de la suppression de l\'utilisateur');
   }
