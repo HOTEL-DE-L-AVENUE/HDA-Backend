@@ -1,3 +1,4 @@
+
 // models/adminModel.js
 const { pool } = require('../config/db');
 const { createCrudModel } = require('./crudFactory');
