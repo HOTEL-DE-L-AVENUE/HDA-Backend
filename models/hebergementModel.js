@@ -174,6 +174,17 @@ async function createReservationWithGuests({ clientId, roomId, dateArrivee, date
       );
     }
     await conn.query('UPDATE rooms SET statut = "RESERVEE" WHERE id = ?', [roomId]);
+    // A confirmed reservation is a lodging revenue commitment. Mirror it in
+    // Finance atomically so the accommodation total and ledger never diverge.
+    // The global reference makes retries safe.
+    if (Number(montantTotal) > 0) {
+      await conn.query(
+        `INSERT IGNORE INTO financial_transactions
+           (client_id, module, type_flux, montant, reference_id, ref_flux_global, description, statut_sync, created_at)
+         VALUES (?, 'HEBERGEMENT', 'ENTREE', ?, ?, ?, ?, 'SYNCED', NOW())`,
+        [clientId, montantTotal, reservationId, `HEBERGEMENT-RESERVATION-${reservationId}`, `Réservation hébergement #${reservationId}`]
+      );
+    }
     const [row] = await conn.query('SELECT * FROM reservations WHERE id = ?', [reservationId]);
     return row[0];
   });
@@ -503,6 +514,15 @@ async function handleMinibarConsumption({ roomId, productId, quantity, clientId,
       `INSERT INTO stock_movements (product_id, location_id, type_mouvement, quantite, source_module, reference_id, created_at)
        VALUES (?, 5, 'SORTIE', ?, 'MINIBAR_CONSUMPTION', ?, NOW())`,
       [productId, quantity, consumption.insertId]
+    );
+
+    // A minibar consumption is charged to the guest and therefore belongs in
+    // the Hotel revenue stream without needing a manual Finance operation.
+    await conn.query(
+      `INSERT IGNORE INTO financial_transactions
+         (client_id, module, type_flux, montant, reference_id, ref_flux_global, description, statut_sync, created_at)
+       VALUES (?, 'HOTEL', 'ENTREE', ?, ?, ?, ?, 'SYNCED', NOW())`,
+      [clientId, montant, consumption.insertId, `HOTEL-MINIBAR-${consumption.insertId}`, `Consommation minibar #${consumption.insertId}`]
     );
 
     return consumption.insertId;

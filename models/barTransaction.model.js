@@ -29,11 +29,31 @@ const BarTransactions = createCrudModel({
 });
 
 async function addTransaction({ session_id, product_id, quantite, prix_unitaire }) {
-  const [result] = await pool.query(
-    'INSERT INTO bar_transactions (session_id, product_id, quantite, prix_unitaire) VALUES (?, ?, ?, ?)',
-    [session_id || null, product_id, quantite || 1, prix_unitaire]
-  );
-  return { id: result.insertId, session_id, product_id, quantite, prix_unitaire };
+  const quantity = Number(quantite || 1);
+  const unitPrice = Number(prix_unitaire);
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [result] = await conn.query(
+      'INSERT INTO bar_transactions (session_id, product_id, quantite, prix_unitaire) VALUES (?, ?, ?, ?)',
+      [session_id || null, product_id, quantity, unitPrice]
+    );
+    const transactionId = result.insertId;
+    const [[product]] = await conn.query('SELECT nom FROM bar_products WHERE id = ?', [product_id]);
+    await conn.query(
+      `INSERT IGNORE INTO financial_transactions
+         (module, type_flux, montant, reference_id, ref_flux_global, description, statut_sync, created_at)
+       VALUES ('BAR', 'ENTREE', ?, ?, ?, ?, 'SYNCED', NOW())`,
+      [quantity * unitPrice, transactionId, `BAR-TRANSACTION-${transactionId}`, `Vente bar${product?.nom ? ` — ${product.nom}` : ''}`]
+    );
+    await conn.commit();
+    return { id: transactionId, session_id, product_id, quantite: quantity, prix_unitaire: unitPrice };
+  } catch (error) {
+    await conn.rollback();
+    throw error;
+  } finally {
+    conn.release();
+  }
 }
 
 async function createOrder({ client_id, table_id, order_id, items, session_id, connection }) {

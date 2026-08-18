@@ -14,6 +14,8 @@ router.post('/payments', ctrl.recordPaymentHandler);                 // POST /ap
 router.use('/payments', createCrudRouter(ctrl.paymentsCrud));
 
 router.get('/clients/:clientId/statement', ctrl.clientStatementHandler); // GET /api/finance/clients/:clientId/statement
+router.get('/summary', ctrl.financialSummaryHandler);                   // GET /api/finance/summary
+router.post('/transactions', ctrl.createFinancialTransactionHandler);   // POST /api/finance/transactions
 router.use('/transactions', createCrudRouter(ctrl.financialTransactionsCrud));
 
 module.exports = router;

@@ -2,6 +2,34 @@
 const { pool, withTransaction } = require('../config/db');
 const { createCrudModel } = require('./crudFactory');
 
+let restaurantSchemaReady;
+
+// Older installations used the generic orders/payments tables before the
+// restaurant columns were introduced. Make the restaurant API self-healing so
+// order creation/payment does not fail with "unknown column" errors.
+async function ensureRestaurantSchema() {
+  if (!restaurantSchemaReady) {
+    restaurantSchemaReady = (async () => {
+      const [orderColumns] = await pool.query('SHOW COLUMNS FROM orders');
+      if (!orderColumns.some((column) => column.Field === 'table_id')) {
+        await pool.query('ALTER TABLE orders ADD COLUMN table_id BIGINT UNSIGNED NULL AFTER client_id');
+      }
+
+      const [paymentColumns] = await pool.query('SHOW COLUMNS FROM payments');
+      if (!paymentColumns.some((column) => column.Field === 'order_id')) {
+        await pool.query('ALTER TABLE payments ADD COLUMN order_id BIGINT UNSIGNED NULL AFTER id');
+      }
+      if (!paymentColumns.some((column) => column.Field === 'date_paiement')) {
+        await pool.query('ALTER TABLE payments ADD COLUMN date_paiement DATETIME NULL AFTER moyen_paiement');
+      }
+    })().catch((error) => {
+      restaurantSchemaReady = undefined;
+      throw error;
+    });
+  }
+  return restaurantSchemaReady;
+}
+
 const TablesRestaurant = createCrudModel({
   table: 'tables_restaurant', pk: 'id',
   fields: ['numero', 'capacite', 'statut'],
@@ -49,6 +77,7 @@ const RestaurantSessions = createCrudModel({
 
 // Crée une commande + ses lignes, calcule le montant_total automatiquement.
 async function createOrderWithItems({ clientId, tableId, items }) {
+  await ensureRestaurantSchema();
   return withTransaction(async (conn) => {
     const montantTotal = items.reduce((sum, it) => sum + Number(it.quantite) * Number(it.prix_unitaire), 0);
 
@@ -105,5 +134,5 @@ async function recipeRequirements(recipeId, portions = 1) {
 module.exports = {
   TablesRestaurant, Orders, OrderItems, Recipes, RecipeItems,
   RestaurantCashiers, RestaurantSessions,
-  createOrderWithItems, orderWithItems, ordersByTable, recipeRequirements,
+  createOrderWithItems, orderWithItems, ordersByTable, recipeRequirements, ensureRestaurantSchema,
 };

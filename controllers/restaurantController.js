@@ -258,6 +258,7 @@ async function cashierStatusHandler(req, res) {
 }
 
 async function processPaymentHandler(req, res) {
+  await resto.ensureRestaurantSchema();
   const { order_id, montant, moyen_paiement, client_id } = req.body;
   if (!order_id || !montant || !moyen_paiement) {
     throw ApiError.badRequest('order_id, montant et moyen_paiement sont requis');
@@ -272,7 +273,15 @@ async function processPaymentHandler(req, res) {
     'UPDATE orders SET statut = "PAYE" WHERE id = ?',
     [order_id]
   );
-  
+
+  // Mirror the receipt in the consolidated Finance ledger.
+  await pool.query(
+    `INSERT INTO financial_transactions
+       (client_id, module, type_flux, montant, reference_id, description, statut_sync, created_at)
+     VALUES (?, 'RESTAURANT', 'ENTREE', ?, ?, ?, 'SYNCED', NOW())`,
+    [client_id || null, montant, order_id, `Paiement commande restaurant #${order_id}`]
+  );
+
   return created(res, { payment_id: result.insertId });
 }
 
