@@ -33,6 +33,7 @@ router.use('/sessions', createCrudRouter(ctrl.sessionsCrud));
 // Commandes bar
 router.get('/orders', ctrl.listBarOrdersHandler);
 router.post('/orders', ctrl.createBarOrderHandler);
+router.put('/orders/:id/status', ctrl.updateBarOrderStatusHandler);
 router.delete('/orders/:id', ctrl.deleteBarOrderHandler);
 
 // Transactions — commandes caisse
