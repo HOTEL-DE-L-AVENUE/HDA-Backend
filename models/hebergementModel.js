@@ -80,6 +80,48 @@ Reservations.update = async function(id, data) {
   await reservationsUpdate.call(this, id, data);
   return findReservationWithDetails(id);
 };
+Reservations.remove = async function(id) {
+  return withTransaction(async (conn) => {
+    const [rows] = await conn.query('SELECT room_id FROM reservations WHERE id = ? LIMIT 1', [id]);
+    if (!rows[0]) return false;
+
+    await conn.query('DELETE FROM stays WHERE reservation_id = ?', [id]);
+    const [result] = await conn.query('DELETE FROM reservations WHERE id = ?', [id]);
+    await conn.query(
+      'UPDATE rooms SET statut = "LIBRE" WHERE id = ? AND statut = "RESERVEE"',
+      [rows[0].room_id]
+    );
+
+    return result.affectedRows > 0;
+  });
+};
+
+Rooms.remove = async function(id) {
+  return withTransaction(async (conn) => {
+    const [rooms] = await conn.query('SELECT id FROM rooms WHERE id = ? LIMIT 1', [id]);
+    if (!rooms[0]) return false;
+
+    await conn.query(
+      'DELETE FROM reservation_guests WHERE reservation_id IN (SELECT id FROM reservations WHERE room_id = ?)',
+      [id]
+    );
+    await conn.query(
+      'DELETE FROM stays WHERE reservation_id IN (SELECT id FROM reservations WHERE room_id = ?)',
+      [id]
+    );
+    await conn.query('DELETE FROM reservations WHERE room_id = ?', [id]);
+    await conn.query('DELETE FROM room_equipments WHERE room_id = ?', [id]);
+    await conn.query('DELETE FROM room_minibar WHERE room_id = ?', [id]);
+    await conn.query('DELETE FROM housekeeping_tasks WHERE room_id = ?', [id]);
+    await conn.query('DELETE FROM lost_and_found WHERE room_id = ?', [id]);
+    await conn.query('DELETE FROM minibar_consumptions WHERE room_id = ?', [id]);
+    await conn.query('DELETE FROM room_maintenance WHERE room_id = ?', [id]);
+    await conn.query('DELETE FROM room_status_history WHERE room_id = ?', [id]);
+
+    const [result] = await conn.query('DELETE FROM rooms WHERE id = ?', [id]);
+    return result.affectedRows > 0;
+  });
+};
 
 const ReservationGuests = createCrudModel({
   table: 'reservation_guests', pk: 'id',
