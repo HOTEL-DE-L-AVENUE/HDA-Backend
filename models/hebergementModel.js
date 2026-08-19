@@ -264,26 +264,65 @@ async function createReservationWithGuests({ clientId, roomId, dateArrivee, date
   });
 }
 
-// Check-in : crée le séjour, passe la réservation en "CONFIRMEE" et la chambre en "OCCUPEE"
+// Check-in : crée le séjour, passe la réservation en cours et prépare la
+// facture d'hébergement. Le règlement reste une étape distincte après
+// l'arrivée du client.
 async function checkIn(reservationId) {
   return withTransaction(async (conn) => {
-    const [resRows] = await conn.query('SELECT * FROM reservations WHERE id = ?', [reservationId]);
+    const [resRows] = await conn.query('SELECT * FROM reservations WHERE id = ? FOR UPDATE', [reservationId]);
     const reservation = resRows[0];
     if (!reservation) throw new Error(`Réservation #${reservationId} introuvable`);
+
+    if (String(reservation.statut || '').toUpperCase() !== 'CONFIRMEE') {
+      throw new Error('Seule une réservation confirmée peut être enregistrée en check-in');
+    }
+
+    const [activeStays] = await conn.query(
+      'SELECT id FROM stays WHERE reservation_id = ? AND checkout_at IS NULL FOR UPDATE',
+      [reservationId]
+    );
+    if (activeStays.length) throw new Error('Cette réservation possède déjà un séjour en cours');
 
     const [result] = await conn.query(
       'INSERT INTO stays (reservation_id, checkin_at) VALUES (?, NOW())',
       [reservationId]
     );
-    await conn.query('UPDATE reservations SET statut = "CONFIRMEE" WHERE id = ?', [reservationId]);
+    await conn.query('UPDATE reservations SET statut = "EN_COURS" WHERE id = ?', [reservationId]);
     await conn.query('UPDATE rooms SET statut = "OCCUPEE" WHERE id = ?', [reservation.room_id]);
     await conn.query(
       `INSERT INTO room_status_history (room_id, ancien_statut, nouveau_statut, changed_at)
        VALUES (?, 'RESERVEE', 'OCCUPEE', NOW())`,
       [reservation.room_id]
     );
+
+    let invoice = null;
+    const total = Number(reservation.montant_total || 0);
+    if (total > 0) {
+      const description = `Hébergement - Réservation #${reservationId}`;
+      const [existingInvoices] = await conn.query(
+        `SELECT i.* FROM invoices i
+         JOIN invoice_items ii ON ii.invoice_id = i.id
+         WHERE ii.description = ? LIMIT 1 FOR UPDATE`,
+        [description]
+      );
+      if (existingInvoices[0]) {
+        invoice = existingInvoices[0];
+      } else {
+        const [invoiceResult] = await conn.query(
+          `INSERT INTO invoices (client_id, montant_total, statut) VALUES (?, ?, 'EN_ATTENTE')`,
+          [reservation.client_id, total]
+        );
+        await conn.query(
+          `INSERT INTO invoice_items (invoice_id, description, montant) VALUES (?, ?, ?)`,
+          [invoiceResult.insertId, description, total]
+        );
+        const [invoiceRows] = await conn.query('SELECT * FROM invoices WHERE id = ?', [invoiceResult.insertId]);
+        invoice = invoiceRows[0];
+      }
+    }
+
     const [stay] = await conn.query('SELECT * FROM stays WHERE id = ?', [result.insertId]);
-    return stay[0];
+    return { ...stay[0], invoice };
   });
 }
 

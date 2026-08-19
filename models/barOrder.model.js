@@ -168,7 +168,22 @@ async function deleteBarOrder(id) {
     const [orders] = await conn.query('SELECT id FROM bar_orders WHERE id = ? FOR UPDATE', [id]);
     if (!orders.length) return false;
 
+    const [transactions] = await conn.query(
+      'SELECT product_id, quantite FROM bar_transactions WHERE order_id = ?',
+      [id]
+    );
+    for (const transaction of transactions) {
+      await conn.query(
+        'UPDATE bar_stock SET quantite = quantite + ? WHERE product_id = ?',
+        [transaction.quantite, transaction.product_id]
+      );
+    }
     await conn.query('DELETE FROM bar_transactions WHERE order_id = ?', [id]);
+    await conn.query(
+      `DELETE FROM financial_transactions
+       WHERE module = 'BAR' AND ref_flux_global = ?`,
+      [`BAR-ORDER-${id}`]
+    );
     await conn.query('DELETE FROM bar_orders WHERE id = ?', [id]);
     return true;
   });
@@ -195,6 +210,25 @@ async function updateBarOrderStatus(id, statut) {
     }
 
     await conn.query('UPDATE bar_orders SET statut = ? WHERE id = ?', [statut, id]);
+    if (statut === 'ENCAISSEE') {
+      const [[order]] = await conn.query(
+        'SELECT montant_total, client_name FROM bar_orders WHERE id = ?',
+        [id]
+      );
+      const [[existingTransaction]] = await conn.query(
+        `SELECT id FROM financial_transactions
+         WHERE module = 'BAR' AND ref_flux_global = ? LIMIT 1`,
+        [`BAR-ORDER-${id}`]
+      );
+      if (!existingTransaction) {
+        await conn.query(
+          `INSERT INTO financial_transactions
+             (module, type_flux, montant, reference_id, ref_flux_global, description, statut_sync, created_at)
+           VALUES ('BAR', 'ENTREE', ?, ?, ?, ?, 'SYNCED', NOW())`,
+          [order.montant_total, id, `BAR-ORDER-${id}`, `Encaissement commande bar #${id}`]
+        );
+      }
+    }
     return { id: Number(id), statut };
   });
 }

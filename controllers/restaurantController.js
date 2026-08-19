@@ -292,7 +292,7 @@ async function processPaymentHandler(req, res) {
   );
   
   await pool.query(
-    'UPDATE orders SET statut = "PAYE" WHERE id = ?',
+    'UPDATE orders SET statut = "PAYEE" WHERE id = ?',
     [order_id]
   );
 
