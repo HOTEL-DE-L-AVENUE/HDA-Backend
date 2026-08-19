@@ -10,6 +10,8 @@ const router = express.Router();
 router.get('/stock', ctrl.restaurantStockHandler);
 router.get('/stock/movements', ctrl.restaurantStockMovementsHandler);
 router.post('/stock/adjust', ctrl.adjustRestaurantStockHandler);
+// DELETE /api/restaurant/stock?id=... or ?product_id=...&location_id=...
+router.delete('/stock', ctrl.removeRestaurantStockHandler);
 router.use('/stock/locations', createCrudRouter(stockCtrl.stockLocationsCrud));
 router.use('/products', createCrudRouter(stockCtrl.productsCrud));
 router.use('/units', createCrudRouter(stockCtrl.unitsCrud));
