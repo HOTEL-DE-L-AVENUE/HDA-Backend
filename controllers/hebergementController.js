@@ -49,7 +49,8 @@ async function createReservationHandler(req, res) {
     statut: statut || 'EN_COURS',
     guests: guests || [],
   });
-  return created(res, reservation);
+  const reservationWithDetails = await heb.Reservations.findById(reservation.id);
+  return created(res, reservationWithDetails);
 }
 
 async function checkInHandler(req, res) {
