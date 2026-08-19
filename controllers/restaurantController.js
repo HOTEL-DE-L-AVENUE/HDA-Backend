@@ -2,7 +2,7 @@
 const resto = require('../models/restaurantModel');
 const { createCrudController } = require('./controllerFactory');
 const ApiError = require('../utils/ApiError');
-const { ok, created } = require('../utils/apiResponse');
+const { ok, created, noContent } = require('../utils/apiResponse');
 const { pool, withTransaction } = require('../config/db');
 const stock = require('../models/stockModel');
 
@@ -54,12 +54,12 @@ async function restaurantStockHandler(req, res) {
     `SELECT s.id, p.id AS product_id, sl.id AS location_id, COALESCE(s.quantite, 0) AS quantite,
             p.nom AS product_nom, p.unite, p.code, p.type_produit,
             sl.nom AS location_nom
-     FROM products p
-     JOIN stock_locations sl ON sl.id = ?
-     LEFT JOIN stocks s ON s.product_id = p.id AND s.location_id = sl.id
-     WHERE p.actif = 1${req.query.type_produit ? ' AND p.type_produit = ?' : ''}
+     FROM stocks s
+     JOIN products p ON p.id = s.product_id
+     JOIN stock_locations sl ON sl.id = s.location_id
+     WHERE p.actif = 1${req.query.location_id ? ' AND s.location_id = ?' : ''}${req.query.type_produit ? ' AND p.type_produit = ?' : ''}
      ORDER BY p.nom ASC`,
-    [req.query.location_id, ...(req.query.type_produit ? [req.query.type_produit] : [])]
+    [...(req.query.location_id ? [req.query.location_id] : []), ...(req.query.type_produit ? [req.query.type_produit] : [])]
   );
   return ok(res, rows);
 }
@@ -103,6 +103,28 @@ async function adjustRestaurantStockHandler(req, res) {
     [product_id, location_id]
   );
   return ok(res, { newQty: Number(rows[0].quantite) });
+}
+
+// Supprime une ligne de stock pour le restaurant. Accepte soit `id` (stocks.id),
+// soit `product_id` + `location_id` pour supprimer la ligne correspondante.
+async function removeRestaurantStockHandler(req, res) {
+  const { id } = req.query || {};
+  const productId = req.query && req.query.product_id ? Number(req.query.product_id) : null;
+  const locationId = req.query && req.query.location_id ? Number(req.query.location_id) : null;
+
+  if (!id && (!productId || !locationId)) {
+    throw ApiError.badRequest('id ou product_id+location_id requis');
+  }
+
+  const where = id ? 'id = ?' : 'product_id = ? AND location_id = ?';
+  const params = id ? [id] : [productId, locationId];
+
+  const [result] = await pool.query(`DELETE FROM stocks WHERE ${where}`, params);
+  if (result.affectedRows === 0) {
+    throw ApiError.notFound('Ligne de stock introuvable');
+  }
+
+  return noContent(res);
 }
 async function listRestaurantPurchasesHandler(req, res) {
   const [rows] = await pool.query(
@@ -333,6 +355,7 @@ module.exports = {
   tablesCrud, ordersCrud, orderItemsCrud, recipesCrud, recipeItemsCrud, cashiersCrud, sessionsCrud,
   createOrderHandler, orderDetailHandler, ordersInProgressHandler, recipeRequirementsHandler,
   restaurantStockHandler, restaurantStockMovementsHandler, adjustRestaurantStockHandler,
+  removeRestaurantStockHandler,
   listRestaurantPurchasesHandler, restaurantPurchaseDetailHandler, createRestaurantPurchaseHandler,
   menuHandler, updateOrderStatusHandler, openCashierHandler, closeCashierHandler,
   cashierStatusHandler, processPaymentHandler, billToRoomHandler, statsHandler,

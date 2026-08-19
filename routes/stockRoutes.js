@@ -5,6 +5,7 @@ const { createCrudRouter } = require('./routeFactory');
 
 const router = express.Router();
 
+router.delete('/stocks/:id', ctrl.stocksCrud.remove);  // DELETE /api/stock/stocks/:id
 router.use('/categories', createCrudRouter(ctrl.categoriesCrud));
 router.use('/product-types', createCrudRouter(ctrl.productTypesCrud));
 router.use('/units', createCrudRouter(ctrl.unitsCrud));
