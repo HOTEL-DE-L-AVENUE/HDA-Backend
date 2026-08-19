@@ -125,17 +125,18 @@ async function financialSummary() {
   const [orders] = await pool.query(
     `SELECT source_module AS module, COALESCE(SUM(montant_total), 0) AS montant
      FROM orders
-     WHERE UPPER(COALESCE(statut, '')) NOT IN ('ANNULEE', 'ANNULE')
+      WHERE UPPER(COALESCE(statut, '')) IN ('PAYEE', 'PAYE')
      GROUP BY source_module`
   );
   orders.forEach((row) => add(row.module, 'entrees', row.montant));
 
   // Le bar possède sa propre table de commandes dans certaines installations.
   const [[barOrdersTable]] = await pool.query("SHOW TABLES LIKE 'bar_orders'");
+  const [[barStockTable]] = await pool.query("SHOW TABLES LIKE 'bar_stock'");
   if (barOrdersTable) {
     const [barOrders] = await pool.query(
       `SELECT COALESCE(SUM(montant_total), 0) AS montant
-       FROM bar_orders WHERE UPPER(COALESCE(statut, '')) NOT IN ('ANNULEE', 'ANNULE')`
+        FROM bar_orders WHERE UPPER(COALESCE(statut, '')) = 'ENCAISSEE'`
     );
     add('bar', 'entrees', barOrders[0]?.montant);
   }
@@ -148,6 +149,16 @@ async function financialSummary() {
      GROUP BY sl.id, sl.nom`
   );
   stockValues.forEach((row) => add(row.module, 'sorties', row.montant));
+
+  // Le bar utilise ses propres tables de produits et de stock.
+  if (barStockTable) {
+    const [barStockValues] = await pool.query(
+      `SELECT COALESCE(SUM(bs.quantite * COALESCE(bp.prix, 0)), 0) AS montant
+       FROM bar_stock bs
+       JOIN bar_products bp ON bp.id = bs.product_id`
+    );
+    add('bar', 'sorties', barStockValues[0]?.montant);
+  }
 
   const moduleRows = [...modules.values()].map((row) => ({
     ...row,
