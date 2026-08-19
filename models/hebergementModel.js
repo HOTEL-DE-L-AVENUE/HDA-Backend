@@ -49,6 +49,38 @@ const Reservations = createCrudModel({
   sortable: ['id', 'date_arrivee', 'date_depart', 'statut'],
 });
 
+const reservationsFindAll = Reservations.findAll;
+const reservationsFindById = Reservations.findById;
+const reservationsCreate = Reservations.create;
+const reservationsUpdate = Reservations.update;
+
+async function findReservationWithDetails(id) {
+  const [rows] = await pool.query(
+    `SELECT r.*, c.nom AS client_nom, c.prenom AS client_prenom, room.numero AS room_numero
+     FROM reservations r
+     LEFT JOIN clients c ON c.id = r.client_id
+     LEFT JOIN rooms room ON room.id = r.room_id
+     WHERE r.id = ? LIMIT 1`,
+    [id]
+  );
+  return rows[0] || null;
+}
+
+Reservations.findAll = async function(options) {
+  const rows = await reservationsFindAll.call(this, options);
+  return Promise.all(rows.map((row) => findReservationWithDetails(row.id)));
+};
+
+Reservations.findById = findReservationWithDetails;
+Reservations.create = async function(data) {
+  const row = await reservationsCreate.call(this, data);
+  return findReservationWithDetails(row.id);
+};
+Reservations.update = async function(id, data) {
+  await reservationsUpdate.call(this, id, data);
+  return findReservationWithDetails(id);
+};
+
 const ReservationGuests = createCrudModel({
   table: 'reservation_guests', pk: 'id',
   fields: ['reservation_id', 'nom', 'prenom', 'date_naissance', 'type_piece', 'numero_piece'],

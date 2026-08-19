@@ -3,7 +3,7 @@ const { BarCashiers, openCashierSession, closeCashierSession, getCurrentSession 
 const { BarSessions, sessionStats } = require('../models/barSession.model');
 const barProductModel = require('../models/barProduct.model');
 const { addTransaction } = require('../models/barTransaction.model');
-const { listBarOrders, createBarOrder, deleteBarOrder } = require('../models/barOrder.model');
+const { listBarOrders, createBarOrder, deleteBarOrder, updateBarOrderStatus } = require('../models/barOrder.model');
 const { createCrudController } = require('./controllerFactory');
 const ApiError = require('../utils/ApiError');
 const { ok, created } = require('../utils/apiResponse');
@@ -163,6 +163,13 @@ async function deleteBarOrderHandler(req, res) {
   return ok(res, { message: 'Commande supprimée' });
 }
 
+async function updateBarOrderStatusHandler(req, res) {
+  const { statut } = req.body || {};
+  const order = await updateBarOrderStatus(req.params.id, statut);
+  if (!order) throw ApiError.notFound(`Commande #${req.params.id} introuvable`);
+  return ok(res, order);
+}
+
 module.exports = {
   tablesCrud, cashiersCrud, sessionsCrud, productsCrud,
   tablesStatsHandler, openCashierHandler, closeCashierHandler,
@@ -170,5 +177,5 @@ module.exports = {
   currentSessionHandler, getBarStockHandler,
   addBarStockHandler, updateBarStockHandler, deleteBarStockHandler,
   addTransactionHandler, latestTransactionsByProductHandler, listTransactionsHandler,
-  listBarOrdersHandler, createBarOrderHandler, deleteBarOrderHandler,
+  listBarOrdersHandler, createBarOrderHandler, deleteBarOrderHandler, updateBarOrderStatusHandler,
 };

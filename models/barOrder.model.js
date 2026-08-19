@@ -173,8 +173,34 @@ async function deleteBarOrder(id) {
     return true;
   });
 }
+
+async function updateBarOrderStatus(id, statut) {
+  await ensureBarOrderTables();
+  const allowedTransitions = {
+    EN_ATTENTE: 'EN_PREPARATION',
+    EN_PREPARATION: 'SERVIE',
+    SERVIE: 'ENCAISSEE',
+  };
+
+  return withTransaction(async (conn) => {
+    const [orders] = await conn.query(
+      'SELECT id, statut FROM bar_orders WHERE id = ? FOR UPDATE',
+      [id]
+    );
+    if (!orders.length) return null;
+
+    const currentStatus = orders[0].statut;
+    if (allowedTransitions[currentStatus] !== statut) {
+      throw ApiError.badRequest('Transition de statut de commande invalide.');
+    }
+
+    await conn.query('UPDATE bar_orders SET statut = ? WHERE id = ?', [statut, id]);
+    return { id: Number(id), statut };
+  });
+}
 module.exports = {
   listBarOrders,
   createBarOrder,
   deleteBarOrder,
+  updateBarOrderStatus,
 };
