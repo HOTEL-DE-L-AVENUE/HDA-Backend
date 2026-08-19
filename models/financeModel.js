@@ -94,36 +94,76 @@ async function clientFinancialStatement(clientId) {
   return rows;
 }
 
-// Totaux issus du même grand livre que l'historique. Les valeurs de type_flux
-// ont des suffixes selon le module (ex. ENTREE_CAISSE_CASINO) : il faut donc
-// les reconnaître par préfixe, et non uniquement par égalité stricte.
+// Indicateurs opérationnels : les commandes représentent les revenus et la
+// valeur du stock disponible représente les sorties du module. Les achats ne
+// sont volontairement pas additionnés ici, sinon la valeur du stock serait
+// comptée deux fois.
 async function financialSummary() {
-  const [rows] = await pool.query(
-    `SELECT
-       COALESCE(SUM(CASE WHEN UPPER(type_flux) LIKE 'ENTREE%' THEN montant ELSE 0 END), 0) AS totalRevenu,
-       COALESCE(SUM(CASE WHEN UPPER(type_flux) LIKE 'SORTIE%' THEN montant ELSE 0 END), 0) AS totalDepenses
-     FROM financial_transactions`
+  const modules = new Map([
+    ['hebergement', { module: 'hebergement', entrees: 0, sorties: 0 }],
+    ['hotel', { module: 'hotel', entrees: 0, sorties: 0 }],
+    ['restaurant', { module: 'restaurant', entrees: 0, sorties: 0 }],
+    ['bar', { module: 'bar', entrees: 0, sorties: 0 }],
+    ['casino', { module: 'casino', entrees: 0, sorties: 0 }],
+  ]);
+  const normaliseModule = (value) => {
+    const key = String(value || '').trim().toLowerCase();
+    if (key.includes('restaurant')) return 'restaurant';
+    if (key.includes('bar')) return 'bar';
+    if (key.includes('casino')) return 'casino';
+    if (key.includes('hotel') || key.includes('hôtel')) return 'hotel';
+    if (key.includes('hebergement') || key.includes('hébergement')) return 'hebergement';
+    return null;
+  };
+  const add = (module, field, amount) => {
+    const key = normaliseModule(module);
+    if (!key) return;
+    const summary = modules.get(key);
+    summary[field] += Number(amount) || 0;
+  };
+
+  const [orders] = await pool.query(
+    `SELECT source_module AS module, COALESCE(SUM(montant_total), 0) AS montant
+     FROM orders
+     WHERE UPPER(COALESCE(statut, '')) NOT IN ('ANNULEE', 'ANNULE')
+     GROUP BY source_module`
   );
-  const [modules] = await pool.query(
-    `SELECT
-       LOWER(module) AS module,
-       COALESCE(SUM(CASE WHEN UPPER(type_flux) LIKE 'ENTREE%' THEN montant ELSE 0 END), 0) AS entrees,
-       COALESCE(SUM(CASE WHEN UPPER(type_flux) LIKE 'SORTIE%' THEN montant ELSE 0 END), 0) AS sorties
-     FROM financial_transactions
-     GROUP BY LOWER(module)
-     ORDER BY module`
+  orders.forEach((row) => add(row.module, 'entrees', row.montant));
+
+  // Le bar possède sa propre table de commandes dans certaines installations.
+  const [[barOrdersTable]] = await pool.query("SHOW TABLES LIKE 'bar_orders'");
+  if (barOrdersTable) {
+    const [barOrders] = await pool.query(
+      `SELECT COALESCE(SUM(montant_total), 0) AS montant
+       FROM bar_orders WHERE UPPER(COALESCE(statut, '')) NOT IN ('ANNULEE', 'ANNULE')`
+    );
+    add('bar', 'entrees', barOrders[0]?.montant);
+  }
+
+  const [stockValues] = await pool.query(
+    `SELECT sl.nom AS module, COALESCE(SUM(s.quantite * COALESCE(p.prix_achat, 0)), 0) AS montant
+     FROM stocks s
+     JOIN products p ON p.id = s.product_id
+     JOIN stock_locations sl ON sl.id = s.location_id
+     GROUP BY sl.id, sl.nom`
   );
-  const totals = rows[0];
+  stockValues.forEach((row) => add(row.module, 'sorties', row.montant));
+
+  const moduleRows = [...modules.values()].map((row) => ({
+    ...row,
+    solde: row.entrees - row.sorties,
+  }));
+  const totalEntrees = moduleRows.reduce((sum, row) => sum + row.entrees, 0);
+  const totalSorties = moduleRows.reduce((sum, row) => sum + row.sorties, 0);
+  const beneficeNet = totalEntrees - totalSorties;
   return {
-    totalRevenu: Number(totals.totalRevenu),
-    totalDepenses: Number(totals.totalDepenses),
-    soldeGlobal: Number(totals.totalRevenu) - Number(totals.totalDepenses),
-    modules: modules.map((row) => ({
-      module: row.module || 'general',
-      entrees: Number(row.entrees),
-      sorties: Number(row.sorties),
-      solde: Number(row.entrees) - Number(row.sorties),
-    })),
+    totalEntrees,
+    totalSorties,
+    beneficeNet,
+    totalRevenu: totalEntrees,
+    totalDepenses: totalSorties,
+    soldeGlobal: beneficeNet,
+    modules: moduleRows,
   };
 }
 

@@ -51,7 +51,7 @@ async function movementHandler(req, res, next) {
  */
 async function createPurchaseHandler(req, res, next) {
   try {
-    const { supplier_id, location_id, items } = req.body;
+    const { supplier_id, location_id, items, source_module } = req.body;
 
     if (!supplier_id || !location_id || !Array.isArray(items) || items.length === 0) {
       throw ApiError.badRequest('supplier_id, location_id et un tableau items non vide sont requis');
@@ -61,6 +61,7 @@ async function createPurchaseHandler(req, res, next) {
       supplierId: supplier_id,
       locationId: location_id,
       items,
+      sourceModule: source_module || 'GENERAL',
     });
 
     return created(res, purchase);

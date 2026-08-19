@@ -103,7 +103,7 @@ async function recordMovement({ productId, locationId, type, quantite, sourceMod
 }
 
 // Crée un achat fournisseur + ses lignes, et alimente le stock à réception.
-async function createPurchaseWithItems({ supplierId, locationId, items }) {
+async function createPurchaseWithItems({ supplierId, locationId, items, sourceModule = 'GENERAL' }) {
   return withTransaction(async (conn) => {
     const montantTotal = items.reduce((sum, it) => sum + Number(it.quantite) * Number(it.prix_unitaire), 0);
     const [purchase] = await conn.query(
@@ -132,6 +132,7 @@ async function createPurchaseWithItems({ supplierId, locationId, items }) {
         [it.product_id, locationId, it.quantite, purchaseId]
       );
     }
+
     const [row] = await conn.query('SELECT * FROM purchases WHERE id = ?', [purchaseId]);
     return row[0];
   });
