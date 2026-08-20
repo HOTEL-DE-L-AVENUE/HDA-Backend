@@ -31,6 +31,8 @@ router.get('/menu', ctrl.menuHandler);
 // Orders - specific routes BEFORE CRUD
 router.post('/orders', ctrl.createOrderHandler);
 router.get('/orders/in-progress', ctrl.ordersInProgressHandler);
+router.get('/orders/:id/invoice', ctrl.orderInvoiceHandler);
+router.get('/orders/:id/invoice.pdf', ctrl.orderInvoicePdfHandler);
 router.get('/orders/:id/detail', ctrl.orderDetailHandler);
 router.put('/orders/:id/status', ctrl.updateOrderStatusHandler);
 router.use('/orders', createCrudRouter(ctrl.ordersCrud));
