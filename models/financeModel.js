@@ -130,19 +130,20 @@ async function financialSummary() {
   );
   orders.forEach((row) => add(row.module, 'entrees', row.montant));
 
-  // Les réservations d'hébergement sont enregistrées directement dans le
-  // grand livre financier, contrairement aux commandes du restaurant.
-  const [hebergementTransactions] = await pool.query(
-    `SELECT type_flux, COALESCE(SUM(montant), 0) AS montant
+  // Les flux Hébergement et Hôtel sont enregistrés directement dans le
+  // grand livre financier (réservations et consommations minibar).
+  const [hotelTransactions] = await pool.query(
+    `SELECT UPPER(module) AS module, type_flux, COALESCE(SUM(montant), 0) AS montant
      FROM financial_transactions
-     WHERE UPPER(module) = 'HEBERGEMENT'
-     GROUP BY type_flux`
+     WHERE UPPER(module) IN ('HEBERGEMENT', 'HOTEL')
+     GROUP BY UPPER(module), type_flux`
   );
-  hebergementTransactions.forEach((row) => {
+  hotelTransactions.forEach((row) => {
+    const module = String(row.module).toLowerCase();
     if (String(row.type_flux || '').toUpperCase().startsWith('ENTREE')) {
-      add('hebergement', 'entrees', row.montant);
+      add(module, 'entrees', row.montant);
     } else if (String(row.type_flux || '').toUpperCase().startsWith('SORTIE')) {
-      add('hebergement', 'sorties', row.montant);
+      add(module, 'sorties', row.montant);
     }
   });
 
