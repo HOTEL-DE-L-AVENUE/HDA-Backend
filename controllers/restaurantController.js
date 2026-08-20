@@ -15,8 +15,38 @@ const cashiersCrud = createCrudController(resto.RestaurantCashiers, { filterable
 const sessionsCrud = createCrudController(resto.RestaurantSessions, { filterable: ['cashier_id', 'user_id'] });
 
 async function createOrderHandler(req, res) {
+  // Debug: log incoming payload to help diagnose 400 errors from frontend
+  console.debug('[restaurant] createOrderHandler body:', JSON.stringify(req.body));
   const { client_id, table_id, items } = req.body;
   if (!items || !items.length) throw ApiError.badRequest('items requis (au moins une ligne)');
+
+  // Validate referenced entities to return clearer 400 errors instead of DB foreign-key messages
+  try {
+    if (client_id) {
+      const [[client]] = await pool.query('SELECT id FROM clients WHERE id = ? LIMIT 1', [client_id]);
+      if (!client) throw ApiError.badRequest(`client_id ${client_id} introuvable`);
+    }
+
+    if (table_id) {
+      const [[tableRow]] = await pool.query('SELECT id FROM tables_restaurant WHERE id = ? LIMIT 1', [table_id]);
+      if (!tableRow) throw ApiError.badRequest(`table_id ${table_id} introuvable`);
+    }
+
+    const productIds = items.map((it) => Number(it.product_id)).filter(Boolean);
+    if (!productIds.length) throw ApiError.badRequest('Chaque ligne doit contenir product_id valide');
+    const placeholders = productIds.map(() => '?').join(',');
+    const [foundProducts] = await pool.query(`SELECT id FROM products WHERE id IN (${placeholders})`, productIds);
+    const foundIds = new Set(foundProducts.map((p) => Number(p.id)));
+    const missing = productIds.filter((id) => !foundIds.has(id));
+    if (missing.length) throw ApiError.badRequest(`product_id introuvable: ${missing.join(',')}`);
+  } catch (err) {
+    // If it's an ApiError, rethrow so middleware returns the proper 400
+    if (err instanceof ApiError) throw err;
+    // Log unexpected SQL errors and return a generic bad request
+    console.error('[restaurant] validation error', err);
+    throw ApiError.badRequest('Données de référence invalides');
+  }
+
   const order = await resto.createOrderWithItems({ clientId: client_id, tableId: table_id, items });
   return created(res, order);
 }
@@ -36,6 +66,52 @@ async function recipeRequirementsHandler(req, res) {
   const portions = Number(req.query.portions) || 1;
   const rows = await resto.recipeRequirements(req.params.id, portions);
   return ok(res, rows);
+}
+
+async function listRestaurantRecipesHandler(req, res) {
+  const rows = await resto.listRecipesWithProducts();
+  return ok(res, rows);
+}
+
+async function recipeByIdHandler(req, res) {
+  const recipe = await resto.recipeWithItems(req.params.id);
+  if (!recipe) throw ApiError.notFound(`Recette #${req.params.id} introuvable`);
+  return ok(res, recipe);
+}
+
+async function createRecipeHandler(req, res) {
+  const { product_id, nom, ingredients } = req.body || {};
+  if (!product_id || !nom || !String(nom).trim()) {
+    throw ApiError.badRequest('product_id et nom sont requis');
+  }
+  if (!Array.isArray(ingredients)) {
+    throw ApiError.badRequest('ingredients doit être un tableau');
+  }
+
+  const rows = await resto.createRecipeWithItems({
+    product_id: Number(product_id),
+    nom: String(nom).trim(),
+    ingredients,
+  });
+  return created(res, rows);
+}
+
+async function updateRecipeHandler(req, res) {
+  const { nom, ingredients } = req.body || {};
+  const existing = await resto.recipeWithItems(req.params.id);
+  if (!existing) throw ApiError.notFound(`Recette #${req.params.id} introuvable`);
+
+  const next = await resto.updateRecipeWithItems(req.params.id, {
+    ...(nom !== undefined ? { nom } : {}),
+    ...(ingredients !== undefined ? { ingredients } : {}),
+  });
+  return ok(res, next);
+}
+
+async function deleteRecipeHandler(req, res) {
+  const deleted = await resto.deleteRecipeWithItems(req.params.id);
+  if (!deleted) throw ApiError.notFound(`Recette #${req.params.id} introuvable`);
+  return noContent(res);
 }
 
 async function restaurantStockHandler(req, res) {
@@ -216,6 +292,7 @@ async function menuHandler(req, res) {
 }
 
 async function updateOrderStatusHandler(req, res) {
+  console.debug('[restaurant] updateOrderStatusHandler params:', req.params, 'body:', JSON.stringify(req.body));
   const { statut } = req.body;
   if (!statut) throw ApiError.badRequest('statut est requis');
   
@@ -281,6 +358,7 @@ async function cashierStatusHandler(req, res) {
 
 async function processPaymentHandler(req, res) {
   await resto.ensureRestaurantSchema();
+  console.debug('[restaurant] processPaymentHandler body:', JSON.stringify(req.body));
   const { order_id, montant, moyen_paiement, client_id } = req.body;
   if (!order_id || !montant || !moyen_paiement) {
     throw ApiError.badRequest('order_id, montant et moyen_paiement sont requis');
@@ -354,8 +432,9 @@ async function statsHandler(req, res) {
 module.exports = {
   tablesCrud, ordersCrud, orderItemsCrud, recipesCrud, recipeItemsCrud, cashiersCrud, sessionsCrud,
   createOrderHandler, orderDetailHandler, ordersInProgressHandler, recipeRequirementsHandler,
-  restaurantStockHandler, restaurantStockMovementsHandler, adjustRestaurantStockHandler,
-  removeRestaurantStockHandler,
+  listRestaurantRecipesHandler, recipeByIdHandler, createRecipeHandler, updateRecipeHandler,
+  deleteRecipeHandler, restaurantStockHandler, restaurantStockMovementsHandler,
+  adjustRestaurantStockHandler, removeRestaurantStockHandler,
   listRestaurantPurchasesHandler, restaurantPurchaseDetailHandler, createRestaurantPurchaseHandler,
   menuHandler, updateOrderStatusHandler, openCashierHandler, closeCashierHandler,
   cashierStatusHandler, processPaymentHandler, billToRoomHandler, statsHandler,

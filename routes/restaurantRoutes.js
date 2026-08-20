@@ -38,7 +38,11 @@ router.use('/order-items', createCrudRouter(ctrl.orderItemsCrud));
 
 // Recipes
 router.get('/recipes/:id/requirements', ctrl.recipeRequirementsHandler);
-router.use('/recipes', createCrudRouter(ctrl.recipesCrud));
+router.get('/recipes', ctrl.listRestaurantRecipesHandler);
+router.post('/recipes', ctrl.createRecipeHandler);
+router.get('/recipes/:id', ctrl.recipeByIdHandler);
+router.put('/recipes/:id', ctrl.updateRecipeHandler);
+router.delete('/recipes/:id', ctrl.deleteRecipeHandler);
 router.use('/recipe-items', createCrudRouter(ctrl.recipeItemsCrud));
 
 // Cashiers & Sessions

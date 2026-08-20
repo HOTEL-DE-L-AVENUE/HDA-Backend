@@ -19,13 +19,27 @@ function getSort(query, allowedColumns, defaultColumn = 'id') {
 
 // Construit dynamiquement une clause WHERE à partir d'un objet { colonne: valeur }
 // (uniquement pour les colonnes présentes dans allowedFilters)
+function normalizeFilterValue(value) {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed === '') return value;
+    const lowered = trimmed.toLowerCase();
+    if (lowered === 'true') return true;
+    if (lowered === 'false') return false;
+    if (lowered === 'null') return null;
+    if (/^-?\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed);
+  }
+  return value;
+}
+
 function buildWhere(filters, allowedFilters) {
   const clauses = [];
   const values = [];
   for (const key of allowedFilters) {
     if (filters[key] !== undefined && filters[key] !== '') {
+      const value = normalizeFilterValue(filters[key]);
       clauses.push(`\`${key}\` = ?`);
-      values.push(filters[key]);
+      values.push(value);
     }
   }
   return {
