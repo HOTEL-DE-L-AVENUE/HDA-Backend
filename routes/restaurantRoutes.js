@@ -31,19 +31,14 @@ router.get('/menu', ctrl.menuHandler);
 // Orders - specific routes BEFORE CRUD
 router.post('/orders', ctrl.createOrderHandler);
 router.get('/orders/in-progress', ctrl.ordersInProgressHandler);
+router.get('/orders/:id/invoice', ctrl.orderInvoiceHandler);
+router.get('/orders/:id/invoice.pdf', ctrl.orderInvoicePdfHandler);
 router.get('/orders/:id/detail', ctrl.orderDetailHandler);
 router.put('/orders/:id/status', ctrl.updateOrderStatusHandler);
 router.use('/orders', createCrudRouter(ctrl.ordersCrud));
 router.use('/order-items', createCrudRouter(ctrl.orderItemsCrud));
 
-// Recipes
-router.get('/recipes/:id/requirements', ctrl.recipeRequirementsHandler);
-router.get('/recipes', ctrl.listRestaurantRecipesHandler);
-router.post('/recipes', ctrl.createRecipeHandler);
-router.get('/recipes/:id', ctrl.recipeByIdHandler);
-router.put('/recipes/:id', ctrl.updateRecipeHandler);
-router.delete('/recipes/:id', ctrl.deleteRecipeHandler);
-router.use('/recipe-items', createCrudRouter(ctrl.recipeItemsCrud));
+// Recipes routes removed
 
 // Cashiers & Sessions
 router.post('/cashier/open', ctrl.openCashierHandler);
