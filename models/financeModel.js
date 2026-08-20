@@ -130,6 +130,38 @@ async function financialSummary() {
   );
   orders.forEach((row) => add(row.module, 'entrees', row.montant));
 
+  // Les réservations d'hébergement sont enregistrées directement dans le
+  // grand livre financier, contrairement aux commandes du restaurant.
+  const [hebergementTransactions] = await pool.query(
+    `SELECT type_flux, COALESCE(SUM(montant), 0) AS montant
+     FROM financial_transactions
+     WHERE UPPER(module) = 'HEBERGEMENT'
+     GROUP BY type_flux`
+  );
+  hebergementTransactions.forEach((row) => {
+    if (String(row.type_flux || '').toUpperCase().startsWith('ENTREE')) {
+      add('hebergement', 'entrees', row.montant);
+    } else if (String(row.type_flux || '').toUpperCase().startsWith('SORTIE')) {
+      add('hebergement', 'sorties', row.montant);
+    }
+  });
+
+  // Les opérations Casino sont synchronisées directement dans le grand livre
+  // financier avec des types ENTREE_CAISSE_CASINO ou SORTIE_CAISSE_CASINO.
+  const [casinoTransactions] = await pool.query(
+    `SELECT type_flux, COALESCE(SUM(montant), 0) AS montant
+     FROM financial_transactions
+     WHERE UPPER(module) = 'CASINO'
+     GROUP BY type_flux`
+  );
+  casinoTransactions.forEach((row) => {
+    if (String(row.type_flux || '').toUpperCase().startsWith('ENTREE')) {
+      add('casino', 'entrees', row.montant);
+    } else if (String(row.type_flux || '').toUpperCase().startsWith('SORTIE')) {
+      add('casino', 'sorties', row.montant);
+    }
+  });
+
   // Le bar possède sa propre table de commandes dans certaines installations.
   const [[barOrdersTable]] = await pool.query("SHOW TABLES LIKE 'bar_orders'");
   const [[barStockTable]] = await pool.query("SHOW TABLES LIKE 'bar_stock'");

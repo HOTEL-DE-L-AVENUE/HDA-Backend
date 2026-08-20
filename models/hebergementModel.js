@@ -56,7 +56,12 @@ const reservationsUpdate = Reservations.update;
 
 async function findReservationWithDetails(id) {
   const [rows] = await pool.query(
-    `SELECT r.*, c.nom AS client_nom, c.prenom AS client_prenom, room.numero AS room_numero
+    `SELECT r.*, c.nom AS client_nom, c.prenom AS client_prenom, room.numero AS room_numero,
+            EXISTS(
+              SELECT 1 FROM financial_transactions ft
+              WHERE ft.module = 'HEBERGEMENT'
+                AND ft.ref_flux_global = CONCAT('HEBERGEMENT-RESERVATION-', r.id)
+            ) AS est_payee
      FROM reservations r
      LEFT JOIN clients c ON c.id = r.client_id
      LEFT JOIN rooms room ON room.id = r.room_id
@@ -86,6 +91,11 @@ Reservations.remove = async function(id) {
     if (!rows[0]) return false;
 
     await conn.query('DELETE FROM stays WHERE reservation_id = ?', [id]);
+    await conn.query(
+      `DELETE FROM financial_transactions
+       WHERE module = 'HEBERGEMENT' AND ref_flux_global = ?`,
+      [`HEBERGEMENT-RESERVATION-${id}`]
+    );
     const [result] = await conn.query('DELETE FROM reservations WHERE id = ?', [id]);
     await conn.query(
       'UPDATE rooms SET statut = "LIBRE" WHERE id = ? AND statut = "RESERVEE"',
@@ -248,19 +258,32 @@ async function createReservationWithGuests({ clientId, roomId, dateArrivee, date
       );
     }
     await conn.query('UPDATE rooms SET statut = "RESERVEE" WHERE id = ?', [roomId]);
-    // A confirmed reservation is a lodging revenue commitment. Mirror it in
-    // Finance atomically so the accommodation total and ledger never diverge.
-    // The global reference makes retries safe.
-    if (Number(montantTotal) > 0) {
-      await conn.query(
-        `INSERT IGNORE INTO financial_transactions
-           (client_id, module, type_flux, montant, reference_id, ref_flux_global, description, statut_sync, created_at)
-         VALUES (?, 'HEBERGEMENT', 'ENTREE', ?, ?, ?, ?, 'SYNCED', NOW())`,
-        [clientId, montantTotal, reservationId, `HEBERGEMENT-RESERVATION-${reservationId}`, `Réservation hébergement #${reservationId}`]
-      );
-    }
     const [row] = await conn.query('SELECT * FROM reservations WHERE id = ?', [reservationId]);
     return row[0];
+  });
+}
+
+async function recordReservationPayment(reservationId) {
+  return withTransaction(async (conn) => {
+    const [[reservation]] = await conn.query(
+      'SELECT id, client_id, montant_total, statut FROM reservations WHERE id = ? FOR UPDATE',
+      [reservationId]
+    );
+    if (!reservation) throw new Error(`Réservation #${reservationId} introuvable`);
+    if (['ANNULEE', 'TERMINEE'].includes(String(reservation.statut || '').toUpperCase())) {
+      throw new Error('Cette réservation ne peut plus être encaissée');
+    }
+    if (Number(reservation.montant_total) <= 0) throw new Error('Montant de réservation invalide');
+
+    await conn.query(
+      `INSERT IGNORE INTO financial_transactions
+         (client_id, module, type_flux, montant, reference_id, ref_flux_global, description, statut_sync, created_at)
+       VALUES (?, 'HEBERGEMENT', 'ENTREE', ?, ?, ?, ?, 'SYNCED', NOW())`,
+      [reservation.client_id, reservation.montant_total, reservation.id,
+        `HEBERGEMENT-RESERVATION-${reservation.id}`,
+        `Encaissement réservation hébergement #${reservation.id}`]
+    );
+    return { reservation_id: reservation.id, montant: Number(reservation.montant_total), est_payee: true };
   });
 }
 
@@ -720,7 +743,7 @@ module.exports = {
   RoomTypes, Rooms, Equipments, RoomEquipments, RoomMaintenance, RoomMinibar,
   RoomStatusHistory, Reservations, ReservationGuests, Stays, HousekeepingTasks,
   LostAndFound, MinibarConsumptions,
-  isRoomAvailable, createReservationWithGuests, checkIn, checkOut, availableRooms,
+  isRoomAvailable, createReservationWithGuests, recordReservationPayment, checkIn, checkOut, availableRooms,
   updateMaintenanceStatus, getMaintenanceStats, getReservationStats,
   updateRoomStatus, getEquipmentByCode, getEquipmentCategories, getEquipmentStats,
   updateRoomEquipmentStatus, getRoomStats, updateHousekeepingStatus, getHousekeepingStats,
