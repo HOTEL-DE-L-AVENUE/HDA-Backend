@@ -21,8 +21,7 @@ function escapeHtml(input) {
 const tablesCrud = createCrudController(resto.TablesRestaurant, { filterable: ['statut'] });
 const ordersCrud = createCrudController(resto.Orders, { filterable: ['client_id', 'statut', 'source_module'] });
 const orderItemsCrud = createCrudController(resto.OrderItems, { filterable: ['order_id', 'product_id'] });
-const recipesCrud = createCrudController(resto.Recipes, { filterable: ['product_id'] });
-const recipeItemsCrud = createCrudController(resto.RecipeItems, { filterable: ['recipe_id'] });
+// Recipes removed: feature deprecated
 const cashiersCrud = createCrudController(resto.RestaurantCashiers, { filterable: ['statut'] });
 const sessionsCrud = createCrudController(resto.RestaurantSessions, { filterable: ['cashier_id', 'user_id'] });
 
@@ -281,57 +280,7 @@ async function ordersInProgressHandler(req, res) {
   return ok(res, rows);
 }
 
-async function recipeRequirementsHandler(req, res) {
-  const portions = Number(req.query.portions) || 1;
-  const rows = await resto.recipeRequirements(req.params.id, portions);
-  return ok(res, rows);
-}
-
-async function listRestaurantRecipesHandler(req, res) {
-  const rows = await resto.listRecipesWithProducts();
-  return ok(res, rows);
-}
-
-async function recipeByIdHandler(req, res) {
-  const recipe = await resto.recipeWithItems(req.params.id);
-  if (!recipe) throw ApiError.notFound(`Recette #${req.params.id} introuvable`);
-  return ok(res, recipe);
-}
-
-async function createRecipeHandler(req, res) {
-  const { product_id, nom, ingredients } = req.body || {};
-  if (!product_id || !nom || !String(nom).trim()) {
-    throw ApiError.badRequest('product_id et nom sont requis');
-  }
-  if (!Array.isArray(ingredients)) {
-    throw ApiError.badRequest('ingredients doit être un tableau');
-  }
-
-  const rows = await resto.createRecipeWithItems({
-    product_id: Number(product_id),
-    nom: String(nom).trim(),
-    ingredients,
-  });
-  return created(res, rows);
-}
-
-async function updateRecipeHandler(req, res) {
-  const { nom, ingredients } = req.body || {};
-  const existing = await resto.recipeWithItems(req.params.id);
-  if (!existing) throw ApiError.notFound(`Recette #${req.params.id} introuvable`);
-
-  const next = await resto.updateRecipeWithItems(req.params.id, {
-    ...(nom !== undefined ? { nom } : {}),
-    ...(ingredients !== undefined ? { ingredients } : {}),
-  });
-  return ok(res, next);
-}
-
-async function deleteRecipeHandler(req, res) {
-  const deleted = await resto.deleteRecipeWithItems(req.params.id);
-  if (!deleted) throw ApiError.notFound(`Recette #${req.params.id} introuvable`);
-  return noContent(res);
-}
+// Recipe handlers removed
 
 async function restaurantStockHandler(req, res) {
   const conditions = [];
@@ -649,11 +598,10 @@ async function statsHandler(req, res) {
   });
 }
 module.exports = {
-  tablesCrud, ordersCrud, orderItemsCrud, recipesCrud, recipeItemsCrud, cashiersCrud, sessionsCrud,
-  createOrderHandler, orderDetailHandler, orderInvoiceHandler, ordersInProgressHandler, recipeRequirementsHandler,
+  tablesCrud, ordersCrud, orderItemsCrud, cashiersCrud, sessionsCrud,
+  createOrderHandler, orderDetailHandler, orderInvoiceHandler, ordersInProgressHandler,
   orderInvoicePdfHandler,
-  listRestaurantRecipesHandler, recipeByIdHandler, createRecipeHandler, updateRecipeHandler,
-  deleteRecipeHandler, restaurantStockHandler, restaurantStockMovementsHandler,
+  restaurantStockHandler, restaurantStockMovementsHandler,
   adjustRestaurantStockHandler, removeRestaurantStockHandler,
   listRestaurantPurchasesHandler, restaurantPurchaseDetailHandler, createRestaurantPurchaseHandler,
   menuHandler, updateOrderStatusHandler, openCashierHandler, closeCashierHandler,
