@@ -183,8 +183,91 @@ async function recipeRequirements(recipeId, portions = 1) {
   return rows;
 }
 
+async function recipeWithItems(recipeId) {
+  const [[recipe]] = await pool.query(
+    `SELECT r.*, p.nom AS product_nom
+     FROM recipes r
+     LEFT JOIN products p ON p.id = r.product_id
+     WHERE r.id = ? LIMIT 1`,
+    [recipeId]
+  );
+  if (!recipe) return null;
+
+  const [ingredients] = await pool.query(
+    `SELECT ri.*, p.nom AS ingredient_nom, p.unite AS ingredient_unite
+     FROM recipe_items ri
+     JOIN products p ON p.id = ri.ingredient_id
+     WHERE ri.recipe_id = ?
+     ORDER BY ri.id ASC`,
+    [recipeId]
+  );
+
+  return { ...recipe, ingredients };
+}
+
+async function listRecipesWithProducts() {
+  const [rows] = await pool.query(
+    `SELECT r.*, p.nom AS product_nom
+     FROM recipes r
+     LEFT JOIN products p ON p.id = r.product_id
+     ORDER BY r.id DESC`
+  );
+  return rows;
+}
+
+async function createRecipeWithItems({ product_id, nom, ingredients = [] }) {
+  return withTransaction(async (conn) => {
+    const [result] = await conn.query(
+      'INSERT INTO recipes (product_id, nom) VALUES (?, ?)',
+      [product_id, nom]
+    );
+    const recipeId = result.insertId;
+
+    for (const ingredient of ingredients) {
+      if (!ingredient || !ingredient.ingredient_id || Number(ingredient.quantite) <= 0) continue;
+      await conn.query(
+        'INSERT INTO recipe_items (recipe_id, ingredient_id, quantite) VALUES (?, ?, ?)',
+        [recipeId, ingredient.ingredient_id, Number(ingredient.quantite)]
+      );
+    }
+
+    return recipeWithItems(recipeId);
+  });
+}
+
+async function updateRecipeWithItems(id, { nom, ingredients }) {
+  return withTransaction(async (conn) => {
+    if (nom !== undefined) {
+      await conn.query('UPDATE recipes SET nom = ? WHERE id = ?', [nom, id]);
+    }
+
+    if (Array.isArray(ingredients)) {
+      await conn.query('DELETE FROM recipe_items WHERE recipe_id = ?', [id]);
+      for (const ingredient of ingredients) {
+        if (!ingredient || !ingredient.ingredient_id || Number(ingredient.quantite) <= 0) continue;
+        await conn.query(
+          'INSERT INTO recipe_items (recipe_id, ingredient_id, quantite) VALUES (?, ?, ?)',
+          [id, ingredient.ingredient_id, Number(ingredient.quantite)]
+        );
+      }
+    }
+
+    return recipeWithItems(id);
+  });
+}
+
+async function deleteRecipeWithItems(id) {
+  return withTransaction(async (conn) => {
+    await conn.query('DELETE FROM recipe_items WHERE recipe_id = ?', [id]);
+    const [result] = await conn.query('DELETE FROM recipes WHERE id = ?', [id]);
+    return result.affectedRows > 0;
+  });
+}
+
 module.exports = {
   TablesRestaurant, Orders, OrderItems, Recipes, RecipeItems,
   RestaurantCashiers, RestaurantSessions,
-  createOrderWithItems, orderWithItems, ordersByTable, recipeRequirements, ensureRestaurantSchema,
+  createOrderWithItems, orderWithItems, ordersByTable, recipeRequirements,
+  listRecipesWithProducts, recipeWithItems, createRecipeWithItems, updateRecipeWithItems,
+  deleteRecipeWithItems, ensureRestaurantSchema,
 };
