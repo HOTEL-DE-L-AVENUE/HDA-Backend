@@ -1,5 +1,6 @@
 // controllers/hebergementController.js
 const heb = require('../models/hebergementModel');
+const stock = require('../models/stockModel');
 const { createCrudController } = require('./controllerFactory');
 const ApiError = require('../utils/ApiError');
 const { ok, created } = require('../utils/apiResponse');
@@ -210,6 +211,191 @@ async function getLowStockMinibarHandler(req, res) {
   return ok(res, items);
 }
 
+// --- Accommodation Stock Management Handlers ---
+
+async function getHebergementStockHandler(req, res) {
+  try {
+    const { pool } = require('../config/db');
+    const [rows] = await pool.query(`
+      SELECT hp.*, hs.quantite, hs.seuil_minimum, hs.unite
+      FROM hebergement_products hp
+      LEFT JOIN hebergement_stock hs ON hs.product_id = hp.id
+      ORDER BY hp.id DESC
+    `);
+    return ok(res, rows);
+  } catch (err) {
+    throw ApiError.internalError('Erreur lors de la récupération du stock hébergement');
+  }
+}
+
+async function addHebergementStockHandler(req, res) {
+  try {
+    const { nom, categorie, quantite, prix, unite, seuil_minimum } = req.body;
+    const { withTransaction } = require('../config/db');
+    
+    if (!nom || !categorie) {
+      throw ApiError.badRequest('nom et categorie sont requis');
+    }
+
+    const result = await withTransaction(async (conn) => {
+      const [productResult] = await conn.query(
+        'INSERT INTO hebergement_products (nom, categorie, prix, source_module) VALUES (?, ?, ?, ?)',
+        [nom, categorie, prix || 0, 'HEBERGEMENT']
+      );
+      const productId = productResult.insertId;
+      
+      await conn.query(
+        'INSERT INTO hebergement_stock (product_id, quantite, seuil_minimum, unite) VALUES (?, ?, ?, ?)',
+        [productId, quantite || 0, seuil_minimum || 5, unite || 'unités']
+      );
+      
+      // Record financial transaction for stock addition (outflow)
+      const totalValue = Number(prix || 0) * Number(quantite || 0);
+      if (totalValue > 0) {
+        await conn.query(
+          `INSERT INTO financial_transactions
+             (module, type_flux, montant, reference_id, ref_flux_global, description, statut_sync, created_at)
+           VALUES (?, 'SORTIE', ?, ?, ?, ?, 'SYNCED', NOW())`,
+          ['HEBERGEMENT', totalValue, productId,
+            `HEBERGEMENT-STOCK-ADD-${productId}`,
+            `Achat stock hébergement: ${nom} (${quantite || 0} ${unite || 'unités'})`
+          ]
+        );
+      }
+      
+      return {
+        id: productId,
+        nom,
+        categorie,
+        prix: prix || 0,
+        quantite: quantite || 0,
+        seuil_minimum: seuil_minimum || 5,
+        unite: unite || 'unités'
+      };
+    });
+    
+    return created(res, result);
+  } catch (err) {
+    throw ApiError.internalError('Erreur lors de la création du stock hébergement: ' + err.message);
+  }
+}
+
+async function updateHebergementStockHandler(req, res) {
+  try {
+    const { id } = req.params;
+    const { nom, categorie, quantite, prix, unite, seuil_minimum } = req.body;
+    const { withTransaction } = require('../config/db');
+
+    const result = await withTransaction(async (conn) => {
+      // Get current stock and product info
+      const [currentProduct] = await conn.query(
+        'SELECT * FROM hebergement_products WHERE id = ?',
+        [id]
+      );
+      const [currentStock] = await conn.query(
+        'SELECT * FROM hebergement_stock WHERE product_id = ?',
+        [id]
+      );
+      
+      // Update product
+      await conn.query(
+        'UPDATE hebergement_products SET nom=?, categorie=?, prix=? WHERE id=?',
+        [nom, categorie, prix || 0, id]
+      );
+      
+      // Update stock - try update first, then insert if needed
+      const [updateResult] = await conn.query(
+        'UPDATE hebergement_stock SET quantite=?, seuil_minimum=?, unite=? WHERE product_id=?',
+        [quantite || 0, seuil_minimum || 5, unite || 'unités', id]
+      );
+      
+      if (updateResult.affectedRows === 0) {
+        await conn.query(
+          'INSERT INTO hebergement_stock (product_id, quantite, seuil_minimum, unite) VALUES (?, ?, ?, ?)',
+          [id, quantite || 0, seuil_minimum || 5, unite || 'unités']
+        );
+      }
+      
+      // Record financial transaction for stock increase (outflow)
+      const oldQuantity = currentStock[0] ? Number(currentStock[0].quantite || 0) : 0;
+      const newQuantity = Number(quantite || 0);
+      const quantityIncrease = newQuantity - oldQuantity;
+      
+      if (quantityIncrease > 0) {
+        const totalValue = Number(prix || 0) * quantityIncrease;
+        if (totalValue > 0) {
+          await conn.query(
+            `INSERT INTO financial_transactions
+               (module, type_flux, montant, reference_id, ref_flux_global, description, statut_sync, created_at)
+             VALUES (?, 'SORTIE', ?, ?, ?, ?, 'SYNCED', NOW())`,
+            ['HEBERGEMENT', totalValue, id,
+              `HEBERGEMENT-STOCK-UPDATE-${id}`,
+              `Achat stock hébergement: ${nom} (+${quantityIncrease} ${unite || 'unités'})`
+            ]
+          );
+        }
+      }
+      
+      return {
+        id,
+        nom,
+        categorie,
+        prix: prix || 0,
+        quantite: quantite || 0,
+        seuil_minimum: seuil_minimum || 5,
+        unite: unite || 'unités'
+      };
+    });
+    
+    return ok(res, result);
+  } catch (err) {
+    console.error('Update stock error:', err);
+    throw ApiError.internalError('Erreur lors de la mise à jour du stock hébergement: ' + err.message);
+  }
+}
+
+async function deleteHebergementStockHandler(req, res) {
+  try {
+    const { id } = req.params;
+    const { withTransaction } = require('../config/db');
+    
+    await withTransaction(async (conn) => {
+      // Get product info before deletion for financial transaction
+      const [product] = await conn.query(
+        'SELECT * FROM hebergement_products WHERE id = ?',
+        [id]
+      );
+      const [stock] = await conn.query(
+        'SELECT * FROM hebergement_stock WHERE product_id = ?',
+        [id]
+      );
+      
+      if (product[0] && stock[0]) {
+        const totalValue = Number(product[0].prix || 0) * Number(stock[0].quantite || 0);
+        
+        // Create financial transaction for stock removal (refund/return)
+        if (totalValue > 0) {
+          await conn.query(
+            `INSERT INTO financial_transactions
+               (module, type_flux, montant, reference_id, ref_flux_global, description, statut_sync, created_at)
+             VALUES (?, 'ENTREE', ?, ?, ?, ?, 'SYNCED', NOW())`,
+            ['HEBERGEMENT', totalValue, id,
+              `HEBERGEMENT-STOCK-DELETE-${id}`,
+              `Remboursement stock hébergement: ${product[0].nom} (${stock[0].quantite} ${stock[0].unite || 'unités'})`]
+          );
+        }
+      }
+      
+      await conn.query('DELETE FROM hebergement_stock WHERE product_id = ?', [id]);
+      await conn.query('DELETE FROM hebergement_products WHERE id = ?', [id]);
+    });
+    
+    return ok(res, { message: 'Stock supprimé avec succès' });
+  } catch (err) {
+    throw ApiError.internalError('Erreur lors de la suppression du stock hébergement: ' + err.message);
+  }
+}
+
 module.exports = {
   roomTypesCrud, roomsCrud, equipmentsCrud, roomEquipmentsCrud, roomMaintenanceCrud,
   roomMinibarCrud, roomStatusHistoryCrud, reservationsCrud, reservationGuestsCrud,
@@ -220,6 +406,7 @@ module.exports = {
   equipmentStatsHandler, updateRoomEquipmentStatusHandler,
   roomStatsHandler, updateHousekeepingStatusHandler, housekeepingStatsHandler,
   transferStockToMinibarHandler, handleMinibarConsumptionHandler, getMinibarWithAlertsHandler, restockMinibarHandler, getLowStockMinibarHandler,
+  getHebergementStockHandler, addHebergementStockHandler, updateHebergementStockHandler, deleteHebergementStockHandler,
 };
 
 const hebergementModel = require('../models/hebergementModel');
