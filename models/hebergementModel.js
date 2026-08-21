@@ -352,7 +352,7 @@ async function checkIn(reservationId) {
 // Check-out : clôture le séjour, passe la réservation en "TERMINEE" et la chambre en "NETTOYAGE"
 async function checkOut(stayId) {
   return withTransaction(async (conn) => {
-    const [stayRows] = await conn.query('SELECT s.*, r.room_id, r.id as reservation_id FROM stays s JOIN reservations r ON r.id = s.reservation_id WHERE s.id = ?', [stayId]);
+    const [stayRows] = await conn.query('SELECT s.*, r.room_id, r.id as reservation_id, r.client_id, r.montant_total FROM stays s JOIN reservations r ON r.id = s.reservation_id WHERE s.id = ?', [stayId]);
     const stay = stayRows[0];
     if (!stay) throw new Error(`Séjour #${stayId} introuvable`);
 
@@ -364,6 +364,20 @@ async function checkOut(stayId) {
        VALUES (?, 'OCCUPEE', 'NETTOYAGE', NOW())`,
       [stay.room_id]
     );
+
+    // Create financial transaction for accommodation checkout revenue
+    const montant = Number(stay.montant_total) || 0;
+    if (montant > 0) {
+      await conn.query(
+        `INSERT INTO financial_transactions
+           (client_id, module, type_flux, montant, reference_id, ref_flux_global, description, statut_sync, created_at)
+         VALUES (?, 'HEBERGEMENT', 'ENTREE', ?, ?, ?, ?, 'SYNCED', NOW())`,
+        [stay.client_id, montant, stay.reservation_id,
+          `HEBERGEMENT-CHECKOUT-${stay.reservation_id}`,
+          `Encaissement séjour hébergement #${stay.reservation_id}`]
+      );
+    }
+
     const [updated] = await conn.query('SELECT * FROM stays WHERE id = ?', [stayId]);
     return updated[0];
   });

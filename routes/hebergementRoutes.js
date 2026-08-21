@@ -47,4 +47,10 @@ router.get('/minibar/alerts', ctrl.getMinibarWithAlertsHandler);                
 router.get('/minibar/low-stock', ctrl.getLowStockMinibarHandler);               // GET /api/hebergement/minibar/low-stock
 router.post('/minibar/restock', ctrl.restockMinibarHandler);                    // POST /api/hebergement/minibar/restock
 
+// Accommodation stock management routes
+router.get('/stock', ctrl.getHebergementStockHandler);                           // GET /api/hebergement/stock
+router.post('/stock', ctrl.addHebergementStockHandler);                          // POST /api/hebergement/stock
+router.put('/stock/:id', ctrl.updateHebergementStockHandler);                    // PUT /api/hebergement/stock/:id
+router.delete('/stock/:id', ctrl.deleteHebergementStockHandler);                 // DELETE /api/hebergement/stock/:id
+
 module.exports = router;
