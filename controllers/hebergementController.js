@@ -176,14 +176,14 @@ async function handleMinibarConsumptionHandler(req, res) {
   if (!room_id || !product_id || !quantity || !client_id || !price) {
     throw ApiError.badRequest('room_id, product_id, quantity, client_id, price sont requis');
   }
-  const consumptionId = await heb.handleMinibarConsumption({
+  const consumption = await heb.handleMinibarConsumption({
     roomId: room_id,
     productId: product_id,
     quantity: quantity,
     clientId: client_id,
     price: price,
   });
-  return created(res, { id: consumptionId, message: 'Consommation enregistrée avec succès' });
+  return created(res, consumption);
 }
 
 async function getMinibarWithAlertsHandler(req, res) {
