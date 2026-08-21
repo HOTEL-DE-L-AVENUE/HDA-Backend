@@ -35,7 +35,8 @@ const Stocks = createCrudModel({
 // Custom method to get stocks with product information
 async function getProductsWithStock(locationId = null) {
   let sql = `
-    SELECT s.*, p.nom as product_nom, p.unite as product_unite, p.code as product_code
+    SELECT s.*, p.nom as product_nom, p.unite as product_unite, p.code as product_code,
+           p.prix_achat as prix
     FROM stocks s
     JOIN products p ON p.id = s.product_id
   `;
