@@ -147,6 +147,45 @@ async function financialSummary() {
     }
   });
 
+  // Older minibar consumptions may have been recorded through the legacy CRUD
+  // endpoint, which did not create the matching HOTEL / ENTREE ledger row.
+  // Count only those missing ledger rows to restore the Finance total without
+  // double-counting the transactions created by the current minibar flow.
+  const [unlinkedMinibarConsumptions] = await pool.query(
+    `SELECT COALESCE(SUM(mc.montant), 0) AS montant
+       FROM minibar_consumptions mc
+      WHERE NOT EXISTS (
+        SELECT 1
+          FROM financial_transactions ft
+         WHERE UPPER(ft.module) = 'HOTEL'
+           AND (
+             ft.ref_flux_global = CONCAT('HOTEL-MINIBAR-', mc.id)
+             OR (
+               ft.reference_id = mc.id
+               AND ft.description LIKE 'Consommation minibar #%'
+             )
+           )
+      )`
+  );
+  add('hotel', 'entrees', unlinkedMinibarConsumptions[0]?.montant);
+
+  // Same recovery for reservations already marked completed before the
+  // reservation-to-finance synchronization existed.
+  const [unlinkedHotelReservations] = await pool.query(
+    `SELECT COALESCE(SUM(r.montant_total), 0) AS montant
+       FROM reservations r
+      WHERE UPPER(COALESCE(r.statut, '')) = 'TERMINEE'
+        AND NOT EXISTS (
+          SELECT 1
+            FROM financial_transactions ft
+           WHERE ft.ref_flux_global IN (
+             CONCAT('HOTEL-RESERVATION-', r.id),
+             CONCAT('HEBERGEMENT-RESERVATION-', r.id)
+           )
+        )`
+  );
+  add('hotel', 'entrees', unlinkedHotelReservations[0]?.montant);
+
   // Les opérations Casino sont synchronisées directement dans le grand livre
   // financier avec des types ENTREE_CAISSE_CASINO ou SORTIE_CAISSE_CASINO.
   const [casinoTransactions] = await pool.query(

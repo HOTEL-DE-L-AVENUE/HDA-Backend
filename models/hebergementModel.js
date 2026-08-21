@@ -59,8 +59,10 @@ async function findReservationWithDetails(id) {
     `SELECT r.*, c.nom AS client_nom, c.prenom AS client_prenom, room.numero AS room_numero,
             EXISTS(
               SELECT 1 FROM financial_transactions ft
-              WHERE ft.module = 'HEBERGEMENT'
-                AND ft.ref_flux_global = CONCAT('HEBERGEMENT-RESERVATION-', r.id)
+              WHERE ft.ref_flux_global IN (
+                CONCAT('HEBERGEMENT-RESERVATION-', r.id),
+                CONCAT('HOTEL-RESERVATION-', r.id)
+              )
             ) AS est_payee
      FROM reservations r
      LEFT JOIN clients c ON c.id = r.client_id
@@ -83,6 +85,12 @@ Reservations.create = async function (data) {
 };
 Reservations.update = async function (id, data) {
   await reservationsUpdate.call(this, id, data);
+  // Depuis la page Hôtel, « encaisser » met directement la réservation à
+  // TERMINEE. Enregistrer simultanément son montant dans la caisse Hôtel.
+  // INSERT IGNORE et la référence unique rendent l'opération idempotente.
+  if (String(data?.statut || '').toUpperCase() === 'TERMINEE') {
+    await recordReservationPayment(id, 'HOTEL');
+  }
   return findReservationWithDetails(id);
 };
 Reservations.remove = async function (id) {
@@ -93,8 +101,8 @@ Reservations.remove = async function (id) {
     await conn.query('DELETE FROM stays WHERE reservation_id = ?', [id]);
     await conn.query(
       `DELETE FROM financial_transactions
-       WHERE module = 'HEBERGEMENT' AND ref_flux_global = ?`,
-      [`HEBERGEMENT-RESERVATION-${id}`]
+       WHERE ref_flux_global IN (?, ?)`,
+      [`HEBERGEMENT-RESERVATION-${id}`, `HOTEL-RESERVATION-${id}`]
     );
     const [result] = await conn.query('DELETE FROM reservations WHERE id = ?', [id]);
     await conn.query(
@@ -263,25 +271,30 @@ async function createReservationWithGuests({ clientId, roomId, dateArrivee, date
   });
 }
 
-async function recordReservationPayment(reservationId) {
+async function recordReservationPayment(reservationId, module = 'HEBERGEMENT') {
   return withTransaction(async (conn) => {
     const [[reservation]] = await conn.query(
       'SELECT id, client_id, montant_total, statut FROM reservations WHERE id = ? FOR UPDATE',
       [reservationId]
     );
     if (!reservation) throw new Error(`Réservation #${reservationId} introuvable`);
-    if (['ANNULEE', 'TERMINEE'].includes(String(reservation.statut || '').toUpperCase())) {
+    if (String(reservation.statut || '').toUpperCase() === 'ANNULEE') {
       throw new Error('Cette réservation ne peut plus être encaissée');
     }
     if (Number(reservation.montant_total) <= 0) throw new Error('Montant de réservation invalide');
 
+    const financialModule = String(module || 'HEBERGEMENT').trim().toUpperCase();
+    if (!['HEBERGEMENT', 'HOTEL'].includes(financialModule)) {
+      throw new Error('Module financier de réservation invalide');
+    }
+
     await conn.query(
       `INSERT IGNORE INTO financial_transactions
          (client_id, module, type_flux, montant, reference_id, ref_flux_global, description, statut_sync, created_at)
-       VALUES (?, 'HEBERGEMENT', 'ENTREE', ?, ?, ?, ?, 'SYNCED', NOW())`,
-      [reservation.client_id, reservation.montant_total, reservation.id,
-      `HEBERGEMENT-RESERVATION-${reservation.id}`,
-      `Encaissement réservation hébergement #${reservation.id}`]
+       VALUES (?, ?, 'ENTREE', ?, ?, ?, ?, 'SYNCED', NOW())`,
+      [reservation.client_id, financialModule, reservation.montant_total, reservation.id,
+      `${financialModule}-RESERVATION-${reservation.id}`,
+      `Encaissement réservation ${financialModule.toLowerCase()} #${reservation.id}`]
     );
     return { reservation_id: reservation.id, montant: Number(reservation.montant_total), est_payee: true };
   });
@@ -667,7 +680,11 @@ async function handleMinibarConsumption({ roomId, productId, quantity, clientId,
       [clientId, montant, consumption.insertId, `HOTEL-MINIBAR-${consumption.insertId}`, `Consommation minibar #${consumption.insertId}`]
     );
 
-    return consumption.insertId;
+    const [rows] = await conn.query(
+      'SELECT * FROM minibar_consumptions WHERE id = ?',
+      [consumption.insertId]
+    );
+    return rows[0];
   });
 }
 
