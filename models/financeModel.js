@@ -126,6 +126,7 @@ async function financialSummary() {
     `SELECT source_module AS module, COALESCE(SUM(montant_total), 0) AS montant
      FROM orders
       WHERE UPPER(COALESCE(statut, '')) IN ('PAYEE', 'PAYE')
+        AND UPPER(COALESCE(source_module, '')) <> 'BAR'
      GROUP BY source_module`
   );
   orders.forEach((row) => add(row.module, 'entrees', row.montant));
@@ -136,13 +137,14 @@ async function financialSummary() {
     `SELECT UPPER(module) AS module, type_flux, COALESCE(SUM(montant), 0) AS montant
      FROM financial_transactions
      WHERE UPPER(module) IN ('HEBERGEMENT', 'HOTEL')
+       AND COALESCE(ref_flux_global, '') NOT LIKE 'HEBERGEMENT-STOCK-ADD-%'
      GROUP BY UPPER(module), type_flux`
   );
   hotelTransactions.forEach((row) => {
     const module = String(row.module).toLowerCase();
     if (String(row.type_flux || '').toUpperCase().startsWith('ENTREE')) {
       add(module, 'entrees', row.montant);
-    } else if (String(row.type_flux || '').toUpperCase().startsWith('SORTIE')) {
+    } else if (module !== 'hotel' && String(row.type_flux || '').toUpperCase().startsWith('SORTIE')) {
       add(module, 'sorties', row.montant);
     }
   });
@@ -208,10 +210,30 @@ async function financialSummary() {
   if (barOrdersTable) {
     const [barOrders] = await pool.query(
       `SELECT COALESCE(SUM(montant_total), 0) AS montant
-        FROM bar_orders WHERE UPPER(COALESCE(statut, '')) = 'ENCAISSEE'`
+        FROM bar_orders bo
+        WHERE UPPER(COALESCE(bo.statut, '')) = 'ENCAISSEE'
+          AND NOT EXISTS (
+            SELECT 1 FROM financial_transactions ft
+            WHERE ft.module = 'BAR'
+              AND ft.ref_flux_global = CONCAT('BAR-ORDER-', bo.id)
+          )`
     );
     add('bar', 'entrees', barOrders[0]?.montant);
   }
+
+  // Les ventes Bar présentes dans le grand livre sont la source de vérité
+  // commune entre la caisse Bar et le résumé Finance.
+  const [barTransactions] = await pool.query(
+    `SELECT type_flux, COALESCE(SUM(montant), 0) AS montant
+     FROM financial_transactions
+     WHERE UPPER(module) = 'BAR'
+     GROUP BY type_flux`
+  );
+  barTransactions.forEach((row) => {
+    if (String(row.type_flux || '').toUpperCase().startsWith('ENTREE')) {
+      add('bar', 'entrees', row.montant);
+    }
+  });
 
   const [stockValues] = await pool.query(
     `SELECT sl.nom AS module, COALESCE(SUM(s.quantite * COALESCE(p.prix_achat, 0)), 0) AS montant
@@ -221,6 +243,15 @@ async function financialSummary() {
      GROUP BY sl.id, sl.nom`
   );
   stockValues.forEach((row) => add(row.module, 'sorties', row.montant));
+
+  // Le stock Hébergement utilise ses propres tables et doit être valorisé
+  // avec le prix défini sur chaque produit.
+  const [hebergementStockValues] = await pool.query(
+    `SELECT COALESCE(SUM(hs.quantite * COALESCE(hp.prix, 0)), 0) AS montant
+       FROM hebergement_stock hs
+       JOIN hebergement_products hp ON hp.id = hs.product_id`
+  );
+  add('hebergement', 'sorties', hebergementStockValues[0]?.montant);
 
   // Le bar utilise ses propres tables de produits et de stock.
   if (barStockTable) {

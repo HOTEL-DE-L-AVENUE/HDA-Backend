@@ -86,9 +86,11 @@ Reservations.create = async function (data) {
 Reservations.update = async function (id, data) {
   await reservationsUpdate.call(this, id, data);
   // Depuis la page Hôtel, « encaisser » met directement la réservation à
-  // TERMINEE. Enregistrer simultanément son montant dans la caisse Hôtel.
-  // INSERT IGNORE et la référence unique rendent l'opération idempotente.
-  if (String(data?.statut || '').toUpperCase() === 'TERMINEE') {
+  // TERMINEE. Synchroniser son montant dans la caisse Hôtel.
+  const updatedReservation = await findReservationWithDetails(id);
+  const isCompleted = String(updatedReservation?.statut || '').toUpperCase() === 'TERMINEE';
+  const changesAmount = Object.prototype.hasOwnProperty.call(data || {}, 'montant_total');
+  if (isCompleted && (String(data?.statut || '').toUpperCase() === 'TERMINEE' || changesAmount)) {
     await recordReservationPayment(id, 'HOTEL');
   }
   return findReservationWithDetails(id);
@@ -289,9 +291,14 @@ async function recordReservationPayment(reservationId, module = 'HEBERGEMENT') {
     }
 
     await conn.query(
-      `INSERT IGNORE INTO financial_transactions
+      `INSERT INTO financial_transactions
          (client_id, module, type_flux, montant, reference_id, ref_flux_global, description, statut_sync, created_at)
-       VALUES (?, ?, 'ENTREE', ?, ?, ?, ?, 'SYNCED', NOW())`,
+       VALUES (?, ?, 'ENTREE', ?, ?, ?, ?, 'SYNCED', NOW())
+       ON DUPLICATE KEY UPDATE
+         client_id = VALUES(client_id),
+         montant = VALUES(montant),
+         description = VALUES(description),
+         statut_sync = 'SYNCED'`,
       [reservation.client_id, financialModule, reservation.montant_total, reservation.id,
       `${financialModule}-RESERVATION-${reservation.id}`,
       `Encaissement réservation ${financialModule.toLowerCase()} #${reservation.id}`]
@@ -444,9 +451,14 @@ async function getReservationStats() {
      FROM reservations`
   );
   const [financeTotals] = await pool.query(
-    `SELECT COALESCE(SUM(montant), 0) AS montant_encaisse
-     FROM financial_transactions
-     WHERE module = 'HEBERGEMENT' AND type_flux = 'ENTREE'`
+    `SELECT COALESCE(SUM(ft.montant), 0) AS montant_encaisse
+     FROM financial_transactions ft
+     INNER JOIN reservations r ON ft.reference_id = r.id
+       AND ft.ref_flux_global IN (
+         CONCAT('HEBERGEMENT-RESERVATION-', r.id),
+         CONCAT('HOTEL-RESERVATION-', r.id)
+       )
+     WHERE ft.type_flux = 'ENTREE'`
   );
   const [parStatut] = await pool.query(
     `SELECT statut, COUNT(*) AS total, COALESCE(SUM(montant_total), 0) AS montant_total
