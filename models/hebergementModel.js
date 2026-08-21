@@ -71,21 +71,21 @@ async function findReservationWithDetails(id) {
   return rows[0] || null;
 }
 
-Reservations.findAll = async function(options) {
+Reservations.findAll = async function (options) {
   const rows = await reservationsFindAll.call(this, options);
   return Promise.all(rows.map((row) => findReservationWithDetails(row.id)));
 };
 
 Reservations.findById = findReservationWithDetails;
-Reservations.create = async function(data) {
+Reservations.create = async function (data) {
   const row = await reservationsCreate.call(this, data);
   return findReservationWithDetails(row.id);
 };
-Reservations.update = async function(id, data) {
+Reservations.update = async function (id, data) {
   await reservationsUpdate.call(this, id, data);
   return findReservationWithDetails(id);
 };
-Reservations.remove = async function(id) {
+Reservations.remove = async function (id) {
   return withTransaction(async (conn) => {
     const [rows] = await conn.query('SELECT room_id FROM reservations WHERE id = ? LIMIT 1', [id]);
     if (!rows[0]) return false;
@@ -106,7 +106,7 @@ Reservations.remove = async function(id) {
   });
 };
 
-Rooms.remove = async function(id) {
+Rooms.remove = async function (id) {
   return withTransaction(async (conn) => {
     const [rooms] = await conn.query('SELECT id FROM rooms WHERE id = ? LIMIT 1', [id]);
     if (!rooms[0]) return false;
@@ -164,24 +164,24 @@ const MinibarConsumptions = createCrudModel({
 });
 
 // Custom create method for minibar consumptions to auto-set consumed_at
-MinibarConsumptions.create = async function(data) {
+MinibarConsumptions.create = async function (data) {
   const cols = this.fields.filter((f) => data[f] !== undefined);
   if (!cols.length) throw new Error(`Aucun champ valide fourni pour ${this.table}`);
-  
+
   // Auto-calculate montant if not provided
   if (!data.montant && data.quantite && data.prix_unitaire) {
     data.montant = data.quantite * data.prix_unitaire;
   }
-  
+
   // Convert boolean facturee to integer for database
   if (data.facturee !== undefined && typeof data.facturee === 'boolean') {
     data.facturee = data.facturee ? 1 : 0;
   }
-  
+
   const placeholders = cols.map(() => '?').join(', ') + ', NOW()';
   const values = cols.map((c) => data[c]);
   const sqlCols = cols.map((c) => `\`${c}\``).join(', ') + ', `consumed_at`';
-  
+
   const [result] = await pool.query(
     `INSERT INTO \`${this.table}\` (${sqlCols}) VALUES (${placeholders})`,
     values
@@ -191,7 +191,7 @@ MinibarConsumptions.create = async function(data) {
 
 // Custom update method to handle boolean to integer conversion
 const originalUpdate = MinibarConsumptions.update;
-MinibarConsumptions.update = async function(id, data) {
+MinibarConsumptions.update = async function (id, data) {
   // Convert boolean facturee to integer for database
   if (data.facturee !== undefined && typeof data.facturee === 'boolean') {
     data.facturee = data.facturee ? 1 : 0;
@@ -201,7 +201,7 @@ MinibarConsumptions.update = async function(id, data) {
 
 // Custom findById to convert integer facturee back to boolean
 const originalFindById = MinibarConsumptions.findById;
-MinibarConsumptions.findById = async function(id) {
+MinibarConsumptions.findById = async function (id) {
   const row = await originalFindById.call(this, id);
   if (row && row.facturee !== undefined) {
     row.facturee = row.facturee === 1 || row.facturee === true;
@@ -211,7 +211,7 @@ MinibarConsumptions.findById = async function(id) {
 
 // Custom findAll to convert integer facturee back to boolean
 const originalFindAll = MinibarConsumptions.findAll;
-MinibarConsumptions.findAll = async function(options) {
+MinibarConsumptions.findAll = async function (options) {
   const rows = await originalFindAll.call(this, options);
   return rows.map(row => {
     if (row && row.facturee !== undefined) {
@@ -280,8 +280,8 @@ async function recordReservationPayment(reservationId) {
          (client_id, module, type_flux, montant, reference_id, ref_flux_global, description, statut_sync, created_at)
        VALUES (?, 'HEBERGEMENT', 'ENTREE', ?, ?, ?, ?, 'SYNCED', NOW())`,
       [reservation.client_id, reservation.montant_total, reservation.id,
-        `HEBERGEMENT-RESERVATION-${reservation.id}`,
-        `Encaissement réservation hébergement #${reservation.id}`]
+      `HEBERGEMENT-RESERVATION-${reservation.id}`,
+      `Encaissement réservation hébergement #${reservation.id}`]
     );
     return { reservation_id: reservation.id, montant: Number(reservation.montant_total), est_payee: true };
   });
@@ -409,12 +409,17 @@ async function getMaintenanceStats() {
   };
 }
 
-// Statistiques agrégées des réservations
+// Statistiques agrégées des réservations (avec montant réel encaissé)
 async function getReservationStats() {
   const [totals] = await pool.query(
     `SELECT COUNT(*) AS total, COALESCE(SUM(montant_total), 0) AS montant_total,
             COALESCE(AVG(montant_total), 0) AS montant_moyen
      FROM reservations`
+  );
+  const [financeTotals] = await pool.query(
+    `SELECT COALESCE(SUM(montant), 0) AS montant_encaisse
+     FROM financial_transactions
+     WHERE module = 'HEBERGEMENT' AND type_flux = 'ENTREE'`
   );
   const [parStatut] = await pool.query(
     `SELECT statut, COUNT(*) AS total, COALESCE(SUM(montant_total), 0) AS montant_total
@@ -424,6 +429,7 @@ async function getReservationStats() {
     total: totals[0].total,
     montant_total: totals[0].montant_total,
     montant_moyen: totals[0].montant_moyen,
+    montant_encaisse: financeTotals[0].montant_encaisse,
     par_statut: parStatut,
   };
 }
@@ -565,7 +571,7 @@ async function transferStockToMinibar({ productId, sourceLocationId, quantity, r
       'SELECT quantite FROM stocks WHERE product_id = ? AND location_id = ? FOR UPDATE',
       [productId, sourceLocationId]
     );
-    
+
     if (!sourceStock[0] || sourceStock[0].quantite < quantity) {
       throw new Error('Stock insuffisant dans la source');
     }
@@ -581,7 +587,7 @@ async function transferStockToMinibar({ productId, sourceLocationId, quantity, r
       'SELECT quantite FROM stocks WHERE product_id = ? AND location_id = 5 FOR UPDATE',
       [productId]
     );
-    
+
     if (hotelStock[0]) {
       await conn.query(
         'UPDATE stocks SET quantite = quantite + ? WHERE product_id = ? AND location_id = 5',
