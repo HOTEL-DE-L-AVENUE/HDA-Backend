@@ -295,9 +295,32 @@ exports.roomsCrud.remove = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-exports.cashiersCrud = buildCrud('casino_cashiers', {
+const genericCashiersCrud = buildCrud('casino_cashiers', {
   allowedFields: ['room_id', 'code', 'nom', 'statut'],
 });
+
+exports.cashiersCrud = genericCashiersCrud;
+exports.cashiersCrud.create = async (req, res, next) => {
+  try {
+    const roomId = Number(req.body.room_id);
+    const code = String(req.body.code || '').trim();
+    const nom = String(req.body.nom || '').trim();
+    if (!Number.isInteger(roomId) || roomId < 1) throw ApiError.badRequest('Une salle valide est requise pour créer la caisse.');
+    if (!code || !nom) throw ApiError.badRequest('Le code et le nom de la caisse sont requis.');
+
+    const [[room]] = await pool.query(`SELECT id FROM casino_rooms WHERE id = ?`, [roomId]);
+    if (!room) throw ApiError.badRequest('La salle sélectionnée n’existe plus. Actualisez la page puis recommencez.');
+    const [[duplicate]] = await pool.query(`SELECT id FROM casino_cashiers WHERE code = ? LIMIT 1`, [code]);
+    if (duplicate) throw ApiError.conflict(`Le code de caisse « ${code} » est déjà utilisé.`);
+
+    const [result] = await pool.query(
+      `INSERT INTO casino_cashiers (room_id, code, nom, statut) VALUES (?, ?, ?, ?)`,
+      [roomId, code, nom, req.body.statut || 'FERMEE']
+    );
+    const [[cashier]] = await pool.query(`SELECT * FROM casino_cashiers WHERE id = ?`, [result.insertId]);
+    res.status(201).json(cashier);
+  } catch (err) { next(err); }
+};
 
 exports.sessionsCrud = buildCrud('casino_cashier_sessions', {
   allowedFields: ['cashier_id', 'user_id', 'ouverture_at', 'fermeture_at', 'fond_initial', 'fond_final_declare', 'statut', 'commentaire'],
