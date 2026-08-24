@@ -139,5 +139,6 @@ router.get('/reports/temps-jeu-jour', ctrl.tempsJeuJourHandler);               /
 // Dans le bloc "Tables de jeu" existant, avant `router.use('/tables-jeu', createCrudRouter(...))` :
 router.get('/tables-jeu/:id/joueurs-actifs', ctrl.joueursActifsHandler);       // GET /api/casino/tables-jeu/:id/joueurs-actifs
 router.post('/table-visits/:visitId/terminer', ctrl.terminerVisiteHandler);    // POST /api/casino/table-visits/:visitId/terminer
+router.post('/table-visits/:visitId/place', ctrl.changerPlaceHandler);          // POST /api/casino/table-visits/:visitId/place { numero_place }
 
 module.exports = router;

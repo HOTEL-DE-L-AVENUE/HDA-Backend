@@ -175,6 +175,126 @@ exports.roomsCrud = buildCrud('casino_rooms', {
   allowedFields: ['code', 'nom', 'type_salle', 'statut'],
 });
 
+// Suppression définitive d'une salle et de toutes ses données casino liées.
+// L'opération est transactionnelle afin d'éviter une suppression partielle.
+exports.roomsCrud.remove = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    await withTransaction(async (conn) => {
+      const [[room]] = await conn.query(`SELECT id FROM casino_rooms WHERE id = ? FOR UPDATE`, [id]);
+      if (!room) throw ApiError.notFound('Salle introuvable');
+
+      // Les écritures globales sont supprimées avant leurs sources casino.
+      await conn.query(
+        `DELETE FROM financial_transactions
+          WHERE module = 'CASINO' AND (
+            reference_id IN (
+              SELECT co.id FROM casino_cash_operations co
+              JOIN casino_cashier_sessions cs ON cs.id = co.cashier_session_id
+              JOIN casino_cashiers cc ON cc.id = cs.cashier_id
+              WHERE cc.room_id = ?
+            ) OR ref_flux_global IN (
+              SELECT co.ref_flux_global FROM casino_cash_operations co
+              JOIN casino_cashier_sessions cs ON cs.id = co.cashier_session_id
+              JOIN casino_cashiers cc ON cc.id = cs.cashier_id
+              WHERE cc.room_id = ? AND co.ref_flux_global IS NOT NULL
+            ) OR ref_flux_global IN (
+              SELECT ct.ref_flux_global FROM casino_chip_transactions ct
+              JOIN casino_cashier_sessions cs ON cs.id = ct.cashier_session_id
+              JOIN casino_cashiers cc ON cc.id = cs.cashier_id
+              WHERE cc.room_id = ? AND ct.ref_flux_global IS NOT NULL
+            )
+          )`,
+        [id, id, id]
+      );
+
+      await conn.query(
+        `DELETE FROM caisse_transfers
+          WHERE (module_source = 'CASINO' AND session_source_id IN (
+            SELECT cs.id FROM casino_cashier_sessions cs JOIN casino_cashiers cc ON cc.id = cs.cashier_id WHERE cc.room_id = ?
+          )) OR (module_destination = 'CASINO' AND session_destination_id IN (
+            SELECT cs.id FROM casino_cashier_sessions cs JOIN casino_cashiers cc ON cc.id = cs.cashier_id WHERE cc.room_id = ?
+          ))`,
+        [id, id]
+      );
+      await conn.query(
+        `DELETE s FROM signatures s
+          JOIN casino_table_caves tc ON s.signable_type = 'casino_table_cave' AND s.signable_id = tc.id
+          JOIN casino_tables_jeu tj ON tj.id = tc.table_jeu_id
+         WHERE tj.room_id = ?`, [id]
+      );
+      await conn.query(
+        `DELETE s FROM signatures s
+          JOIN casino_table_prolongations tp ON s.signable_type = 'casino_table_prolongation' AND s.signable_id = tp.id
+          JOIN casino_tables_jeu tj ON tj.id = tp.table_jeu_id
+         WHERE tj.room_id = ?`, [id]
+      );
+      await conn.query(
+        `DELETE tv FROM casino_table_visits tv
+          JOIN casino_tables_jeu tj ON tj.id = tv.table_jeu_id
+         WHERE tj.room_id = ?`, [id]
+      );
+      await conn.query(
+        `DELETE tc FROM casino_table_caves tc
+          JOIN casino_tables_jeu tj ON tj.id = tc.table_jeu_id
+         WHERE tj.room_id = ?`, [id]
+      );
+      await conn.query(
+        `DELETE tp FROM casino_table_prolongations tp
+          JOIN casino_tables_jeu tj ON tj.id = tp.table_jeu_id
+         WHERE tj.room_id = ?`, [id]
+      );
+      await conn.query(
+        `DELETE tb FROM casino_table_pourboires tb
+          JOIN casino_tables_jeu tj ON tj.id = tb.table_jeu_id
+         WHERE tj.room_id = ?`, [id]
+      );
+      await conn.query(
+        `DELETE co FROM casino_cash_operations co
+          JOIN casino_cashier_sessions cs ON cs.id = co.cashier_session_id
+          JOIN casino_cashiers cc ON cc.id = cs.cashier_id
+         WHERE cc.room_id = ?`, [id]
+      );
+      await conn.query(
+        `DELETE ct FROM casino_chip_transactions ct
+          JOIN casino_cashier_sessions cs ON cs.id = ct.cashier_session_id
+          JOIN casino_cashiers cc ON cc.id = cs.cashier_id
+         WHERE cc.room_id = ?`, [id]
+      );
+      await conn.query(
+        `DELETE crp FROM casino_credit_repayments crp
+          JOIN casino_credits cr ON cr.id = crp.credit_id
+          JOIN casino_cashier_sessions cs ON cs.id = cr.session_id
+          JOIN casino_cashiers cc ON cc.id = cs.cashier_id
+         WHERE cc.room_id = ?`, [id]
+      );
+      await conn.query(
+        `DELETE cr FROM casino_credits cr
+          JOIN casino_cashier_sessions cs ON cs.id = cr.session_id
+          JOIN casino_cashiers cc ON cc.id = cs.cashier_id
+         WHERE cc.room_id = ?`, [id]
+      );
+      await conn.query(
+        `DELETE ci FROM casino_incidents ci
+          JOIN casino_cashier_sessions cs ON cs.id = ci.session_id
+          JOIN casino_cashiers cc ON cc.id = cs.cashier_id
+         WHERE cc.room_id = ?`, [id]
+      );
+      await conn.query(`DELETE FROM casino_visits WHERE room_id = ?`, [id]);
+      await conn.query(`DELETE FROM casino_tables_jeu WHERE room_id = ?`, [id]);
+      await conn.query(
+        `DELETE cs FROM casino_cashier_sessions cs
+          JOIN casino_cashiers cc ON cc.id = cs.cashier_id
+         WHERE cc.room_id = ?`, [id]
+      );
+      await conn.query(`DELETE FROM casino_cashiers WHERE room_id = ?`, [id]);
+      const [result] = await conn.query(`DELETE FROM casino_rooms WHERE id = ?`, [id]);
+      if (result.affectedRows === 0) throw ApiError.notFound('Salle introuvable');
+    });
+    res.status(204).send();
+  } catch (err) { next(err); }
+};
+
 exports.cashiersCrud = buildCrud('casino_cashiers', {
   allowedFields: ['room_id', 'code', 'nom', 'statut'],
 });
@@ -285,11 +405,18 @@ exports.ecartsCaisseHandler = async (req, res, next) => {
     const { salle, session_id } = req.query;
     const clauses = [];
     const params = [];
-    if (salle) { clauses.push('salle = ?'); params.push(salle); }
-    if (session_id) { clauses.push('session_id = ?'); params.push(session_id); }
+    if (salle) { clauses.push('r.nom = ?'); params.push(salle); }
+    if (session_id) { clauses.push('cs.id = ?'); params.push(session_id); }
     const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
     const [rows] = await pool.query(
-      `SELECT * FROM v_casino_ecarts_caisse ${where} ORDER BY ouverture_at DESC`, params
+      `SELECT cs.id AS session_id, c.nom AS caisse, r.nom AS salle,
+              cs.user_id, cs.ouverture_at, cs.fermeture_at, cs.fond_initial,
+              cs.fond_final_theorique, cs.fond_final_declare, cs.ecart
+         FROM casino_cashier_sessions cs
+         JOIN casino_cashiers c ON c.id = cs.cashier_id
+         JOIN casino_rooms r ON r.id = c.room_id
+         ${where}
+        ORDER BY cs.ouverture_at DESC`, params
     );
     res.json(rows);
   } catch (err) { next(err); }
@@ -1128,9 +1255,62 @@ exports.currentlyInRoomHandler = async (req, res, next) => {
 // Tables de jeu (CRUD standard + ouvrir/fermer)
 // -------------------------------------------------------------------------
  
-exports.tablesJeuCrud = buildCrud('casino_tables_jeu', {
-  allowedFields: ['room_id', 'numero', 'type_jeu', 'cave_minimum', 'statut'],
+const genericTablesJeuCrud = buildCrud('casino_tables_jeu', {
+  allowedFields: [
+    'room_id', 'cashier_id', 'numero', 'type_jeu', 'type_partie', 'nombre_places', 'cave_minimum',
+    'salaire_horaire_croupier', 'duree_jeu_simple_minutes', 'duree_prolongation_minutes', 'statut',
+  ],
 });
+
+exports.tablesJeuCrud = genericTablesJeuCrud;
+exports.tablesJeuCrud.create = async (req, res, next) => {
+  try {
+    const roomId = Number(req.body.room_id);
+    const cashierId = Number(req.body.cashier_id);
+    if (!Number.isInteger(roomId) || roomId < 1) throw ApiError.badRequest('Une salle valide est requise pour créer la table');
+    if (!Number.isInteger(cashierId) || cashierId < 1) throw ApiError.badRequest('Une caisse est requise pour créer la table');
+    const [[room]] = await pool.query(`SELECT id FROM casino_rooms WHERE id = ?`, [roomId]);
+    if (!room) throw ApiError.badRequest('La salle sélectionnée n’existe plus. Actualisez la liste des salles puis recommencez.');
+    const [[cashier]] = await pool.query(`SELECT id FROM casino_cashiers WHERE id = ? AND room_id = ?`, [cashierId, roomId]);
+    if (!cashier) throw ApiError.badRequest('La caisse sélectionnée n’appartient pas à cette salle.');
+
+    const numero = String(req.body.numero || '').trim();
+    const typeJeu = req.body.type_jeu || 'AUTRE';
+    const typePartie = req.body.type_partie || 'JEU_SIMPLE';
+    const nombrePlaces = Number(req.body.nombre_places || 8);
+    const caveMinimum = Number(req.body.cave_minimum);
+    const salaire = Number(req.body.salaire_horaire_croupier || 0);
+    const dureeSimple = Number(req.body.duree_jeu_simple_minutes || 120);
+    const dureeProlongation = Number(req.body.duree_prolongation_minutes || 60);
+    if (!numero) throw ApiError.badRequest('Le numéro de table est requis');
+    if (!['POKER', 'BLACKJACK', 'ROULETTE', 'BACCARA', 'AUTRE'].includes(typeJeu)) throw ApiError.badRequest('Type de jeu invalide');
+    if (!['JEU_SIMPLE', 'TOURNOI'].includes(typePartie)) throw ApiError.badRequest('Format de partie invalide');
+    if (!Number.isInteger(nombrePlaces) || nombrePlaces < 2) throw ApiError.badRequest('Le nombre de places doit être au moins égal à 2');
+    if (!Number.isFinite(caveMinimum) || caveMinimum <= 0) throw ApiError.badRequest('La cave minimum doit être positive');
+    if (!Number.isFinite(salaire) || salaire < 0 || !Number.isInteger(dureeSimple) || dureeSimple <= 0 || !Number.isInteger(dureeProlongation) || dureeProlongation <= 0) {
+      throw ApiError.badRequest('Les paramètres de durée ou de salaire sont invalides');
+    }
+    const [result] = await pool.query(
+      `INSERT INTO casino_tables_jeu
+        (room_id, cashier_id, numero, type_jeu, type_partie, nombre_places, cave_minimum,
+         salaire_horaire_croupier, duree_jeu_simple_minutes, duree_prolongation_minutes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [roomId, cashierId, numero, typeJeu, typePartie, nombrePlaces, caveMinimum, salaire, dureeSimple, dureeProlongation]
+    );
+    const [[table]] = await pool.query(`SELECT * FROM casino_tables_jeu WHERE id = ?`, [result.insertId]);
+    res.status(201).json(table);
+  } catch (err) { next(err); }
+};
+exports.tablesJeuCrud.update = async (req, res, next) => {
+  try {
+    if (Object.prototype.hasOwnProperty.call(req.body, 'room_id')) {
+      const roomId = Number(req.body.room_id);
+      const [[room]] = await pool.query(`SELECT id FROM casino_rooms WHERE id = ?`, [roomId]);
+      if (!room) throw ApiError.badRequest('La salle sélectionnée n’existe plus. Actualisez la liste des salles puis recommencez.');
+    }
+    await genericTablesJeuCrud.update(req, res, next);
+  } catch (err) { next(err); }
+};
  
 exports.ouvrirTableHandler = async (req, res, next) => {
   try {
@@ -1181,7 +1361,7 @@ exports.fermerTableHandler = async (req, res, next) => {
 exports.addCaveHandler = async (req, res, next) => {
   try {
     const { id: tableJeuId } = req.params;
-    const { session_id, client_id, client_libre, numero_adherent, montant, statut_paiement, moyen_paiement } = req.body;
+    const { session_id, client_id, client_libre, numero_adherent, numero_place, montant, statut_paiement, moyen_paiement } = req.body;
     const amount = asMoney(montant);
     const statutPaiement = statut_paiement === 'NON_PAYE' ? 'NON_PAYE' : 'PAYE';
     if (!client_id && !client_libre) throw ApiError.badRequest('client_id ou client_libre requis');
@@ -1190,6 +1370,11 @@ exports.addCaveHandler = async (req, res, next) => {
       const [[table]] = await conn.query(`SELECT * FROM casino_tables_jeu WHERE id = ?`, [tableJeuId]);
       if (!table) throw ApiError.notFound('Table de jeu introuvable');
       if (table.statut !== 'OUVERTE') throw ApiError.badRequest('Cette table de jeu est fermée');
+
+      const place = Number(numero_place);
+      if (!Number.isInteger(place) || place < 1 || place > Number(table.nombre_places)) {
+        throw ApiError.badRequest(`Le numéro de place doit être compris entre 1 et ${table.nombre_places}`);
+      }
  
       const session = await getOpenSession(conn, session_id);
       if (!session) throw ApiError.badRequest('Session de caisse introuvable ou fermée');
@@ -1254,10 +1439,15 @@ exports.addCaveHandler = async (req, res, next) => {
       // (voir casino_table_visits). Les caves/recaves suivantes du même
       // joueur le même jour ne rouvrent pas une nouvelle présence.
       if (numeroCave === 1) {
+        const [[occupied]] = await conn.query(
+          `SELECT id FROM casino_table_visits WHERE table_jeu_id = ? AND numero_place = ? AND sortie_at IS NULL LIMIT 1 FOR UPDATE`,
+          [tableJeuId, place]
+        );
+        if (occupied) throw ApiError.conflict(`La place ${place} est déjà occupée`);
         await conn.query(
-          `INSERT INTO casino_table_visits (table_jeu_id, client_id, client_libre, entree_at, created_by)
-           VALUES (?, ?, ?, NOW(), ?)`,
-          [tableJeuId, client_id || null, client_id ? null : (client_libre || null), caissierId(req)]
+          `INSERT INTO casino_table_visits (table_jeu_id, client_id, client_libre, numero_place, entree_at, created_by)
+           VALUES (?, ?, ?, ?, NOW(), ?)`,
+          [tableJeuId, client_id || null, client_id ? null : (client_libre || null), place, caissierId(req)]
         );
       }
 
@@ -1688,9 +1878,10 @@ exports.joueursActifsHandler = async (req, res, next) => {
   try {
     const { id: tableJeuId } = req.params;
     const [rows] = await pool.query(
-      `SELECT tv.*, c.nom, c.prenom,
+      `SELECT tv.*, tj.type_partie, tj.nombre_places, c.nom, c.prenom,
               TIMESTAMPDIFF(MINUTE, tv.entree_at, NOW()) AS minutes_ecoulees
          FROM casino_table_visits tv
+         JOIN casino_tables_jeu tj ON tj.id = tv.table_jeu_id
          LEFT JOIN clients c ON c.id = tv.client_id
         WHERE tv.table_jeu_id = ? AND tv.sortie_at IS NULL
         ORDER BY tv.entree_at ASC`,
@@ -1700,6 +1891,8 @@ exports.joueursActifsHandler = async (req, res, next) => {
       id: r.id,
       joueur: r.client_id ? `${r.nom || ''} ${r.prenom || ''}`.trim() : (r.client_libre || 'Joueur de passage'),
       client_id: r.client_id,
+      numero_place: Number(r.numero_place),
+      type_partie: r.type_partie,
       entree_at: r.entree_at,
       minutes_ecoulees: Number(r.minutes_ecoulees),
     })));
@@ -1803,5 +1996,45 @@ exports.tempsJeuJourHandler = async (req, res, next) => {
     }
 
     res.json({ date: jour, total_minutes, par_table: Object.values(parTable) });
+  } catch (err) { next(err); }
+};
+
+// Le déplacement est autorisé uniquement pour une partie simple. Le verrou
+// de la présence et le contrôle d'occupation rendent l'opération atomique.
+exports.changerPlaceHandler = async (req, res, next) => {
+  try {
+    const { visitId } = req.params;
+    const place = Number(req.body.numero_place);
+    if (!Number.isInteger(place) || place < 1) throw ApiError.badRequest('Numéro de place invalide');
+
+    await withTransaction(async (conn) => {
+      const [[visit]] = await conn.query(
+        `SELECT tv.id, tv.table_jeu_id, tv.numero_place, tj.type_partie, tj.nombre_places
+           FROM casino_table_visits tv
+           JOIN casino_tables_jeu tj ON tj.id = tv.table_jeu_id
+          WHERE tv.id = ? AND tv.sortie_at IS NULL FOR UPDATE`,
+        [visitId]
+      );
+      if (!visit) throw ApiError.notFound('Présence introuvable ou déjà terminée');
+      if (visit.type_partie === 'TOURNOI') {
+        throw ApiError.conflict('Changement de place interdit pendant un tournoi');
+      }
+      if (place > Number(visit.nombre_places)) {
+        throw ApiError.badRequest(`Le numéro de place doit être compris entre 1 et ${visit.nombre_places}`);
+      }
+      if (place === Number(visit.numero_place)) return;
+
+      const [[occupied]] = await conn.query(
+        `SELECT id FROM casino_table_visits
+          WHERE table_jeu_id = ? AND numero_place = ? AND sortie_at IS NULL AND id <> ?
+          LIMIT 1 FOR UPDATE`,
+        [visit.table_jeu_id, place, visitId]
+      );
+      if (occupied) throw ApiError.conflict(`La place ${place} est déjà occupée`);
+      await conn.query(`UPDATE casino_table_visits SET numero_place = ? WHERE id = ?`, [place, visitId]);
+    });
+
+    const [[updated]] = await pool.query(`SELECT * FROM casino_table_visits WHERE id = ?`, [visitId]);
+    res.json(updated);
   } catch (err) { next(err); }
 };
