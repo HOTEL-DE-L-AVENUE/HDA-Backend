@@ -2061,3 +2061,49 @@ exports.changerPlaceHandler = async (req, res, next) => {
     res.json(updated);
   } catch (err) { next(err); }
 };
+
+// GET /player-sheets?date=YYYY-MM-DD&table_name=...
+exports.getPlayerSheetHandler = async (req, res, next) => {
+  try {
+    const { date, table_name: tableName } = req.query;
+    if (!date || !tableName) throw ApiError.badRequest('La date et la table sont obligatoires');
+
+    const [[row]] = await pool.query(
+      `SELECT id, sheet_date AS date, table_name, sheet_data
+         FROM casino_player_sheets
+        WHERE sheet_date = ? AND table_name = ? LIMIT 1`,
+      [date, tableName]
+    );
+    if (!row) return res.json(null);
+    const sheetData = typeof row.sheet_data === 'string' ? JSON.parse(row.sheet_data) : row.sheet_data;
+    res.json({ id: row.id, date: row.date, table_name: row.table_name, ...sheetData });
+  } catch (err) { next(err); }
+};
+
+// PUT /player-sheets — remplace la fiche complète de la date et de la table.
+exports.savePlayerSheetHandler = async (req, res, next) => {
+  try {
+    const { date, table_name: tableName, players, restaurantPayments } = req.body;
+    if (!date || !tableName || !Array.isArray(players)) {
+      throw ApiError.badRequest('La date, la table et les joueurs sont obligatoires');
+    }
+    const sheetData = JSON.stringify({ players, restaurantPayments: restaurantPayments || { especes: false, tpe: false } });
+    const userId = req.user.id_admin || null;
+
+    await pool.query(
+      `INSERT INTO casino_player_sheets
+         (sheet_date, table_name, sheet_data, created_by, updated_by)
+       VALUES (?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE sheet_data = VALUES(sheet_data), updated_by = VALUES(updated_by)`,
+      [date, tableName, sheetData, userId, userId]
+    );
+    const [[row]] = await pool.query(
+      `SELECT id, sheet_date AS date, table_name, sheet_data
+         FROM casino_player_sheets
+        WHERE sheet_date = ? AND table_name = ? LIMIT 1`,
+      [date, tableName]
+    );
+    const savedData = typeof row.sheet_data === 'string' ? JSON.parse(row.sheet_data) : row.sheet_data;
+    res.json({ id: row.id, date: row.date, table_name: row.table_name, ...savedData });
+  } catch (err) { next(err); }
+};

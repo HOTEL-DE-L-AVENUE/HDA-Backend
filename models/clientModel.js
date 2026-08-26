@@ -159,6 +159,8 @@ const KYC_UPSERT_FIELDS = [
 ];
 
 const KYC_BOOL_FIELDS = ['doc_piece_identite', 'doc_justificatif_domicile', 'doc_photo_client', 'declaration_client'];
+const KYC_DATE_FIELDS = ['date_delivrance_piece', 'date_expiration_piece', 'date_verification'];
+const KYC_NUM_FIELDS = ['revenu_mensuel_estime', 'agent_verificateur'];
 
 // Crée ou met à jour la fiche KYC d'un client (upsert 1-1), en une seule transaction.
 async function upsertKyc(clientId, data = {}) {
@@ -169,7 +171,26 @@ async function upsertKyc(clientId, data = {}) {
     const payload = {};
     for (const field of KYC_UPSERT_FIELDS) {
       if (data[field] === undefined) continue;
-      payload[field] = KYC_BOOL_FIELDS.includes(field) ? (data[field] ? 1 : 0) : data[field];
+      const rawVal = data[field];
+
+      if (KYC_BOOL_FIELDS.includes(field)) {
+        payload[field] = rawVal ? 1 : 0;
+      } else if (KYC_DATE_FIELDS.includes(field)) {
+        payload[field] = (rawVal && String(rawVal).trim()) ? String(rawVal).trim() : null;
+      } else if (KYC_NUM_FIELDS.includes(field)) {
+        payload[field] = (rawVal !== null && rawVal !== '' && rawVal !== undefined && !isNaN(Number(rawVal))) ? Number(rawVal) : null;
+      } else if (field === 'niveau_risque') {
+        payload[field] = (rawVal && ['FAIBLE', 'MOYEN', 'ELEVE'].includes(rawVal)) ? rawVal : null;
+      } else {
+        payload[field] = (rawVal !== null && rawVal !== undefined) ? (String(rawVal).trim() || null) : null;
+      }
+    }
+
+    if (payload.agent_verificateur) {
+      const [u] = await conn.query('SELECT id_admin FROM users WHERE id_admin = ?', [payload.agent_verificateur]);
+      if (!u || u.length === 0) {
+        payload.agent_verificateur = null;
+      }
     }
 
     if (existing) {
