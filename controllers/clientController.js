@@ -95,16 +95,24 @@ async function saveKyc(req, res) {
   const client = await Clients.findById(req.params.id);
   if (!client) throw ApiError.notFound(`Client #${req.params.id} introuvable`);
 
-  if (req.body.niveau_risque && !NIVEAUX_RISQUE.includes(req.body.niveau_risque)) {
+  const rawNiveau = req.body.niveau_risque;
+  if (rawNiveau && String(rawNiveau).trim() && !NIVEAUX_RISQUE.includes(rawNiveau)) {
     throw ApiError.badRequest(`niveau_risque doit être l'un de : ${NIVEAUX_RISQUE.join(', ')}`);
   }
 
-  // NOTE: adapter `req.user?.id_admin` si le payload JWT expose l'id de l'agent
-  // sous un autre nom (ex: req.user?.id).
+  const agent_verificateur = (req.body.agent_verificateur !== undefined && req.body.agent_verificateur !== '' && req.body.agent_verificateur !== null)
+    ? Number(req.body.agent_verificateur)
+    : (req.user?.id_admin ?? null);
+
+  const date_verification = (req.body.date_verification && String(req.body.date_verification).trim())
+    ? req.body.date_verification
+    : new Date().toISOString().slice(0, 10);
+
   const kyc = await upsertKyc(req.params.id, {
     ...req.body,
-    agent_verificateur: req.body.agent_verificateur ?? req.user?.id_admin ?? null,
-    date_verification: req.body.date_verification || new Date().toISOString().slice(0, 10),
+    niveau_risque: (rawNiveau && NIVEAUX_RISQUE.includes(rawNiveau)) ? rawNiveau : null,
+    agent_verificateur: isNaN(agent_verificateur) ? null : agent_verificateur,
+    date_verification,
   });
   return ok(res, renderKyc(kyc));
 }
