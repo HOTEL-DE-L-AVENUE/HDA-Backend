@@ -111,6 +111,17 @@ async function login(req, res) {
   return ok(res, { success: true, message: 'Connexion réussie', token, refreshToken, user: renderUser(user) });
 }
 
+async function verifyAdminPassword(req, res) {
+  const { password } = req.body || {};
+  if (!password) throw ApiError.badRequest('Le mot de passe administrateur est requis');
+
+  const admins = await Users.findAll({ whereSql: "WHERE role = 'admin' AND statut = 'actif'", whereValues: [] });
+  const valid = await Promise.all(admins.map((admin) => bcrypt.compare(password, admin.mot_de_passe)));
+  if (!valid.some(Boolean)) throw ApiError.forbidden('Mot de passe administrateur invalide');
+
+  return ok(res, { success: true });
+}
+
 async function me(req, res) {
   const user = await Users.findById(req.user.id_admin);
   if (!user) throw ApiError.notFound('Utilisateur introuvable');
@@ -201,5 +212,5 @@ async function getConnectionHistory(req, res) {
 const notificationsCrud = createCrudController(Notifications, { filterable: ['statut'] });
 
 module.exports = {
-  usersCrud, register, login, me, changePassword, refreshToken, logout, profile, listAuditLogs, getConnectionHistory, notificationsCrud, renderUserList,
+  usersCrud, register, login, verifyAdminPassword, me, changePassword, refreshToken, logout, profile, listAuditLogs, getConnectionHistory, notificationsCrud, renderUserList,
 };

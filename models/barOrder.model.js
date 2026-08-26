@@ -16,7 +16,9 @@ async function ensureBarOrderTables() {
     CREATE TABLE IF NOT EXISTS bar_orders (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
       client_name VARCHAR(150) DEFAULT NULL,
-      table_id BIGINT UNSIGNED DEFAULT NULL,
+        table_id BIGINT UNSIGNED DEFAULT NULL,
+        nombre_personnes INT UNSIGNED NOT NULL DEFAULT 1,
+        moyen_paiement VARCHAR(30) NOT NULL DEFAULT 'ESPECES',
       statut VARCHAR(30) DEFAULT 'EN_ATTENTE',
       montant_total DECIMAL(10,2) DEFAULT 0.00,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -38,6 +40,15 @@ async function ensureBarOrderTables() {
       CONSTRAINT fk_bar_order_items_order FOREIGN KEY (order_id) REFERENCES bar_orders(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
+
+  const [columns] = await pool.query('SHOW COLUMNS FROM bar_orders');
+  const existing = new Set(columns.map((column) => column.Field));
+  if (!existing.has('nombre_personnes')) {
+    await pool.query('ALTER TABLE bar_orders ADD COLUMN nombre_personnes INT UNSIGNED NOT NULL DEFAULT 1 AFTER table_id');
+  }
+  if (!existing.has('moyen_paiement')) {
+    await pool.query("ALTER TABLE bar_orders ADD COLUMN moyen_paiement VARCHAR(30) NOT NULL DEFAULT 'ESPECES' AFTER nombre_personnes");
+  }
 }
 
 async function listBarOrders() {
@@ -62,6 +73,8 @@ async function listBarOrders() {
     id: order.id,
     client: order.client_name,
     table: Number(order.table_id),
+    nombre_personnes: Number(order.nombre_personnes || 1),
+    moyen_paiement: order.moyen_paiement || 'ESPECES',
     statut: order.statut,
     total: Number(order.montant_total || 0),
     created_at: order.created_at,
@@ -73,7 +86,7 @@ async function listBarOrders() {
   }));
 }
 
-async function createBarOrder({ clientName, tableId, items }) {
+async function createBarOrder({ clientName, tableId, nombrePersonnes = 1, moyenPaiement = 'ESPECES', items }) {
   await ensureBarOrderTables();
   await ensureBarTransactionsSchema();
 
@@ -108,8 +121,8 @@ async function createBarOrder({ clientName, tableId, items }) {
     const total = (items || []).reduce((sum, item) => sum + Number(item.quantite || 1) * Number(item.prix || 0), 0);
 
     const [result] = await conn.query(
-      'INSERT INTO bar_orders (client_name, table_id, statut, montant_total, created_at) VALUES (?, ?, ?, ?, NOW())',
-      [clientName || null, tableId || null, 'EN_ATTENTE', total]
+      'INSERT INTO bar_orders (client_name, table_id, nombre_personnes, moyen_paiement, statut, montant_total, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())',
+      [clientName || null, tableId || null, Number(nombrePersonnes) || 1, moyenPaiement || 'ESPECES', 'EN_ATTENTE', total]
     );
 
     const orderId = result.insertId;
@@ -147,6 +160,8 @@ async function createBarOrder({ clientName, tableId, items }) {
       id: orderId,
       client: clientName,
       table: Number(tableId),
+      nombre_personnes: Number(nombrePersonnes) || 1,
+      moyen_paiement: moyenPaiement || 'ESPECES',
       statut: 'EN_ATTENTE',
       total,
       items: (items || []).map((item) => ({
@@ -193,7 +208,8 @@ async function updateBarOrderStatus(id, statut) {
   await ensureBarOrderTables();
   const allowedTransitions = {
     EN_ATTENTE: 'EN_PREPARATION',
-    EN_PREPARATION: 'SERVIE',
+    EN_PREPARATION: 'PRETE',
+    PRETE: 'SERVIE',
     SERVIE: 'ENCAISSEE',
   };
 

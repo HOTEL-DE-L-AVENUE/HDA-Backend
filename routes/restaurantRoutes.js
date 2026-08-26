@@ -3,8 +3,10 @@ const express = require('express');
 const ctrl = require('../controllers/restaurantController');
 const { createCrudRouter } = require('./routeFactory');
 const stockCtrl = require('../controllers/stockController');
+const { requireAuth, requireRole } = require('../middlewares/auth');
 
 const router = express.Router();
+router.delete('/orders/:id', requireAuth, requireRole('admin'), ctrl.ordersCrud.remove);
 
 // Stock restaurant - same data as stock module, with labels needed for the interface.
 router.get('/stock', ctrl.restaurantStockHandler);
