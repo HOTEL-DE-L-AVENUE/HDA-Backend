@@ -157,7 +157,7 @@ async function createBarOrderHandler(req, res) {
   if (!Number.isInteger(guestCount) || guestCount < 1) {
     throw ApiError.badRequest('nombre_personnes doit être un entier positif');
   }
-  const allowedPayments = ['ESPECES', 'CARTE', 'MOBILE_MONEY', 'CHEQUE'];
+  const allowedPayments = ['ESPECES', 'CARTE', 'TPE', 'CREDIT', 'EURO', 'ORANGE_MONEY', 'MVOLA', 'DOLLAR', 'VIREMENT', 'CHEQUE'];
   if (moyen_paiement && !allowedPayments.includes(moyen_paiement)) {
     throw ApiError.badRequest('Mode de paiement invalide');
   }
