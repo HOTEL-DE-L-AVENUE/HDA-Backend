@@ -35,6 +35,14 @@ function asMoney(n) {
   return v;
 }
 
+function parseCasinoAmount(value) {
+  const text = String(value ?? '').trim().replace(/\s/g, '');
+  if (!text) return 0;
+  const normalized = text.includes(',') ? text.replace(/\./g, '').replace(',', '.') : text;
+  const amount = Number(normalized.replace(/[^\d.-]/g, ''));
+  return Number.isFinite(amount) ? amount : 0;
+}
+
 function caissierId(req) {
   return req.user.id_admin;
 }
@@ -2083,11 +2091,29 @@ exports.getPlayerSheetHandler = async (req, res, next) => {
 // PUT /player-sheets — remplace la fiche complète de la date et de la table.
 exports.savePlayerSheetHandler = async (req, res, next) => {
   try {
-    const { date, table_name: tableName, players, restaurantPayments } = req.body;
+    const { date, table_name: tableName, players, chips = [], restaurantPayments, finals } = req.body;
     if (!date || !tableName || !Array.isArray(players)) {
       throw ApiError.badRequest('La date, la table et les joueurs sont obligatoires');
     }
-    const sheetData = JSON.stringify({ players, restaurantPayments: restaurantPayments || { especes: false, tpe: false } });
+    const cashingBySheet = new Map();
+    players.forEach((player) => {
+      const sheetId = player.ficheId || player.id;
+      if (!cashingBySheet.has(sheetId) || cashingBySheet.get(sheetId) === 0) {
+        cashingBySheet.set(sheetId, parseCasinoAmount(player.cashing));
+      }
+    });
+    const totalCashingJetons = Array.from(cashingBySheet.values()).reduce((total, cashing) => total + cashing, 0);
+    const totalJetonsDepart = chips.reduce((total, chip) => total + (Number(chip.value) || 0) * (Number(chip.opening) || 0), 0);
+    const totalJetonsFermeture = chips.reduce((total, chip) => total + (Number(chip.value) || 0) * (Number(chip.closing) || 0), 0);
+    const sheetData = JSON.stringify({
+      players,
+      chips,
+      restaurantPayments: restaurantPayments || { especes: false, tpe: false },
+      finals: finals || {},
+      total_cashing_jetons: totalCashingJetons,
+      total_jetons_depart: totalJetonsDepart,
+      total_jetons_fermeture: totalJetonsFermeture,
+    });
     const userId = req.user.id_admin || null;
 
     await pool.query(
