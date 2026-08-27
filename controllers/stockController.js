@@ -6,9 +6,10 @@ const { ok, created } = require('../utils/apiResponse');
 
 // CRUD génériques générés par le controllerFactory
 const categoriesCrud = createCrudController(stock.Categories, {});
+const subcategoriesCrud = createCrudController(stock.Subcategories, { filterable: ['category_id'] });
 const productTypesCrud = createCrudController(stock.ProductTypes, { filterable: ['actif'] });
 const unitsCrud = createCrudController(stock.Units, {});
-const productsCrud = createCrudController(stock.Products, { filterable: ['category_id', 'actif', 'type_produit'] });
+const productsCrud = createCrudController(stock.Products, { filterable: ['category_id', 'subcategory_id', 'actif', 'type_produit'] });
 const stockLocationsCrud = createCrudController(stock.StockLocations, {});
 const stocksCrud = createCrudController(stock.Stocks, { filterable: ['product_id', 'location_id'] });
 const stockMovementsCrud = createCrudController(stock.StockMovements, { filterable: ['product_id', 'location_id', 'type_mouvement', 'source_module'] });
@@ -112,8 +113,39 @@ async function getProductsWithStockHandler(req, res, next) {
   }
 }
 
+/**
+ * Consomme une portion d'un produit (stock basé sur les portions)
+ */
+async function consumePortionHandler(req, res, next) {
+  try {
+    const { product_id, location_id, portion_size, portion_unit, reference_id, source_module } = req.body;
+
+    if (!product_id || !location_id || portion_size === undefined) {
+      throw ApiError.badRequest('product_id, location_id et portion_size sont requis');
+    }
+
+    if (isNaN(portion_size) || Number(portion_size) <= 0) {
+      throw ApiError.badRequest('La portion doit être un nombre positif');
+    }
+
+    const result = await stock.consumePortion({
+      productId: product_id,
+      locationId: location_id,
+      portionSize: Number(portion_size),
+      portionUnit: portion_unit || 'g',
+      referenceId: reference_id || null,
+      sourceModule: source_module || 'RESTAURANT',
+    });
+
+    return created(res, result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   categoriesCrud,
+  subcategoriesCrud,
   productTypesCrud,
   unitsCrud,
   productsCrud,
@@ -128,4 +160,5 @@ module.exports = {
   lowStockHandler,
   stockByProductHandler,
   getProductsWithStockHandler,
+  consumePortionHandler,
 };

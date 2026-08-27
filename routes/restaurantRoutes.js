@@ -12,6 +12,7 @@ router.delete('/orders/:id', requireAuth, requireRole('admin'), ctrl.ordersCrud.
 router.get('/stock', ctrl.restaurantStockHandler);
 router.get('/stock/movements', ctrl.restaurantStockMovementsHandler);
 router.post('/stock/adjust', ctrl.adjustRestaurantStockHandler);
+router.post('/stock/consume-portion', ctrl.consumeRestaurantPortionHandler);
 // DELETE /api/restaurant/stock?id=... or ?product_id=...&location_id=...
 router.delete('/stock', ctrl.removeRestaurantStockHandler);
 router.use('/stock/locations', createCrudRouter(stockCtrl.stockLocationsCrud));
@@ -19,6 +20,7 @@ router.use('/products', createCrudRouter(stockCtrl.productsCrud));
 router.use('/units', createCrudRouter(stockCtrl.unitsCrud));
 router.use('/product-types', createCrudRouter(stockCtrl.productTypesCrud));
 router.use('/categories', createCrudRouter(stockCtrl.categoriesCrud));
+router.use('/subcategories', createCrudRouter(stockCtrl.subcategoriesCrud));
 router.use('/suppliers', createCrudRouter(stockCtrl.suppliersCrud));
 router.get('/purchases', ctrl.listRestaurantPurchasesHandler);
 router.post('/purchases', ctrl.createRestaurantPurchaseHandler);
