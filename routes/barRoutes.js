@@ -50,6 +50,7 @@ router.get('/orders', ctrl.listBarOrdersHandler);
 router.post('/orders', cashierRoles, ctrl.createBarOrderHandler);
 router.put('/orders/:id', cashierRoles, ctrl.updateBarOrderHandler);
 router.put('/orders/:id/status', orderStatusRoles, ctrl.updateBarOrderStatusHandler);
+router.post('/orders/close-all', orderStatusRoles, ctrl.closeAllBarOrdersHandler);
 router.delete('/orders/:id', adminOnly, ctrl.deleteBarOrderHandler);
 
 // Transactions — commandes caisse

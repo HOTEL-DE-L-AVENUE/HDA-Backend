@@ -397,10 +397,30 @@ async function updateBarOrderStatus(id, statut, moyenPaiement) {
     return { id: Number(id), statut };
   });
 }
+
+async function closeAllBarOrders(orderIds = []) {
+  await ensureBarOrderTables();
+  await ensureBarTransactionsSchema();
+
+  return withTransaction(async (conn) => {
+    const ids = [...new Set(orderIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))];
+    if (ids.length > 0) {
+      await conn.query('DELETE FROM bar_order_items WHERE order_id IN (?)', [ids]);
+      await conn.query('DELETE FROM bar_orders WHERE id IN (?)', [ids]);
+    } else {
+      await conn.query('DELETE FROM bar_order_items');
+      await conn.query('DELETE FROM bar_orders');
+    }
+    await conn.query('DELETE FROM bar_transactions');
+
+    return { deleted_orders: ids.length, cleared_transactions: true };
+  });
+}
 module.exports = {
   listBarOrders,
   createBarOrder,
   updateBarOrder,
   deleteBarOrder,
   updateBarOrderStatus,
+  closeAllBarOrders,
 };

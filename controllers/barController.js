@@ -4,7 +4,7 @@ const { BarCashiers, openCashierSession, closeCashierSession, getCurrentSession 
 const { BarSessions, sessionStats } = require('../models/barSession.model');
 const barProductModel = require('../models/barProduct.model');
 const { addTransaction } = require('../models/barTransaction.model');
-const { listBarOrders, createBarOrder, updateBarOrder, deleteBarOrder, updateBarOrderStatus } = require('../models/barOrder.model');
+const { listBarOrders, createBarOrder, updateBarOrder, deleteBarOrder, updateBarOrderStatus, closeAllBarOrders } = require('../models/barOrder.model');
 const { createCrudController } = require('./controllerFactory');
 const ApiError = require('../utils/ApiError');
 const { ok, created } = require('../utils/apiResponse');
@@ -210,6 +210,15 @@ async function updateBarOrderStatusHandler(req, res) {
   return ok(res, order);
 }
 
+async function closeAllBarOrdersHandler(req, res) {
+  const { order_ids } = req.body || {};
+  if (order_ids !== undefined && !Array.isArray(order_ids)) {
+    throw ApiError.badRequest('order_ids doit être un tableau');
+  }
+  const result = await closeAllBarOrders(order_ids || []);
+  return ok(res, result);
+}
+
 module.exports = {
   tablesCrud, cashiersCrud, sessionsCrud, productsCrud,
   tablesStatsHandler, openCashierHandler, closeCashierHandler,
@@ -217,5 +226,5 @@ module.exports = {
   currentSessionHandler, getBarStockHandler,
   addBarStockHandler, updateBarStockHandler, deleteBarStockHandler,
   addTransactionHandler, latestTransactionsByProductHandler, listTransactionsHandler,
-  listBarOrdersHandler, createBarOrderHandler, updateBarOrderHandler, deleteBarOrderHandler, updateBarOrderStatusHandler,
+  listBarOrdersHandler, createBarOrderHandler, updateBarOrderHandler, deleteBarOrderHandler, updateBarOrderStatusHandler, closeAllBarOrdersHandler,
 };
