@@ -1,3 +1,4 @@
+// controllers/barController.js
 const { BarTables, tablesStats } = require('../models/barTables.model');
 const { BarCashiers, openCashierSession, closeCashierSession, getCurrentSession } = require('../models/barCashier.model');
 const { BarSessions, sessionStats } = require('../models/barSession.model');
@@ -12,11 +13,14 @@ const tablesCrud = createCrudController(BarTables, { filterable: ['statut'] });
 const cashiersCrud = createCrudController(BarCashiers, { filterable: ['statut'] });
 const sessionsCrud = createCrudController(BarSessions, { filterable: ['cashier_id', 'user_id'] });
 
-// On garde le CRUD générique pour update/delete/get, mais on va surcharger la création
+// Surcharge de productsCrud pour forcer l'utilisation de getBarProductsWithStock
 const productsCrud = {
   ...createCrudController(barProductModel.barProducts, { filterable: ['categorie', 'alcool'] }),
+  list: async (req, res) => {
+    const products = await barProductModel.getBarProductsWithStock();
+    return ok(res, products);
+  },
   create: async (req, res) => {
-    // Utilise la fonction dédiée qui enregistre à la fois dans bar_products ET bar_stock
     const product = await barProductModel.addBarProductWithStock(req.body);
     return created(res, product);
   },
