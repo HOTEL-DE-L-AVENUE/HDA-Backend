@@ -4,7 +4,7 @@ const { BarCashiers, openCashierSession, closeCashierSession, getCurrentSession 
 const { BarSessions, sessionStats } = require('../models/barSession.model');
 const barProductModel = require('../models/barProduct.model');
 const { addTransaction } = require('../models/barTransaction.model');
-const { listBarOrders, createBarOrder, deleteBarOrder, updateBarOrderStatus } = require('../models/barOrder.model');
+const { listBarOrders, createBarOrder, updateBarOrder, deleteBarOrder, updateBarOrderStatus, closeAllBarOrders } = require('../models/barOrder.model');
 const { createCrudController } = require('./controllerFactory');
 const ApiError = require('../utils/ApiError');
 const { ok, created } = require('../utils/apiResponse');
@@ -129,7 +129,7 @@ async function latestTransactionsByProductHandler(req, res) {
   const [rows] = await pool.query(
     `SELECT t.*, bp.nom, bp.prix FROM bar_transactions t
      JOIN bar_products bp ON bp.id = t.product_id
-     WHERE t.product_id = ?
+     WHERE t.product_id = ? AND t.statut = 'PAYEE'
      ORDER BY t.created_at DESC LIMIT 1`,
     [product_id]
   );
@@ -141,6 +141,7 @@ async function listTransactionsHandler(req, res) {
   const [rows] = await pool.query(
     `SELECT t.*, bp.nom, bp.prix, bp.categorie FROM bar_transactions t
      JOIN bar_products bp ON bp.id = t.product_id
+     WHERE t.statut = 'PAYEE'
      ORDER BY t.created_at DESC LIMIT 50`
   );
   return ok(res, rows);
@@ -161,12 +162,35 @@ async function createBarOrderHandler(req, res) {
   if (!Number.isInteger(guestCount) || guestCount < 1) {
     throw ApiError.badRequest('nombre_personnes doit être un entier positif');
   }
-  const allowedPayments = ['ESPECES', 'CARTE', 'TPE', 'CREDIT', 'EURO', 'ORANGE_MONEY', 'MVOLA', 'DOLLAR', 'VIREMENT', 'CHEQUE'];
+  const allowedPayments = ['ESPECES', 'CREDIT', 'TPE', 'ORANGE_MONEY', 'MVOLA', 'GRATUIT'];
   if (moyen_paiement && !allowedPayments.includes(moyen_paiement)) {
     throw ApiError.badRequest('Mode de paiement invalide');
   }
   const order = await createBarOrder({ clientName: client || 'Client anonyme', tableId: table, nombrePersonnes: guestCount, moyenPaiement: moyen_paiement, items });
   return created(res, order);
+}
+
+async function updateBarOrderHandler(req, res) {
+  const { client, table, nombre_personnes, moyen_paiement, items } = req.body || {};
+  if (table === undefined || !Array.isArray(items) || items.length === 0) {
+    throw ApiError.badRequest('table et items sont requis pour modifier la commande');
+  }
+
+  const guestCount = Number(nombre_personnes || 1);
+  if (!Number.isInteger(guestCount) || guestCount < 1) {
+    throw ApiError.badRequest('nombre_personnes doit être un entier positif');
+  }
+
+  const order = await updateBarOrder(req.params.id, {
+    clientName: client,
+    tableId: table,
+    nombrePersonnes: guestCount,
+    moyenPaiement: moyen_paiement,
+    items,
+  });
+
+  if (!order) throw ApiError.notFound(`Commande #${req.params.id} introuvable`);
+  return ok(res, order);
 }
 
 async function deleteBarOrderHandler(req, res) {
@@ -176,10 +200,23 @@ async function deleteBarOrderHandler(req, res) {
 }
 
 async function updateBarOrderStatusHandler(req, res) {
-  const { statut } = req.body || {};
-  const order = await updateBarOrderStatus(req.params.id, statut);
+  const { statut, moyen_paiement } = req.body || {};
+  const allowedPayments = ['ESPECES', 'CREDIT', 'TPE', 'ORANGE_MONEY', 'MVOLA', 'GRATUIT'];
+  if (moyen_paiement && !allowedPayments.includes(moyen_paiement)) {
+    throw ApiError.badRequest('Mode de paiement invalide');
+  }
+  const order = await updateBarOrderStatus(req.params.id, statut, moyen_paiement);
   if (!order) throw ApiError.notFound(`Commande #${req.params.id} introuvable`);
   return ok(res, order);
+}
+
+async function closeAllBarOrdersHandler(req, res) {
+  const { order_ids } = req.body || {};
+  if (order_ids !== undefined && !Array.isArray(order_ids)) {
+    throw ApiError.badRequest('order_ids doit être un tableau');
+  }
+  const result = await closeAllBarOrders(order_ids || []);
+  return ok(res, result);
 }
 
 module.exports = {
@@ -189,5 +226,5 @@ module.exports = {
   currentSessionHandler, getBarStockHandler,
   addBarStockHandler, updateBarStockHandler, deleteBarStockHandler,
   addTransactionHandler, latestTransactionsByProductHandler, listTransactionsHandler,
-  listBarOrdersHandler, createBarOrderHandler, deleteBarOrderHandler, updateBarOrderStatusHandler,
+  listBarOrdersHandler, createBarOrderHandler, updateBarOrderHandler, deleteBarOrderHandler, updateBarOrderStatusHandler, closeAllBarOrdersHandler,
 };
