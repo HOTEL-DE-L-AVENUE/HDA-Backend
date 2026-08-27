@@ -127,25 +127,14 @@ CREATE TABLE `alcool_order_items` (
   CONSTRAINT `fk_alcool_order_items_order` FOREIGN KEY (`order_id`) REFERENCES `alcool_orders` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-INSERT INTO `alcool_products` (`id`, `nom`, `ingredients`, `prix`, `categorie`, `alcool`, `type_produit`, `source_module`) VALUES
-(1, 'HDA Signature', 'Champagne, cognac VSOP, bitter orange, gold leaf', 48.00, 'Signature', 1, 'PRODUIT_FINI', 'ALCOOL'),
-(2, 'Negroni Prestige', 'Gin premium, Campari, Vermouth rouge, orange', 28.00, 'Classique', 1, 'PRODUIT_FINI', 'ALCOOL'),
-(3, 'Royal Mojito', 'Rhum blanc, citron vert, menthe fraîche, sucre, perrier', 22.00, 'Classique', 1, 'PRODUIT_FINI', 'ALCOOL'),
-(4, 'Whisky Sour Gold', 'Bourbon 18 ans, citron, blanc d\'œuf, Angostura', 35.00, 'Premium', 1, 'PRODUIT_FINI', 'ALCOOL'),
-(5, 'Coucher de Soleil', 'Tequila premium, jus d\'orange, grenadine, sel fumé', 24.00, 'Fruité', 1, 'PRODUIT_FINI', 'ALCOOL');
 
-INSERT INTO `alcool_stock` (`product_id`, `quantite`, `seuil_minimum`, `unite`) VALUES
-(1, 40, 8, 'bouteilles'),
-(2, 60, 10, 'bouteilles'),
-(3, 50, 12, 'bouteilles'),
-(4, 35, 8, 'bouteilles'),
-(5, 45, 10, 'bouteilles');
+-- Ajout des colonnes manquantes sur alcool_orders
+ALTER TABLE `alcool_orders`
+  ADD COLUMN `nombre_personnes` INT(11) NOT NULL DEFAULT 1 AFTER `table_id`,
+  ADD COLUMN `moyen_paiement` VARCHAR(30) NOT NULL DEFAULT 'ESPECES' AFTER `nombre_personnes`;
 
-INSERT INTO `alcool_cashiers` (`id`, `nom`, `statut`) VALUES
-(1, 'Caisse alcool 1', 'ACTIF'),
-(2, 'Caisse alcool 2', 'ACTIF');
-
-INSERT INTO `alcool_tables` (`id`, `numero`, `capacite`, `statut`) VALUES
-(1, 'A1', 2, 'LIBRE'),
-(2, 'A2', 4, 'LIBRE'),
-(3, 'A3', 6, 'OCCUPEE');
+-- Lien order_id sur alcool_transactions pour un restock fiable
+ALTER TABLE `alcool_transactions`
+  ADD COLUMN `order_id` BIGINT(20) UNSIGNED DEFAULT NULL AFTER `table_id`,
+  ADD KEY `idx_alcool_transactions_order_id` (`order_id`),
+  ADD CONSTRAINT `fk_alcool_transactions_order` FOREIGN KEY (`order_id`) REFERENCES `alcool_orders` (`id`) ON DELETE CASCADE;

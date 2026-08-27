@@ -36,6 +36,24 @@ const tablesCrud = createCrudController(alcoolTables, { filterable: ['statut'] }
 const cashiersCrud = createCrudController(alcoolCashiers, { filterable: ['statut'] });
 const sessionsCrud = createCrudController(alcoolSessions, { filterable: ['cashier_id', 'user_id'] });
 
+// Statuts valides pour une commande alcool (colonne alcool_orders.statut est un VARCHAR,
+// donc on valide nous-mêmes côté application pour éviter des valeurs corrompues).
+const VALID_ORDER_STATUTS = ['EN_ATTENTE', 'EN_PREPARATION', 'PRETE', 'SERVIE', 'ENCAISSEE'];
+
+// Moyens de paiement valides pour une commande alcool.
+const VALID_PAYMENT_METHODS = [
+  'ESPECES',
+  'CARTE',
+  'TPE',
+  'CREDIT',
+  'EURO',
+  'ORANGE_MONEY',
+  'MVOLA',
+  'DOLLAR',
+  'VIREMENT',
+  'CHEQUE',
+];
+
 async function findOrCreateClient(name, connection = pool) {
   const clientName = String(name || '').trim();
   if (!clientName) return null;
@@ -295,6 +313,8 @@ async function listBarOrdersHandler(req, res) {
     id: order.id,
     client: order.client_name,
     table: Number(order.table_id),
+    nombre_personnes: Number(order.nombre_personnes || 1),
+    moyen_paiement: order.moyen_paiement || 'ESPECES',
     statut: order.statut,
     total: Number(order.montant_total || 0),
     created_at: order.created_at,
@@ -309,10 +329,15 @@ async function listBarOrdersHandler(req, res) {
 }
 
 async function createBarOrderHandler(req, res) {
-  const { client, table, items } = req.body || {};
+  const { client, table, nombre_personnes, moyen_paiement, items } = req.body || {};
   if (!client || table === undefined || !Array.isArray(items) || items.length === 0) {
     throw ApiError.badRequest('client, table et items sont requis');
   }
+
+  const parsedGuestCount = Number(nombre_personnes);
+  const guestCount = Number.isInteger(parsedGuestCount) && parsedGuestCount > 0 ? parsedGuestCount : 1;
+
+  const paymentMethod = VALID_PAYMENT_METHODS.includes(moyen_paiement) ? moyen_paiement : 'ESPECES';
 
   return withTransaction(async (conn) => {
     const requestedQuantities = new Map();
@@ -341,8 +366,8 @@ async function createBarOrderHandler(req, res) {
 
     const total = (items || []).reduce((sum, item) => sum + Number(item.quantite || 1) * Number(item.prix || 0), 0);
     const [orderResult] = await conn.query(
-      'INSERT INTO alcool_orders (client_name, table_id, statut, montant_total, created_at) VALUES (?, ?, ?, ?, NOW())',
-      [client || null, table || null, 'EN_ATTENTE', total]
+      'INSERT INTO alcool_orders (client_name, table_id, nombre_personnes, moyen_paiement, statut, montant_total, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())',
+      [client || null, table || null, guestCount, paymentMethod, 'EN_ATTENTE', total]
     );
 
     const orderId = orderResult.insertId;
@@ -356,8 +381,8 @@ async function createBarOrderHandler(req, res) {
         [orderId, item.nom || null, Number(item.quantite || 1), Number(item.prix || 0)]
       );
       await conn.query(
-        'INSERT INTO alcool_transactions (session_id, client_id, table_id, product_id, quantite, prix_unitaire, statut, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())',
-        [null, null, table || null, Number(item.product_id ?? item.id), Number(item.quantite || 1), Number(item.prix_unitaire ?? item.prix ?? 0), 'EN_ATTENTE']
+        'INSERT INTO alcool_transactions (session_id, client_id, table_id, order_id, product_id, quantite, prix_unitaire, statut, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())',
+        [null, null, table || null, orderId, Number(item.product_id ?? item.id), Number(item.quantite || 1), Number(item.prix_unitaire ?? item.prix ?? 0), 'EN_ATTENTE']
       );
     }
 
@@ -365,6 +390,8 @@ async function createBarOrderHandler(req, res) {
       id: orderId,
       client,
       table: Number(table),
+      nombre_personnes: guestCount,
+      moyen_paiement: paymentMethod,
       statut: 'EN_ATTENTE',
       total,
       items: (items || []).map((item) => ({
@@ -373,29 +400,40 @@ async function createBarOrderHandler(req, res) {
         prix: Number(item.prix || 0),
       })),
     };
-  });
+  }).then((order) => created(res, order));
 }
 
 async function deleteBarOrderHandler(req, res) {
   return withTransaction(async (conn) => {
-    const [orders] = await conn.query('SELECT id, created_at FROM alcool_orders WHERE id = ? FOR UPDATE', [req.params.id]);
+    const [orders] = await conn.query('SELECT id FROM alcool_orders WHERE id = ? FOR UPDATE', [req.params.id]);
     if (!orders.length) throw ApiError.notFound(`Commande #${req.params.id} introuvable`);
 
-    const [transactions] = await conn.query('SELECT product_id, quantite FROM alcool_transactions WHERE table_id IS NOT NULL AND created_at >= ? LIMIT 100', [orders[0].created_at]);
+    // Restock uniquement des articles liés à CETTE commande (via order_id),
+    // et non plus basé sur une fenêtre temporelle approximative.
+    const [transactions] = await conn.query(
+      'SELECT product_id, quantite FROM alcool_transactions WHERE order_id = ?',
+      [req.params.id]
+    );
     for (const transaction of transactions || []) {
       await conn.query('UPDATE alcool_stock SET quantite = quantite + ? WHERE product_id = ?', [transaction.quantite, transaction.product_id]);
     }
-    await conn.query('DELETE FROM alcool_order_items WHERE order_id = ?', [req.params.id]);
-    await conn.query('DELETE FROM alcool_transactions WHERE table_id IS NOT NULL AND created_at >= ?', [orders[0].created_at]);
+
+    // alcool_order_items (FK ON DELETE CASCADE) et alcool_transactions.order_id
+    // (FK ON DELETE CASCADE) sont supprimés automatiquement avec la commande.
     await conn.query('DELETE FROM alcool_orders WHERE id = ?', [req.params.id]);
-    return ok(res, { message: 'Commande supprimée' });
-  });
+    return { message: 'Commande supprimée' };
+  }).then((result) => ok(res, result));
 }
 
 async function updateBarOrderStatusHandler(req, res) {
   const { statut } = req.body || {};
+  if (!VALID_ORDER_STATUTS.includes(statut)) {
+    throw ApiError.badRequest(`Statut invalide: ${statut}. Valeurs autorisées: ${VALID_ORDER_STATUTS.join(', ')}`);
+  }
+
   const [orders] = await pool.query('SELECT id, statut FROM alcool_orders WHERE id = ? LIMIT 1', [req.params.id]);
   if (!orders.length) throw ApiError.notFound(`Commande #${req.params.id} introuvable`);
+
   await pool.query('UPDATE alcool_orders SET statut = ? WHERE id = ?', [statut, req.params.id]);
   return ok(res, { id: Number(req.params.id), statut });
 }
