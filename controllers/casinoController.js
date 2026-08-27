@@ -2133,3 +2133,103 @@ exports.savePlayerSheetHandler = async (req, res, next) => {
     res.json({ id: row.id, date: row.date, table_name: row.table_name, ...savedData });
   } catch (err) { next(err); }
 };
+
+// =====================================================================
+// Vérifications d'identité (conformité AML/CTF : seuil 3 000 000 Ar)
+// =====================================================================
+
+exports.identityVerificationsCrud = {
+  async list(req, res, next) {
+    try {
+      const { player_sheet_id, fiche_id, date_from, date_to, limit = 100, offset = 0 } = req.query;
+      const clauses = [];
+      const params = [];
+      if (player_sheet_id) { clauses.push('player_sheet_id = ?'); params.push(Number(player_sheet_id)); }
+      if (fiche_id) { clauses.push('fiche_id = ?'); params.push(Number(fiche_id)); }
+      if (date_from) { clauses.push('DATE(created_at) >= ?'); params.push(date_from); }
+      if (date_to) { clauses.push('DATE(created_at) <= ?'); params.push(date_to); }
+      const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+      const [rows] = await pool.query(
+        `SELECT * FROM casino_identity_verifications ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+        [...params, Number(limit), Number(offset)]
+      );
+      res.json(rows);
+    } catch (err) { next(err); }
+  },
+
+  async getOne(req, res, next) {
+    try {
+      const [[row]] = await pool.query(`SELECT * FROM casino_identity_verifications WHERE id = ?`, [req.params.id]);
+      if (!row) throw ApiError.notFound('Vérification d\'identité introuvable');
+      res.json(row);
+    } catch (err) { next(err); }
+  },
+
+  async create(req, res, next) {
+    try {
+      const { player_sheet_id, fiche_id, full_name, id_type, id_number, issue_date, transaction_type, amount } = req.body;
+      // Support camelCase from frontend
+      const fullName = full_name || req.body.fullName;
+      const idType = id_type || req.body.idType;
+      const idNumber = id_number || req.body.idNumber;
+      const issueDate = issue_date || req.body.issueDate;
+      const transactionType = transaction_type || req.body.transactionType;
+      const ficheId = fiche_id || req.body.fiche_id;
+      if (!fullName || !idType || !idNumber || !issueDate || !transactionType || !amount) {
+        throw ApiError.badRequest('fullName, idType, idNumber, issueDate, transactionType et amount sont requis');
+      }
+      if (!Number.isFinite(Number(ficheId))) {
+        throw ApiError.badRequest('fiche_id est requis et doit être numérique');
+      }
+      console.log('[CASINO IDENTITY CREATE] Données reçues:', {
+        player_sheet_id, fiche_id: ficheId, full_name: fullName, id_type: idType,
+        id_number: idNumber, issue_date: issueDate, transaction_type: transactionType,
+        amount, req_user: req.user, id_admin: req.user?.id_admin
+      });
+      const [result] = await pool.query(
+        `INSERT INTO casino_identity_verifications
+           (player_sheet_id, fiche_id, full_name, id_type, id_number, issue_date, transaction_type, amount, verified_at, verified_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)`,
+        [player_sheet_id || null, Number(ficheId), fullName, idType, idNumber, issueDate, transactionType, Number(amount), req.user?.id_admin || null]
+      );
+      console.log('[CASINO IDENTITY CREATE] Insert réussi, insertId:', result.insertId);
+      const [[row]] = await pool.query(`SELECT * FROM casino_identity_verifications WHERE id = ?`, [result.insertId]);
+      console.log('[CASINO IDENTITY CREATE] Ligne sélectionnée:', row);
+      res.status(201).json(row);
+    } catch (err) {
+      console.error('[CASINO IDENTITY CREATE] Échec:', {
+        message: err.message,
+        code: err.code,
+        sqlMessage: err.sqlMessage,
+        status: err.status,
+      });
+      next(err);
+    }
+  },
+
+  async update(req, res, next) {
+    try {
+      const { id } = req.params;
+      const { full_name, id_type, id_number, issue_date, transaction_type, amount } = req.body;
+      const [[existing]] = await pool.query(`SELECT id FROM casino_identity_verifications WHERE id = ?`, [id]);
+      if (!existing) throw ApiError.notFound('Vérification d\'identité introuvable');
+      const [result] = await pool.query(
+        `UPDATE casino_identity_verifications
+            SET full_name = ?, id_type = ?, id_number = ?, issue_date = ?, transaction_type = ?, amount = ?
+          WHERE id = ?`,
+        [full_name, id_type, id_number, issue_date, transaction_type, Number(amount), id]
+      );
+      if (result.affectedRows === 0) throw ApiError.notFound('Vérification d\'identité introuvable');
+      const [[row]] = await pool.query(`SELECT * FROM casino_identity_verifications WHERE id = ?`, [id]);
+      res.json(row);
+    } catch (err) { next(err); }
+  },
+
+  async remove(req, res, next) {
+    try {
+      const [result] = await pool.query(`DELETE FROM casino_identity_verifications WHERE id = ?`, [req.params.id]);
+      if (result.affectedRows === 0) throw ApiError.notFound('Vérification d\'identité introuvable');
+      res.status(204).send();
+    } catch (err) { next(err); }
+  },
+};
