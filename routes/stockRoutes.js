@@ -10,6 +10,7 @@ const managementRoles = requireRole('admin', 'manager', 'stock_manager');
 
 router.delete('/stocks/:id', managementRoles, ctrl.stocksCrud.remove);  // DELETE /api/stock/stocks/:id
 router.use('/categories', managementRoles, createCrudRouter(ctrl.categoriesCrud));
+router.use('/subcategories', managementRoles, createCrudRouter(ctrl.subcategoriesCrud));
 router.use('/product-types', managementRoles, createCrudRouter(ctrl.productTypesCrud));
 router.use('/units', managementRoles, createCrudRouter(ctrl.unitsCrud));
 router.use('/products', managementRoles, createCrudRouter(ctrl.productsCrud));
@@ -22,6 +23,8 @@ router.use('/stocks', createCrudRouter(ctrl.stocksCrud));
 
 router.post('/movements', managementRoles, ctrl.movementHandler);                  // POST /api/stock/movements
 router.use('/movements', managementRoles, createCrudRouter(ctrl.stockMovementsCrud));
+
+router.post('/consume-portion', managementRoles, ctrl.consumePortionHandler);       // POST /api/stock/consume-portion
 
 router.use('/suppliers', managementRoles, createCrudRouter(ctrl.suppliersCrud));
 

@@ -283,24 +283,18 @@ async function ordersInProgressHandler(req, res) {
 // Recipe handlers removed
 
 async function restaurantStockHandler(req, res) {
-  const conditions = [];
-  const values = [];
-  if (req.query.location_id) {
-    conditions.push('s.location_id = ?');
-    values.push(req.query.location_id);
-  }
-  if (req.query.type_produit) {
-    conditions.push('p.type_produit = ?');
-    values.push(req.query.type_produit);
-  }
-
   const [rows] = await pool.query(
     `SELECT s.id, p.id AS product_id, sl.id AS location_id, COALESCE(s.quantite, 0) AS quantite,
             p.nom AS product_nom, p.unite, p.code, p.type_produit,
+            p.prix_achat, p.prix_vente, p.category_id, p.subcategory_id,
+            c.nom AS category_nom, sc.nom AS subcategory_nom,
+            p.portion_size, p.portion_unite,
             sl.nom AS location_nom
      FROM stocks s
      JOIN products p ON p.id = s.product_id
      JOIN stock_locations sl ON sl.id = s.location_id
+     LEFT JOIN categories c ON c.id = p.category_id
+     LEFT JOIN subcategories sc ON sc.id = p.subcategory_id
      WHERE p.actif = 1${req.query.location_id ? ' AND s.location_id = ?' : ''}${req.query.type_produit ? ' AND p.type_produit = ?' : ''}
      ORDER BY p.nom ASC`,
     [...(req.query.location_id ? [req.query.location_id] : []), ...(req.query.type_produit ? [req.query.type_produit] : [])]
@@ -370,9 +364,10 @@ async function removeRestaurantStockHandler(req, res) {
 
   return noContent(res);
 }
-async function listRestaurantPurchasesHandler(req, res) {
+
+async function getRestaurantPurchasesHandler(req, res) {
   const [rows] = await pool.query(
-    `SELECT pu.*, s.nom AS supplier_nom
+    `SELECT pu.id, pu.supplier_id, pu.montant_total, pu.statut, s.nom AS supplier_nom
      FROM purchases pu
      LEFT JOIN suppliers s ON s.id = pu.supplier_id
      ORDER BY pu.id DESC`
@@ -380,28 +375,36 @@ async function listRestaurantPurchasesHandler(req, res) {
   return ok(res, rows);
 }
 
-async function restaurantPurchaseDetailHandler(req, res) {
-  const [purchases] = await pool.query(
-    `SELECT pu.*, s.nom AS supplier_nom
-     FROM purchases pu LEFT JOIN suppliers s ON s.id = pu.supplier_id
+async function getRestaurantPurchaseByIdHandler(req, res) {
+  const { id } = req.params;
+  const [[purchase]] = await pool.query(
+    `SELECT pu.id, pu.supplier_id, pu.montant_total, pu.statut, s.nom AS supplier_nom
+     FROM purchases pu
+     LEFT JOIN suppliers s ON s.id = pu.supplier_id
      WHERE pu.id = ?`,
-    [req.params.id]
+    [id]
   );
-  if (!purchases.length) throw ApiError.notFound(`Achat #${req.params.id} introuvable`);
+
+  if (!purchase) {
+    throw ApiError.notFound(`Achat #${id} introuvable`);
+  }
 
   const [items] = await pool.query(
-    `SELECT pi.*, p.nom AS product_nom, p.unite
-     FROM purchase_items pi JOIN products p ON p.id = pi.product_id
-     WHERE pi.purchase_id = ? ORDER BY pi.id ASC`,
-    [req.params.id]
+    `SELECT pi.id, pi.purchase_id, pi.product_id, pi.quantite, pi.prix_unitaire,
+            p.nom AS product_nom, p.unite
+     FROM purchase_items pi
+     JOIN products p ON p.id = pi.product_id
+     WHERE pi.purchase_id = ?`,
+    [id]
   );
-  return ok(res, { ...purchases[0], items });
+
+  return ok(res, { ...purchase, items });
 }
 
 async function createRestaurantPurchaseHandler(req, res) {
   const { supplier_id, items } = req.body || {};
   if (!supplier_id || !Array.isArray(items) || !items.length) {
-    throw ApiError.badRequest('supplier_id et au moins une ligne d�achat sont requis');
+    throw ApiError.badRequest('supplier_id et au moins une ligne d’achat sont requis');
   }
   for (const item of items) {
     if (!item.product_id || !item.location_id || Number(item.quantite) <= 0 || Number(item.prix_unitaire) < 0) {
@@ -438,6 +441,15 @@ async function createRestaurantPurchaseHandler(req, res) {
         [item.product_id, item.location_id, quantity, purchaseId]
       );
     }
+
+    if (total > 0) {
+      await conn.query(
+        `INSERT INTO financial_transactions (module, type_flux, montant, reference_id, description, created_at)
+         VALUES ('RESTAURANT', 'SORTIE', ?, ?, ?, NOW())`,
+        [total, purchaseId, `Achat stock restaurant #${purchaseId}`]
+      );
+    }
+
     const [[createdPurchase]] = await conn.query(
       `SELECT pu.*, s.nom AS supplier_nom FROM purchases pu LEFT JOIN suppliers s ON s.id = pu.supplier_id WHERE pu.id = ?`,
       [purchaseId]
@@ -527,14 +539,38 @@ async function cashierStatusHandler(req, res) {
 async function processPaymentHandler(req, res) {
   await resto.ensureRestaurantSchema();
   console.debug('[restaurant] processPaymentHandler body:', JSON.stringify(req.body));
-  const { order_id, montant, moyen_paiement, client_id } = req.body;
-  if (!order_id || !montant || !moyen_paiement) {
-    throw ApiError.badRequest('order_id, montant et moyen_paiement sont requis');
+  let { order_id, montant, moyen_paiement, client_id } = req.body;
+  if (!order_id) {
+    throw ApiError.badRequest('order_id est requis');
+  }
+  const paymentMethod = moyen_paiement || 'ESPECES';
+
+  let finalMontant = Number(montant || 0);
+  let finalClientId = client_id || null;
+  let tableId = null;
+
+  const [[orderRow]] = await pool.query(
+    'SELECT id, client_id, table_id, montant_total FROM orders WHERE id = ? LIMIT 1',
+    [order_id]
+  );
+
+  if (orderRow) {
+    if (finalMontant <= 0) {
+      finalMontant = Number(orderRow.montant_total || 0);
+    }
+    if (!finalClientId) {
+      finalClientId = orderRow.client_id || null;
+    }
+    tableId = orderRow.table_id || null;
+  }
+
+  if (finalMontant <= 0) {
+    throw ApiError.badRequest(`Le montant de la commande #${order_id} est invalide (${finalMontant})`);
   }
   
   const [result] = await pool.query(
     'INSERT INTO payments (order_id, montant, moyen_paiement, client_id, date_paiement) VALUES (?, ?, ?, ?, NOW())',
-    [order_id, montant, moyen_paiement, client_id || null]
+    [order_id, finalMontant, paymentMethod, finalClientId]
   );
   
   await pool.query(
@@ -542,15 +578,19 @@ async function processPaymentHandler(req, res) {
     [order_id]
   );
 
+  if (tableId) {
+    await pool.query('UPDATE tables_restaurant SET statut = "LIBRE" WHERE id = ?', [tableId]);
+  }
+
   // Mirror the receipt in the consolidated Finance ledger.
   await pool.query(
     `INSERT INTO financial_transactions
        (client_id, module, type_flux, montant, reference_id, description, statut_sync, created_at)
      VALUES (?, 'RESTAURANT', 'ENTREE', ?, ?, ?, 'SYNCED', NOW())`,
-    [client_id || null, montant, order_id, `Paiement commande restaurant #${order_id}`]
+    [finalClientId, finalMontant, order_id, `Paiement commande restaurant #${order_id}`]
   );
 
-  return created(res, { payment_id: result.insertId });
+  return created(res, { payment_id: result.insertId, montant: finalMontant });
 }
 
 async function billToRoomHandler(req, res) {
@@ -597,12 +637,43 @@ async function statsHandler(req, res) {
     payments: paymentsStats
   });
 }
+
+async function consumeRestaurantPortionHandler(req, res, next) {
+  try {
+    const { product_id, location_id, portion_size, portion_unit, reference_id } = req.body;
+
+    if (!product_id || !location_id || portion_size === undefined) {
+      throw ApiError.badRequest('product_id, location_id et portion_size sont requis');
+    }
+
+    if (isNaN(portion_size) || Number(portion_size) <= 0) {
+      throw ApiError.badRequest('La portion doit être un nombre positif');
+    }
+
+    const result = await stock.consumePortion({
+      productId: product_id,
+      locationId: location_id,
+      portionSize: Number(portion_size),
+      portionUnit: portion_unit || 'g',
+      referenceId: reference_id || null,
+      sourceModule: 'RESTAURANT',
+    });
+
+    return created(res, result);
+  } catch (err) {
+    next(err);
+  }
+}
+const listRestaurantPurchasesHandler = getRestaurantPurchasesHandler;
+const restaurantPurchaseDetailHandler = getRestaurantPurchaseByIdHandler;
+
 module.exports = {
   tablesCrud, ordersCrud, orderItemsCrud, cashiersCrud, sessionsCrud,
   createOrderHandler, orderDetailHandler, orderInvoiceHandler, ordersInProgressHandler,
   orderInvoicePdfHandler,
   restaurantStockHandler, restaurantStockMovementsHandler,
-  adjustRestaurantStockHandler, removeRestaurantStockHandler,
+  adjustRestaurantStockHandler, removeRestaurantStockHandler, consumeRestaurantPortionHandler,
+  getRestaurantPurchasesHandler, getRestaurantPurchaseByIdHandler,
   listRestaurantPurchasesHandler, restaurantPurchaseDetailHandler, createRestaurantPurchaseHandler,
   menuHandler, updateOrderStatusHandler, openCashierHandler, closeCashierHandler,
   cashierStatusHandler, processPaymentHandler, billToRoomHandler, statsHandler,

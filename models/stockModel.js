@@ -6,6 +6,13 @@ const Categories = createCrudModel({
   table: 'categories', pk: 'id', fields: ['nom'], sortable: ['id', 'nom'],
 });
 
+const Subcategories = createCrudModel({
+  table: 'subcategories', pk: 'id',
+  fields: ['category_id', 'nom'],
+  sortable: ['id', 'nom', 'category_id'],
+  filterable: ['category_id'],
+});
+
 const ProductTypes = createCrudModel({
   table: 'product_types', pk: 'id',
   fields: ['nom', 'description', 'actif'],
@@ -18,8 +25,9 @@ const Units = createCrudModel({
 
 const Products = createCrudModel({
   table: 'products', pk: 'id',
-  fields: ['category_id', 'code', 'nom', 'unite', 'prix_achat', 'prix_vente', 'actif', 'type_produit'],
+  fields: ['category_id', 'subcategory_id', 'code', 'nom', 'unite', 'prix_achat', 'prix_vente', 'actif', 'type_produit', 'portion_size', 'portion_unite'],
   sortable: ['id', 'nom', 'code', 'prix_vente'],
+  filterable: ['category_id', 'subcategory_id', 'actif', 'type_produit'],
 });
 
 const StockLocations = createCrudModel({
@@ -36,7 +44,7 @@ const Stocks = createCrudModel({
 async function getProductsWithStock(locationId = null) {
   let sql = `
     SELECT s.*, p.nom as product_nom, p.unite as product_unite, p.code as product_code,
-           p.prix_achat as prix
+           p.prix_achat, p.prix_vente, p.prix_achat as prix, p.category_id, p.subcategory_id, p.type_produit
     FROM stocks s
     JOIN products p ON p.id = s.product_id
   `;
@@ -160,8 +168,53 @@ async function stockByProduct(productId) {
   return rows;
 }
 
+// Portion-based stock consumption: deduct a portion from total stock
+async function consumePortion({ productId, locationId, portionSize, portionUnit, referenceId = null, sourceModule = 'RESTAURANT' }) {
+  return withTransaction(async (conn) => {
+    // Get current stock
+    const [stockRows] = await conn.query(
+      'SELECT * FROM stocks WHERE product_id = ? AND location_id = ? FOR UPDATE',
+      [productId, locationId]
+    );
+
+    if (!stockRows[0]) {
+      throw new Error('Stock introuvable pour ce produit à cet emplacement');
+    }
+
+    const currentQuantity = Number(stockRows[0].quantite);
+    const portionToConsume = Number(portionSize);
+
+    if (portionToConsume > currentQuantity) {
+      throw new Error(`Stock insuffisant: ${currentQuantity} disponible, ${portionToConsume} demandé`);
+    }
+
+    // Update stock quantity
+    const newQuantity = currentQuantity - portionToConsume;
+    await conn.query(
+      'UPDATE stocks SET quantite = ? WHERE id = ?',
+      [newQuantity, stockRows[0].id]
+    );
+
+    // Record the movement
+    const [mv] = await conn.query(
+      `INSERT INTO stock_movements (product_id, location_id, type_mouvement, quantite, source_module, reference_id, created_at)
+       VALUES (?, ?, 'SORTIE', ?, ?, ?, NOW())`,
+      [productId, locationId, portionToConsume, sourceModule, referenceId]
+    );
+
+    const [movement] = await conn.query('SELECT * FROM stock_movements WHERE id = ?', [mv.insertId]);
+    return {
+      ...movement[0],
+      previous_quantity: currentQuantity,
+      new_quantity: newQuantity,
+      portion_consumed: portionToConsume,
+      portion_unit: portionUnit
+    };
+  });
+}
+
 module.exports = {
-  Categories, ProductTypes, Units, Products, StockLocations, Stocks, StockMovements,
+  Categories, Subcategories, ProductTypes, Units, Products, StockLocations, Stocks, StockMovements,
   Suppliers, Purchases, PurchaseItems,
-  recordMovement, createPurchaseWithItems, lowStock, stockByProduct, getProductsWithStock,
+  recordMovement, createPurchaseWithItems, lowStock, stockByProduct, getProductsWithStock, consumePortion,
 };
