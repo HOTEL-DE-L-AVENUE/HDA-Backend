@@ -7,7 +7,7 @@ const { requireAuth, requireRole } = require('../middlewares/auth');
 const router = express.Router();
 const managementRoles = requireRole('admin', 'manager', 'stock_manager');
 const adminOnly = requireRole('admin');
-const cashierRoles = requireRole('admin', 'manager', 'caisse', 'caissier', 'water');
+const cashierRoles = requireRole('admin', 'caisse', 'caissier');
 const orderStatusRoles = (req, res, next) => {
 	const middleware = req.body?.statut === 'ENCAISSEE'
 		? requireRole('admin', 'caisse', 'caissier')
@@ -48,6 +48,7 @@ router.use('/sessions', managementRoles, createCrudRouter(ctrl.sessionsCrud));
 // Commandes bar
 router.get('/orders', ctrl.listBarOrdersHandler);
 router.post('/orders', cashierRoles, ctrl.createBarOrderHandler);
+router.put('/orders/:id', cashierRoles, ctrl.updateBarOrderHandler);
 router.put('/orders/:id/status', orderStatusRoles, ctrl.updateBarOrderStatusHandler);
 router.delete('/orders/:id', adminOnly, ctrl.deleteBarOrderHandler);
 

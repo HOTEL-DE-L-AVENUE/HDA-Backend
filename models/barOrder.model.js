@@ -175,6 +175,145 @@ async function createBarOrder({ clientName, tableId, nombrePersonnes = 1, moyenP
   });
 }
 
+async function updateBarOrder(id, { clientName, tableId, nombrePersonnes = 1, moyenPaiement = 'ESPECES', items }) {
+  await ensureBarOrderTables();
+  await ensureBarTransactionsSchema();
+
+  return withTransaction(async (conn) => {
+    const [orders] = await conn.query('SELECT * FROM bar_orders WHERE id = ? FOR UPDATE', [id]);
+    if (!orders.length) return null;
+
+    const [existingOrderItems] = await conn.query(
+      'SELECT nom, quantite, prix FROM bar_order_items WHERE order_id = ?',
+      [id]
+    );
+
+    const normalizedItems = (items || [])
+      .map((item) => ({
+        product_id: Number(item.product_id ?? item.id),
+        nom: item.nom,
+        quantite: Number(item.quantite || 1),
+        prix: Number(item.prix_unitaire ?? item.prix ?? 0),
+      }))
+      .filter((item) => item.nom && item.quantite > 0);
+
+    if (!normalizedItems.length) {
+      throw ApiError.badRequest('Au moins un article est requis pour modifier la commande.');
+    }
+
+    const existingByName = new Map();
+    for (const row of existingOrderItems || []) {
+      const key = String(row.nom || '').trim().toLowerCase();
+      existingByName.set(key, Number(row.quantite || 0));
+    }
+
+    const additions = normalizedItems
+      .map((item) => {
+        const key = String(item.nom || '').trim().toLowerCase();
+        const alreadyAdded = existingByName.get(key) || 0;
+        const increment = Math.max(0, item.quantite - alreadyAdded);
+        return increment > 0 ? { ...item, quantite: increment } : null;
+      })
+      .filter(Boolean);
+
+    if (!additions.length) {
+      const currentOrder = orders[0];
+      return {
+        id: Number(id),
+        client: clientName !== undefined ? (clientName || currentOrder.client_name) : currentOrder.client_name,
+        table: Number(tableId !== undefined ? (tableId || currentOrder.table_id) : currentOrder.table_id || 0),
+        nombre_personnes: Number(nombrePersonnes || currentOrder.nombre_personnes || 1),
+        moyen_paiement: (moyenPaiement || currentOrder.moyen_paiement || 'ESPECES'),
+        statut: currentOrder.statut,
+        total: Number(currentOrder.montant_total || 0),
+        created_at: currentOrder.created_at,
+        items: normalizedItems.map((item) => ({ nom: item.nom, quantite: item.quantite, prix: item.prix })),
+      };
+    }
+
+    const requestedQuantities = new Map();
+    for (const item of additions) {
+      if (item.product_id > 0) {
+        requestedQuantities.set(item.product_id, (requestedQuantities.get(item.product_id) || 0) + item.quantite);
+      }
+    }
+
+    for (const [productId, quantity] of requestedQuantities) {
+      const [stocks] = await conn.query(
+        `SELECT bs.quantite, bp.nom
+         FROM bar_stock bs
+         JOIN bar_products bp ON bp.id = bs.product_id
+         WHERE bs.product_id = ? FOR UPDATE`,
+        [productId]
+      );
+      if (!stocks.length) throw ApiError.badRequest(`Stock introuvable pour le produit #${productId}.`);
+      if (Number(stocks[0].quantite) < quantity) {
+        throw ApiError.badRequest(`Stock insuffisant pour ${stocks[0].nom}. Disponible : ${stocks[0].quantite}.`);
+      }
+    }
+
+    const totalNewItems = additions.reduce((sum, item) => sum + item.quantite * item.prix, 0);
+    const currentOrder = orders[0];
+    const nextTotal = Number(currentOrder.montant_total || 0) + totalNewItems;
+
+    const clientValue = clientName !== undefined ? (clientName || null) : currentOrder.client_name;
+    const tableValue = tableId !== undefined ? (tableId || null) : currentOrder.table_id;
+    const guestValue = Number(nombrePersonnes || currentOrder.nombre_personnes || 1);
+    const paymentValue = moyenPaiement || currentOrder.moyen_paiement || 'ESPECES';
+
+    await conn.query(
+      'UPDATE bar_orders SET client_name = ?, table_id = ?, nombre_personnes = ?, moyen_paiement = ?, montant_total = ? WHERE id = ?',
+      [clientValue, tableValue, guestValue, paymentValue, nextTotal, id]
+    );
+
+    for (const item of additions) {
+      await conn.query(
+        'INSERT INTO bar_order_items (order_id, nom, quantite, prix, created_at) VALUES (?, ?, ?, ?, NOW())',
+        [id, item.nom || null, item.quantite, item.prix]
+      );
+    }
+
+    for (const [productId, quantity] of requestedQuantities) {
+      await conn.query(
+        'UPDATE bar_stock SET quantite = quantite - ? WHERE product_id = ?',
+        [quantity, productId]
+      );
+    }
+
+    const clientId = await findOrCreateClient(clientValue, conn);
+    const transactionItems = additions.map((item) => ({
+      product_id: item.product_id,
+      quantite: item.quantite,
+      prix_unitaire: item.prix,
+    })).filter((item) => item.product_id > 0);
+
+    await createOrder({
+      client_id: clientId,
+      table_id: tableValue || null,
+      order_id: id,
+      items: transactionItems,
+      session_id: null,
+      connection: conn,
+    });
+
+    return {
+      id: Number(id),
+      client: clientValue,
+      table: Number(tableValue || 0),
+      nombre_personnes: Number(guestValue),
+      moyen_paiement: paymentValue,
+      statut: currentOrder.statut,
+      total: Number(nextTotal),
+      created_at: currentOrder.created_at,
+      items: normalizedItems.map((item) => ({
+        nom: item.nom,
+        quantite: item.quantite,
+        prix: item.prix,
+      })),
+    };
+  });
+}
+
 async function deleteBarOrder(id) {
   await ensureBarOrderTables();
   await ensureBarTransactionsSchema();
@@ -204,7 +343,7 @@ async function deleteBarOrder(id) {
   });
 }
 
-async function updateBarOrderStatus(id, statut) {
+async function updateBarOrderStatus(id, statut, moyenPaiement) {
   await ensureBarOrderTables();
   const allowedTransitions = {
     EN_ATTENTE: 'EN_PREPARATION',
@@ -215,7 +354,7 @@ async function updateBarOrderStatus(id, statut) {
 
   return withTransaction(async (conn) => {
     const [orders] = await conn.query(
-      'SELECT id, statut FROM bar_orders WHERE id = ? FOR UPDATE',
+      'SELECT id, statut, moyen_paiement FROM bar_orders WHERE id = ? FOR UPDATE',
       [id]
     );
     if (!orders.length) return null;
@@ -225,8 +364,18 @@ async function updateBarOrderStatus(id, statut) {
       throw ApiError.badRequest('Transition de statut de commande invalide.');
     }
 
-    await conn.query('UPDATE bar_orders SET statut = ? WHERE id = ?', [statut, id]);
     if (statut === 'ENCAISSEE') {
+      const paymentValue = moyenPaiement || orders[0].moyen_paiement || 'ESPECES';
+      await conn.query('UPDATE bar_orders SET statut = ?, moyen_paiement = ? WHERE id = ?', [statut, paymentValue, id]);
+    } else {
+      await conn.query('UPDATE bar_orders SET statut = ? WHERE id = ?', [statut, id]);
+    }
+    if (statut === 'ENCAISSEE') {
+      await conn.query(
+        "UPDATE bar_transactions SET statut = 'PAYEE' WHERE order_id = ?",
+        [id]
+      );
+
       const [[order]] = await conn.query(
         'SELECT montant_total, client_name FROM bar_orders WHERE id = ?',
         [id]
@@ -251,6 +400,7 @@ async function updateBarOrderStatus(id, statut) {
 module.exports = {
   listBarOrders,
   createBarOrder,
+  updateBarOrder,
   deleteBarOrder,
   updateBarOrderStatus,
 };
