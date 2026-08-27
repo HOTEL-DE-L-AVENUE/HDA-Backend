@@ -118,6 +118,7 @@ router.get('/tables-jeu/:id/caves', ctrl.listCavesHandler);                  // 
 router.get('/tables-jeu/:id/feuille', ctrl.feuilleTableHandler);             // GET  /api/casino/tables-jeu/:id/feuille?date=  (feuille de table consolidée)
 router.get('/player-sheets', requireRole('admin'), ctrl.getPlayerSheetHandler); // GET /api/casino/player-sheets?date=&table_name=
 router.put('/player-sheets', requireRole('admin'), ctrl.savePlayerSheetHandler); // PUT /api/casino/player-sheets
+router.use('/identity-verifications', createCrudRouter(ctrl.identityVerificationsCrud)); // /api/casino/identity-verifications
 router.get('/tables-jeu', ctrl.listTablesHandler);                            // GET  /api/casino/tables-jeu?room_id=   (remplace la liste générique : ajoute `a_historique`)
 router.post('/tables-jeu/:id/archiver', ctrl.archiverTableHandler);           // POST /api/casino/tables-jeu/:id/archiver
 router.post('/tables-jeu/:id/desarchiver', ctrl.desarchiverTableHandler);     // POST /api/casino/tables-jeu/:id/desarchiver
