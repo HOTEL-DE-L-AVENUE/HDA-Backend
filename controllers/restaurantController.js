@@ -664,13 +664,23 @@ async function consumeRestaurantPortionHandler(req, res, next) {
     next(err);
   }
 }
+
+async function closeAllRestaurantOrdersHandler(req, res) {
+  const { order_ids } = req.body || {};
+  if (order_ids !== undefined && !Array.isArray(order_ids)) {
+    throw ApiError.badRequest('order_ids doit être un tableau');
+  }
+  const result = await resto.closeAllRestaurantOrders(order_ids || []);
+  return ok(res, result);
+}
+
 const listRestaurantPurchasesHandler = getRestaurantPurchasesHandler;
 const restaurantPurchaseDetailHandler = getRestaurantPurchaseByIdHandler;
 
 module.exports = {
   tablesCrud, ordersCrud, orderItemsCrud, cashiersCrud, sessionsCrud,
   createOrderHandler, orderDetailHandler, orderInvoiceHandler, ordersInProgressHandler,
-  orderInvoicePdfHandler,
+  orderInvoicePdfHandler, closeAllRestaurantOrdersHandler,
   restaurantStockHandler, restaurantStockMovementsHandler,
   adjustRestaurantStockHandler, removeRestaurantStockHandler, consumeRestaurantPortionHandler,
   getRestaurantPurchasesHandler, getRestaurantPurchaseByIdHandler,

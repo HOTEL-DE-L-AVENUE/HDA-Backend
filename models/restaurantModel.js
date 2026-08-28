@@ -15,12 +15,27 @@ async function ensureRestaurantSchema() {
         await pool.query('ALTER TABLE orders ADD COLUMN table_id BIGINT UNSIGNED NULL AFTER client_id');
       }
 
+      if (!orderColumns.some((column) => column.Field === 'cloturee')) {
+        await pool.query('ALTER TABLE orders ADD COLUMN cloturee TINYINT(1) NOT NULL DEFAULT 0 AFTER statut');
+      }
+      if (!orderColumns.some((column) => column.Field === 'cloture_at')) {
+        await pool.query('ALTER TABLE orders ADD COLUMN cloture_at DATETIME NULL AFTER cloturee');
+      }
+
       const [paymentColumns] = await pool.query('SHOW COLUMNS FROM payments');
       if (!paymentColumns.some((column) => column.Field === 'order_id')) {
         await pool.query('ALTER TABLE payments ADD COLUMN order_id BIGINT UNSIGNED NULL AFTER id');
       }
       if (!paymentColumns.some((column) => column.Field === 'date_paiement')) {
         await pool.query('ALTER TABLE payments ADD COLUMN date_paiement DATETIME NULL AFTER moyen_paiement');
+      }
+
+      const [ftColumns] = await pool.query('SHOW COLUMNS FROM financial_transactions');
+      if (!ftColumns.some((column) => column.Field === 'cloturee')) {
+        await pool.query('ALTER TABLE financial_transactions ADD COLUMN cloturee TINYINT(1) NOT NULL DEFAULT 0 AFTER statut_sync');
+      }
+      if (!ftColumns.some((column) => column.Field === 'cloture_at')) {
+        await pool.query('ALTER TABLE financial_transactions ADD COLUMN cloture_at DATETIME NULL AFTER cloturee');
       }
     })().catch((error) => {
       restaurantSchemaReady = undefined;
@@ -113,7 +128,21 @@ async function orderWithItems(orderId) {
 }
 
 Orders.findAll = async function(options) {
-  const rows = await ordersFindAll.call(this, options);
+  await ensureRestaurantSchema();
+  const opts = options ? { ...options } : {};
+  if (!opts.include_closed) {
+    if (!opts.whereSql) {
+      opts.whereSql = 'WHERE (cloturee = 0 OR cloturee IS NULL)';
+    } else if (!opts.whereSql.includes('cloturee')) {
+      const trimmed = opts.whereSql.trim();
+      if (trimmed.toUpperCase().startsWith('WHERE')) {
+        opts.whereSql = trimmed.replace(/^WHERE/i, 'WHERE (cloturee = 0 OR cloturee IS NULL) AND (') + ')';
+      } else {
+        opts.whereSql = '(cloturee = 0 OR cloturee IS NULL) AND (' + trimmed + ')';
+      }
+    }
+  }
+  const rows = await ordersFindAll.call(this, opts);
   return Promise.all(rows.map((row) => orderWithItems(row.id)));
 };
 
@@ -153,9 +182,35 @@ Orders.remove = async function(id) {
   });
 };
 
+async function closeAllRestaurantOrders(orderIds = []) {
+  await ensureRestaurantSchema();
+  return withTransaction(async (conn) => {
+    const ids = [...new Set(orderIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))];
+    let affectedRows = 0;
+    if (ids.length > 0) {
+      const [res] = await conn.query(
+        'UPDATE orders SET cloturee = 1, cloture_at = NOW() WHERE id IN (?) AND (cloturee = 0 OR cloturee IS NULL)',
+        [ids]
+      );
+      affectedRows = res.affectedRows;
+    } else {
+      const [res] = await conn.query(
+        "UPDATE orders SET cloturee = 1, cloture_at = NOW() WHERE (source_module = 'RESTAURANT' OR source_module IS NULL) AND (cloturee = 0 OR cloturee IS NULL)"
+      );
+      affectedRows = res.affectedRows;
+    }
+
+    await conn.query(
+      "UPDATE financial_transactions SET cloturee = 1, cloture_at = NOW() WHERE UPPER(COALESCE(module, '')) = 'RESTAURANT' AND (cloturee = 0 OR cloturee IS NULL)"
+    );
+
+    return { closed_orders: affectedRows, hidden_from_daily_caisse: true };
+  });
+}
+
 async function ordersByTable(statutFilter = 'EN_COURS') {
   const [rows] = await pool.query(
-    `SELECT * FROM orders WHERE source_module = 'RESTAURANT' AND statut = ? ORDER BY created_at DESC`,
+    `SELECT * FROM orders WHERE source_module = 'RESTAURANT' AND statut = ? AND (cloturee = 0 OR cloturee IS NULL) ORDER BY created_at DESC`,
     [statutFilter]
   );
   return rows;
@@ -167,4 +222,5 @@ module.exports = {
   TablesRestaurant, Orders, OrderItems,
   RestaurantCashiers, RestaurantSessions,
   createOrderWithItems, orderWithItems, ordersByTable, ensureRestaurantSchema,
+  closeAllRestaurantOrders,
 };
