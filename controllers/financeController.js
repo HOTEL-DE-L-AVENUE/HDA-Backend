@@ -4,10 +4,35 @@ const { createCrudController } = require('./controllerFactory');
 const ApiError = require('../utils/ApiError');
 const { ok, created } = require('../utils/apiResponse');
 
+const { getPagination, getSort, buildWhere } = require('../utils/queryHelpers');
+
 const invoicesCrud = createCrudController(finance.Invoices, { filterable: ['client_id', 'statut'] });
 const invoiceItemsCrud = createCrudController(finance.InvoiceItems, { filterable: ['invoice_id'] });
 const paymentsCrud = createCrudController(finance.Payments, { filterable: ['client_id', 'invoice_id'] });
 const financialTransactionsCrud = createCrudController(finance.FinancialTransactions, { filterable: ['client_id', 'module', 'type_flux'] });
+
+async function listFinancialTransactionsHandler(req, res) {
+  const { page, limit, offset } = getPagination(req.query);
+  const orderBy = getSort(req.query, finance.FinancialTransactions.sortableCols, finance.FinancialTransactions.pk);
+  const { sql: whereSql, values: whereValues } = buildWhere(req.query, ['client_id', 'module', 'type_flux']);
+
+  const includeClosed = req.query.include_closed === 'true' || req.query.include_closed === '1';
+  let finalWhereSql = whereSql;
+  if (!includeClosed) {
+    if (finalWhereSql) {
+      finalWhereSql += ' AND (cloturee = 0 OR cloturee IS NULL)';
+    } else {
+      finalWhereSql = 'WHERE (cloturee = 0 OR cloturee IS NULL)';
+    }
+  }
+
+  const [rows, total] = await Promise.all([
+    finance.FinancialTransactions.findAll({ whereSql: finalWhereSql, whereValues, orderBy, limit, offset }),
+    finance.FinancialTransactions.count({ whereSql: finalWhereSql, whereValues }),
+  ]);
+
+  return ok(res, rows, { page, limit, total, totalPages: Math.ceil(total / limit) });
+}
 
 async function createInvoiceHandler(req, res) {
   const { client_id, items } = req.body;
@@ -66,5 +91,5 @@ async function createFinancialTransactionHandler(req, res) {
 module.exports = {
   invoicesCrud, invoiceItemsCrud, paymentsCrud, financialTransactionsCrud,
   createInvoiceHandler, invoiceDetailHandler, recordPaymentHandler, clientStatementHandler,
-  financialSummaryHandler, createFinancialTransactionHandler,
+  financialSummaryHandler, createFinancialTransactionHandler, listFinancialTransactionsHandler,
 };

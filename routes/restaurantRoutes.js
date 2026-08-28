@@ -34,6 +34,7 @@ router.get('/menu', ctrl.menuHandler);
 
 // Orders - specific routes BEFORE CRUD
 router.post('/orders', ctrl.createOrderHandler);
+router.post('/orders/close-all', ctrl.closeAllRestaurantOrdersHandler);
 router.get('/orders/in-progress', ctrl.ordersInProgressHandler);
 router.get('/orders/:id/invoice', ctrl.orderInvoiceHandler);
 router.get('/orders/:id/invoice.pdf', ctrl.orderInvoicePdfHandler);
