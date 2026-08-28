@@ -5,6 +5,7 @@ const SeedStockLocation = require('./seedStockLocation');
 const SeedUnit = require('./seedUnit');
 const SeedProductType = require('./seedProductType');
 const SeedProducts = require('./seedProducts');
+const SeedBarProducts = require('./SeedBarProducts'); // <-- AJOUTÉ
 
 /**
  * Script principal pour exécuter tous les seeders
@@ -33,9 +34,13 @@ async function runAllSeeders() {
     const seedProductType = new SeedProductType();
     await seedProductType.run();
 
-    // 6. Seeder des produits
+    // 6. Seeder des produits génériques
     const seedProducts = new SeedProducts();
     await seedProducts.run();
+
+    // 7. Seeder des produits spécifiques au Bar (BOISSONS) <-- AJOUTÉ
+    const seedBarProducts = new SeedBarProducts();
+    await seedBarProducts.run();
 
     console.log('\n🎉 Tous les seeders ont été exécutés avec succès !');
     
@@ -50,4 +55,4 @@ if (require.main === module) {
   runAllSeeders();
 }
 
-module.exports = { runAllSeeders };
+module.exports = { runAllSeeders }; 
