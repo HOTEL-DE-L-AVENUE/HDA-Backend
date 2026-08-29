@@ -153,7 +153,7 @@ async function listBarOrdersHandler(req, res) {
 }
 
 async function createBarOrderHandler(req, res) {
-  const { client, table, nombre_personnes, moyen_paiement, items } = req.body || {};
+  const { client, table, nombre_personnes, moyen_paiement, observation, items } = req.body || {};
   if (table === undefined || !Array.isArray(items) || items.length === 0) {
     throw ApiError.badRequest('table et items sont requis');
   }
@@ -166,12 +166,12 @@ async function createBarOrderHandler(req, res) {
   if (moyen_paiement && !allowedPayments.includes(moyen_paiement)) {
     throw ApiError.badRequest('Mode de paiement invalide');
   }
-  const order = await createBarOrder({ clientName: client || 'Client anonyme', tableId: table, nombrePersonnes: guestCount, moyenPaiement: moyen_paiement, items });
+  const order = await createBarOrder({ clientName: client || 'Client anonyme', tableId: table, nombrePersonnes: guestCount, moyenPaiement: moyen_paiement, observation: typeof observation === 'string' ? observation.trim() : '', items });
   return created(res, order);
 }
 
 async function updateBarOrderHandler(req, res) {
-  const { client, table, nombre_personnes, moyen_paiement, items } = req.body || {};
+  const { client, table, nombre_personnes, moyen_paiement, observation, items } = req.body || {};
   if (table === undefined || !Array.isArray(items) || items.length === 0) {
     throw ApiError.badRequest('table et items sont requis pour modifier la commande');
   }
@@ -186,6 +186,7 @@ async function updateBarOrderHandler(req, res) {
     tableId: table,
     nombrePersonnes: guestCount,
     moyenPaiement: moyen_paiement,
+    observation: typeof observation === 'string' ? observation.trim() : '',
     items,
   });
 
