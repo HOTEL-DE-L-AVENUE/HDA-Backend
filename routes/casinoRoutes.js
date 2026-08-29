@@ -105,6 +105,12 @@ router.post('/visits/check-in', ctrl.checkInHandler);                       // P
 router.post('/visits/:id/check-out', ctrl.checkOutHandler);                 // POST /api/casino/visits/:id/check-out
 router.get('/visits/in-room/:roomId', ctrl.currentlyInRoomHandler);         // GET  /api/casino/visits/in-room/:roomId
 router.use('/visits', createCrudRouter(ctrl.visitsCrud));                   // /api/casino/visits
+router.get('/players', ctrl.playersCrud.list);                              // consultation du registre durable
+router.get('/players/:id', ctrl.playersCrud.getOne);
+router.post('/players', requireRole('admin', 'croupier'), ctrl.playersCrud.create); // création par l'admin ou le croupier
+router.put('/players/:id', requireRole('admin'), ctrl.playersCrud.update);   // modification réservée à l'admin
+router.delete('/players/:id', requireRole('admin'), ctrl.playersCrud.remove); // suppression réservée à l'admin
+router.post('/players/:id/play', requireRole('admin', 'croupier'), ctrl.playCasinoPlayerHandler); // ajout à une partie par l'admin ou le croupier
 
 // =====================================================================
 // Tables de jeu & Caves/Recaves (une salle -> plusieurs tables ; chaque
@@ -116,8 +122,9 @@ router.post('/tables-jeu/:id/fermer', ctrl.fermerTableHandler);              // 
 router.post('/tables-jeu/:id/caves', ctrl.addCaveHandler);                   // POST /api/casino/tables-jeu/:id/caves      { session_id, client_id?|client_libre?, numero_adherent?, montant, statut_paiement, moyen_paiement? }
 router.get('/tables-jeu/:id/caves', ctrl.listCavesHandler);                  // GET  /api/casino/tables-jeu/:id/caves?date=
 router.get('/tables-jeu/:id/feuille', ctrl.feuilleTableHandler);             // GET  /api/casino/tables-jeu/:id/feuille?date=  (feuille de table consolidée)
-router.get('/player-sheets', requireRole('admin'), ctrl.getPlayerSheetHandler); // GET /api/casino/player-sheets?date=&table_name=
-router.put('/player-sheets', requireRole('admin'), ctrl.savePlayerSheetHandler); // PUT /api/casino/player-sheets
+router.get('/player-sheets', requireRole('admin', 'manager', 'caissier', 'caisse', 'croupier'), ctrl.getPlayerSheetHandler); // GET /api/casino/player-sheets?date=&table_name=
+router.put('/player-sheets', requireRole('admin', 'manager', 'caissier', 'caisse', 'croupier'), ctrl.savePlayerSheetHandler); // PUT /api/casino/player-sheets
+router.post('/player-sheets/finish', requireRole('admin', 'croupier'), ctrl.finishPlayerSheetHandler); // clôture sans suppression
 router.use('/identity-verifications', createCrudRouter(ctrl.identityVerificationsCrud)); // /api/casino/identity-verifications
 router.get('/tables-jeu', ctrl.listTablesHandler);                            // GET  /api/casino/tables-jeu?room_id=   (remplace la liste générique : ajoute `a_historique`)
 router.post('/tables-jeu/:id/archiver', ctrl.archiverTableHandler);           // POST /api/casino/tables-jeu/:id/archiver
