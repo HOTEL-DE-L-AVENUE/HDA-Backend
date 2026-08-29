@@ -382,6 +382,37 @@ exports.visitsCrud = buildCrud('casino_visits', {
   orderBy: 'entree_at DESC',
 });
 
+exports.playersCrud = buildCrud('casino_players', {
+  allowedFields: ['nom', 'prenom', 'telephone', 'email', 'date_inscription', 'depot', 'credit', 'mode_jeu', 'statut_jeu', 'statut'],
+  orderBy: 'date_inscription DESC, nom ASC, prenom ASC',
+});
+
+exports.playCasinoPlayerHandler = async (req, res, next) => {
+  try {
+    const playerId = Number(req.params.id);
+    const { game_date: gameDate, table_name: tableName, depot = 0, credit = 0 } = req.body;
+    if (!Number.isInteger(playerId) || !gameDate || !tableName) throw ApiError.badRequest('Joueur, date et table obligatoires');
+    const [[player]] = await pool.query(`SELECT id, nom, prenom, email FROM casino_players WHERE id = ? AND statut = 'ACTIF'`, [playerId]);
+    if (!player) throw ApiError.notFound('Joueur Casino introuvable ou inactif');
+    const depositAmount = asMoney(depot);
+    const creditAmount = asMoney(credit);
+    await pool.query(
+      `INSERT INTO casino_player_games (casino_player_id, game_date, table_name, depot, credit, created_by)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE depot = VALUES(depot), credit = VALUES(credit), statut = 'EN_JEU', updated_at = CURRENT_TIMESTAMP`,
+      [playerId, gameDate, tableName, depositAmount, creditAmount, req.user.id_admin || null]
+    );
+    await pool.query(`UPDATE casino_players SET statut_jeu = 'EN_JEU' WHERE id = ?`, [playerId]);
+    const [[game]] = await pool.query(
+      `SELECT g.*, p.nom, p.prenom, p.email FROM casino_player_games g
+       JOIN casino_players p ON p.id = g.casino_player_id
+       WHERE g.casino_player_id = ? AND g.game_date = ? AND g.table_name = ?`,
+      [playerId, gameDate, tableName]
+    );
+    res.status(201).json(game);
+  } catch (err) { next(err); }
+};
+
 // =====================================================================
 // Tableau de bord & consolidation
 // =====================================================================
@@ -2091,9 +2122,21 @@ exports.getPlayerSheetHandler = async (req, res, next) => {
 // PUT /player-sheets — remplace la fiche complète de la date et de la table.
 exports.savePlayerSheetHandler = async (req, res, next) => {
   try {
-    const { date, table_name: tableName, players, chips = [], restaurantPayments, finals, endGameTime = '' } = req.body;
+    const { date, table_name: tableName, players, chips = [], restaurantPayments, finals, endGameTime = '', isFinished = false, finishedAt = '' } = req.body;
     if (!date || !tableName || !Array.isArray(players)) {
       throw ApiError.badRequest('La date, la table et les joueurs sont obligatoires');
+    }
+    if (req.user.role === 'croupier') {
+      const [[existingSheet]] = await pool.query(
+        `SELECT sheet_data FROM casino_player_sheets WHERE sheet_date = ? AND table_name = ? LIMIT 1`,
+        [date, tableName]
+      );
+      if (existingSheet) {
+        const previousData = typeof existingSheet.sheet_data === 'string' ? JSON.parse(existingSheet.sheet_data) : existingSheet.sheet_data;
+        const incomingLineIds = new Set(players.map((player) => String(player.id)));
+        const removedLine = (previousData.players || []).find((player) => !incomingLineIds.has(String(player.id)));
+        if (removedLine) throw ApiError.forbidden('Un croupier ne peut pas supprimer une ligne de joueur');
+      }
     }
     const cashingBySheet = new Map();
     players.forEach((player) => {
@@ -2111,6 +2154,8 @@ exports.savePlayerSheetHandler = async (req, res, next) => {
       restaurantPayments: restaurantPayments || { especes: false, tpe: false },
       finals: finals || {},
       endGameTime,
+      isFinished: Boolean(isFinished),
+      finishedAt,
       total_cashing_jetons: totalCashingJetons,
       total_jetons_depart: totalJetonsDepart,
       total_jetons_fermeture: totalJetonsFermeture,
@@ -2130,8 +2175,63 @@ exports.savePlayerSheetHandler = async (req, res, next) => {
         WHERE sheet_date = ? AND table_name = ? LIMIT 1`,
       [date, tableName]
     );
+    const casinoPlayerIds = [...new Set(players.map((player) => Number(player.casinoPlayerId)).filter(Number.isInteger))];
+    if (casinoPlayerIds.length) {
+      await pool.query(
+        `UPDATE casino_player_games SET player_sheet_id = ?
+          WHERE game_date = ? AND table_name = ? AND casino_player_id IN (?)`,
+        [row.id, date, tableName, casinoPlayerIds]
+      );
+    }
     const savedData = typeof row.sheet_data === 'string' ? JSON.parse(row.sheet_data) : row.sheet_data;
     res.json({ id: row.id, date: row.date, table_name: row.table_name, ...savedData });
+  } catch (err) { next(err); }
+};
+
+// POST /player-sheets/finish — clôture une partie sans supprimer sa fiche.
+exports.finishPlayerSheetHandler = async (req, res, next) => {
+  try {
+    const { date, table_name: tableName } = req.body;
+    if (!date || !tableName) throw ApiError.badRequest('La date et la table sont obligatoires');
+
+    const result = await withTransaction(async (conn) => {
+      const [[sheet]] = await conn.query(
+        `SELECT id, sheet_data FROM casino_player_sheets WHERE sheet_date = ? AND table_name = ? FOR UPDATE`,
+        [date, tableName]
+      );
+      if (!sheet) throw ApiError.notFound('Fiche joueur introuvable');
+
+      const finishedAt = new Date().toISOString();
+      const sheetData = typeof sheet.sheet_data === 'string' ? JSON.parse(sheet.sheet_data) : sheet.sheet_data;
+      sheetData.isFinished = true;
+      sheetData.finishedAt = finishedAt;
+      await conn.query(
+        `UPDATE casino_player_sheets SET sheet_data = ?, updated_by = ? WHERE id = ?`,
+        [JSON.stringify(sheetData), req.user.id_admin || null, sheet.id]
+      );
+
+      const [games] = await conn.query(
+        `SELECT DISTINCT casino_player_id FROM casino_player_games WHERE game_date = ? AND table_name = ? AND statut = 'EN_JEU' FOR UPDATE`,
+        [date, tableName]
+      );
+      const playerIds = games.map((game) => Number(game.casino_player_id));
+      await conn.query(
+        `UPDATE casino_player_games SET statut = 'TERMINE' WHERE game_date = ? AND table_name = ? AND statut = 'EN_JEU'`,
+        [date, tableName]
+      );
+      if (playerIds.length) {
+        await conn.query(
+          `UPDATE casino_players p
+             JOIN (SELECT DISTINCT casino_player_id FROM casino_player_games WHERE id IN (${playerIds.map(() => '?').join(',')})) closed ON closed.casino_player_id = p.id
+             LEFT JOIN casino_player_games active ON active.casino_player_id = p.id AND active.statut = 'EN_JEU'
+             SET p.statut_jeu = 'ARRETE'
+           WHERE active.id IS NULL`,
+          playerIds
+        );
+      }
+      return { finishedAt, playerIds };
+    });
+    res.json(result);
   } catch (err) { next(err); }
 };
 
