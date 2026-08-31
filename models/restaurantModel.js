@@ -37,6 +37,17 @@ async function ensureRestaurantSchema() {
       if (!ftColumns.some((column) => column.Field === 'cloture_at')) {
         await pool.query('ALTER TABLE financial_transactions ADD COLUMN cloture_at DATETIME NULL AFTER cloturee');
       }
+
+      // Add notes column to orders for additional information
+      if (!orderColumns.some((column) => column.Field === 'notes')) {
+        await pool.query('ALTER TABLE orders ADD COLUMN notes TEXT NULL AFTER cloture_at');
+      }
+
+      // Add cuisson column to order_items for cooking level customization
+      const [orderItemColumns] = await pool.query('SHOW COLUMNS FROM order_items');
+      if (!orderItemColumns.some((column) => column.Field === 'cuisson')) {
+        await pool.query('ALTER TABLE order_items ADD COLUMN cuisson VARCHAR(50) NULL AFTER prix_unitaire');
+      }
     })().catch((error) => {
       restaurantSchemaReady = undefined;
       throw error;
@@ -54,7 +65,7 @@ const TablesRestaurant = createCrudModel({
 // `orders` est une table générique partagée entre modules (source_module)
 const Orders = createCrudModel({
   table: 'orders', pk: 'id',
-  fields: ['client_id', 'table_id', 'source_module', 'montant_total', 'statut', 'created_at'],
+  fields: ['client_id', 'table_id', 'source_module', 'montant_total', 'statut', 'created_at', 'notes'],
   sortable: ['id', 'created_at', 'montant_total', 'statut'],
 });
 
@@ -65,7 +76,7 @@ const ordersUpdate = Orders.update;
 
 const OrderItems = createCrudModel({
   table: 'order_items', pk: 'id',
-  fields: ['order_id', 'product_id', 'quantite', 'prix_unitaire'],
+  fields: ['order_id', 'product_id', 'quantite', 'prix_unitaire', 'cuisson'],
   sortable: ['id'],
 });
 
@@ -86,22 +97,22 @@ const RestaurantSessions = createCrudModel({
 // --- Logique métier -------------------------------------------------------
 
 // Crée une commande + ses lignes, calcule le montant_total automatiquement.
-async function createOrderWithItems({ clientId, tableId, items }) {
+async function createOrderWithItems({ clientId, tableId, items, notes }) {
   await ensureRestaurantSchema();
   return withTransaction(async (conn) => {
     const montantTotal = items.reduce((sum, it) => sum + Number(it.quantite) * Number(it.prix_unitaire), 0);
 
     const [result] = await conn.query(
-      `INSERT INTO orders (client_id, table_id, source_module, montant_total, statut, created_at)
-      VALUES (?, ?, 'RESTAURANT', ?, 'EN_ATTENTE', NOW())`,
-      [clientId, tableId, montantTotal]
+      `INSERT INTO orders (client_id, table_id, source_module, montant_total, statut, created_at, notes)
+      VALUES (?, ?, 'RESTAURANT', ?, 'EN_ATTENTE', NOW(), ?)`,
+      [clientId, tableId, montantTotal, notes || null]
     );
     const orderId = result.insertId;
 
     for (const it of items) {
       await conn.query(
-        `INSERT INTO order_items (order_id, product_id, quantite, prix_unitaire) VALUES (?, ?, ?, ?)`,
-        [orderId, it.product_id, it.quantite, it.prix_unitaire]
+        `INSERT INTO order_items (order_id, product_id, quantite, prix_unitaire, cuisson) VALUES (?, ?, ?, ?, ?)`,
+        [orderId, it.product_id, it.quantite, it.prix_unitaire, it.cuisson || null]
       );
     }
     const [order] = await conn.query('SELECT * FROM orders WHERE id = ?', [orderId]);
