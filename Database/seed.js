@@ -48,8 +48,12 @@ async function runAllSeeders() {
     // 9. Seeder des extras Bouteille (verre cassé, consignation)
     await seedBottleExtras();
 
+    // 10. Seeder des ingrédients du restaurant et recettes <-- AJOUTÉ
+    const seedIngredients = new SeedRestaurantIngredients();
+    await seedIngredients.run();
+
     console.log('\n🎉 Tous les seeders ont été exécutés avec succès !');
-    
+
   } catch (error) {
     console.error('\n❌ Erreur lors de l\'exécution des seeders:', error.message);
     process.exit(1);
