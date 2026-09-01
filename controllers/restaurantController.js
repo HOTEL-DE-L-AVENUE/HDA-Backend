@@ -28,7 +28,7 @@ const sessionsCrud = createCrudController(resto.RestaurantSessions, { filterable
 async function createOrderHandler(req, res) {
   // Debug: log incoming payload to help diagnose 400 errors from frontend
   console.debug('[restaurant] createOrderHandler body:', JSON.stringify(req.body));
-  const { client_id, table_id, items } = req.body;
+  const { client_id, table_id, items, notes } = req.body;
   if (!items || !items.length) throw ApiError.badRequest('items requis (au moins une ligne)');
 
   // Validate referenced entities to return clearer 400 errors instead of DB foreign-key messages
@@ -58,7 +58,7 @@ async function createOrderHandler(req, res) {
     throw ApiError.badRequest('Données de référence invalides');
   }
 
-  const order = await resto.createOrderWithItems({ clientId: client_id, tableId: table_id, items });
+  const order = await resto.createOrderWithItems({ clientId: client_id, tableId: table_id, items, notes });
   return created(res, order);
 }
 
@@ -91,10 +91,11 @@ async function orderInvoiceHandler(req, res) {
       const qty = Number(r.quantite || 0);
       const pu = Number(r.prix_unitaire || 0);
       const lineTotal = (qty * pu).toFixed(2);
+      const cuisson = r.cuisson ? ` (${escapeHtml(r.cuisson)})` : '';
       return `
         <tr>
           <td class="cell-center">${idx + 1}</td>
-          <td>${escapeHtml(r.product_nom || `#${r.product_id || ''}`)}</td>
+          <td>${escapeHtml(r.product_nom || `#${r.product_id || ''}`)}${cuisson}</td>
           <td class="cell-center">${qty}</td>
           <td class="cell-right">${pu.toFixed(2)}</td>
           <td class="cell-right">${lineTotal}</td>
@@ -104,6 +105,10 @@ async function orderInvoiceHandler(req, res) {
 
   const clientBlock = client
     ? `<div class="client"><strong>Client</strong><div>${escapeHtml((client.nom || client.name || '') + (client.prenom ? ' ' + client.prenom : ''))}</div><div>${escapeHtml(client.telephone || client.phone || '')}</div><div>${escapeHtml(client.email || '')}</div></div>`
+    : '';
+
+  const notesBlock = order.notes
+    ? `<div class="notes" style="margin-top:6px;padding:4px;background:#f9f9f9;border:1px solid #ddd;font-size:11px;"><strong>Notes:</strong> ${escapeHtml(order.notes)}</div>`
     : '';
 
   const html = `<!doctype html>
@@ -131,6 +136,7 @@ async function orderInvoiceHandler(req, res) {
         <h2>Facture #${order.id}</h2>
         <div class="meta">Date: ${escapeHtml(date)}${tableNum ? ' • Table: ' + escapeHtml(String(tableNum)) : ''}</div>
         ${clientBlock}
+        ${notesBlock}
         <table>
           <thead>
             <tr>
@@ -212,6 +218,13 @@ async function orderInvoicePdfHandler(req, res) {
   doc.font('Helvetica').fontSize(9).fillColor('#000').text(`${order.statut || ''}`, right - 90, y);
   y += 40;
 
+  // Notes block if present
+  if (order.notes) {
+    doc.font('Helvetica-Bold').fontSize(9).fillColor('#000').text('Notes:', left, y);
+    doc.font('Helvetica').fontSize(9).fillColor('#000').text(order.notes, left + 50, y, { width: right - left - 50 });
+    y += 24;
+  }
+
   // Table header
   const col = {
     no: left + 2,
@@ -238,6 +251,7 @@ async function orderInvoicePdfHandler(req, res) {
     const qty = Number(r.quantite || 0);
     const pu = Number(r.prix_unitaire || 0);
     const lineTotal = (qty * pu).toFixed(2);
+    const cuisson = r.cuisson ? ` (${r.cuisson})` : '';
 
     // Check for page break
     if (y > doc.page.height - 80) {
@@ -246,7 +260,7 @@ async function orderInvoicePdfHandler(req, res) {
     }
 
     doc.text(String(idx + 1), col.no, y, { width: 30, align: 'left' });
-    doc.text(String(r.product_nom || `#${r.product_id || ''}`), col.desc, y, { width: 220, align: 'left' });
+    doc.text(String(r.product_nom || `#${r.product_id || ''}`) + cuisson, col.desc, y, { width: 220, align: 'left' });
     doc.text(String(qty), col.qty, y, { width: 40, align: 'right' });
     doc.text(pu.toFixed(2), col.pu, y, { width: 60, align: 'right' });
     doc.text(lineTotal, col.amount, y, { width: 80, align: 'right' });

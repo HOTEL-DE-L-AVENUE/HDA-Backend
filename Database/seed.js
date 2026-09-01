@@ -42,6 +42,12 @@ async function runAllSeeders() {
     const seedBarProducts = new SeedQuintanaSkyDrinks(); // <-- CORRIGÉ
     await seedBarProducts.run();
 
+    // 8. Seeder des extras Billard (30 min)
+    await seedBillardExtras();
+
+    // 9. Seeder des extras Bouteille (verre cassé, consignation)
+    await seedBottleExtras();
+
     console.log('\n🎉 Tous les seeders ont été exécutés avec succès !');
     
   } catch (error) {
