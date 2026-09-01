@@ -5,7 +5,7 @@ const SeedStockLocation = require('./seedStockLocation');
 const SeedUnit = require('./seedUnit');
 const SeedProductType = require('./seedProductType');
 const SeedProducts = require('./seedProducts');
-const SeedBarProducts = require('./SeedBarProducts'); // <-- AJOUTÉ
+const SeedQuintanaSkyDrinks = require('./seedQuintanaSkyDrinks'); // <-- CORRIGÉ
 
 /**
  * Script principal pour exécuter tous les seeders
@@ -38,8 +38,8 @@ async function runAllSeeders() {
     const seedProducts = new SeedProducts();
     await seedProducts.run();
 
-    // 7. Seeder des produits spécifiques au Bar (BOISSONS) <-- AJOUTÉ
-    const seedBarProducts = new SeedBarProducts();
+    // 7. Seeder des boissons Quintana Sky
+    const seedBarProducts = new SeedQuintanaSkyDrinks(); // <-- CORRIGÉ
     await seedBarProducts.run();
 
     console.log('\n🎉 Tous les seeders ont été exécutés avec succès !');
@@ -55,4 +55,4 @@ if (require.main === module) {
   runAllSeeders();
 }
 
-module.exports = { runAllSeeders }; 
+module.exports = { runAllSeeders };
