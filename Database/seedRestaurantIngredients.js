@@ -12,7 +12,7 @@ class SeedRestaurantIngredients {
 
             // 1. Créer les catégories d'ingrédients si elles n'existent pas
             const ingredientCategories = [
-                'Viandes', 'Légumes', 'Fruits', 'Produits laitiers', 
+                'Viandes (Ingrédients)', 'Légumes', 'Fruits', 'Produits laitiers', 
                 'Épices & Condiments', 'Céréales', 'Huiles', 'Autres'
             ];
 
@@ -37,11 +37,11 @@ class SeedRestaurantIngredients {
             // 2. Définir les ingrédients pour chaque type de produit
             const ingredients = [
                 // Viandes
-                { nom: 'Poulet', code: 'ING_POULET', category: 'Viandes', unite: 'kg', prix_achat: 8000, default_stock: 20 },
-                { nom: 'Bœuf', code: 'ING_BOEUF', category: 'Viandes', unite: 'kg', prix_achat: 12000, default_stock: 15 },
-                { nom: 'Mouton', code: 'ING_MOUTON', category: 'Viandes', unite: 'kg', prix_achat: 15000, default_stock: 10 },
-                { nom: 'Crevettes', code: 'ING_CREVETTES', category: 'Viandes', unite: 'kg', prix_achat: 18000, default_stock: 8 },
-                { nom: 'Porc', code: 'ING_PORC', category: 'Viandes', unite: 'kg', prix_achat: 10000, default_stock: 12 },
+                { nom: 'Poulet', code: 'ING_POULET', category: 'Viandes (Ingrédients)', unite: 'kg', prix_achat: 8000, default_stock: 20 },
+                { nom: 'Bœuf', code: 'ING_BOEUF', category: 'Viandes (Ingrédients)', unite: 'kg', prix_achat: 12000, default_stock: 15 },
+                { nom: 'Mouton', code: 'ING_MOUTON', category: 'Viandes (Ingrédients)', unite: 'kg', prix_achat: 15000, default_stock: 10 },
+                { nom: 'Crevettes', code: 'ING_CREVETTES', category: 'Viandes (Ingrédients)', unite: 'kg', prix_achat: 18000, default_stock: 8 },
+                { nom: 'Porc', code: 'ING_PORC', category: 'Viandes (Ingrédients)', unite: 'kg', prix_achat: 10000, default_stock: 12 },
 
                 // Légumes
                 { nom: 'Oignons', code: 'ING_OIGNONS', category: 'Légumes', unite: 'kg', prix_achat: 2000, default_stock: 30 },

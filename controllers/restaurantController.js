@@ -25,6 +25,40 @@ const orderItemsCrud = createCrudController(resto.OrderItems, { filterable: ['or
 const cashiersCrud = createCrudController(resto.RestaurantCashiers, { filterable: ['statut'] });
 const sessionsCrud = createCrudController(resto.RestaurantSessions, { filterable: ['cashier_id', 'user_id'] });
 
+// Override productsCrud to only return menu items (PRODUIT_FINI) for restaurant
+const productsCrud = {
+  ...createCrudController(stock.Products, { filterable: ['category_id', 'subcategory_id', 'actif'] }),
+  list: async (req, res) => {
+    const { category_id, subcategory_id, actif } = req.query;
+    let whereSql = 'WHERE type_produit = "PRODUIT_FINI"';
+    const params = [];
+    
+    if (category_id) {
+      whereSql += ' AND category_id = ?';
+      params.push(category_id);
+    }
+    if (subcategory_id) {
+      whereSql += ' AND subcategory_id = ?';
+      params.push(subcategory_id);
+    }
+    if (actif !== undefined) {
+      whereSql += ' AND actif = ?';
+      params.push(actif);
+    }
+    
+    const [rows] = await pool.query(
+      `SELECT p.*, c.nom AS category_nom, sc.nom AS subcategory_nom 
+       FROM products p 
+       LEFT JOIN categories c ON c.id = p.category_id 
+       LEFT JOIN subcategories sc ON sc.id = p.subcategory_id 
+       ${whereSql} 
+       ORDER BY c.nom, p.nom`,
+      params
+    );
+    return ok(res, rows);
+  }
+};
+
 async function createOrderHandler(req, res) {
   // Debug: log incoming payload to help diagnose 400 errors from frontend
   console.debug('[restaurant] createOrderHandler body:', JSON.stringify(req.body));
@@ -479,7 +513,7 @@ async function menuHandler(req, res) {
     `SELECT p.*, c.nom AS category_nom 
      FROM products p 
      LEFT JOIN categories c ON c.id = p.category_id 
-     WHERE p.actif = 1 AND p.type_produit = 'MENU' 
+     WHERE p.actif = 1 AND p.type_produit = 'PRODUIT_FINI' 
      ORDER BY c.nom, p.nom`
   );
   return ok(res, rows);
@@ -692,7 +726,7 @@ const listRestaurantPurchasesHandler = getRestaurantPurchasesHandler;
 const restaurantPurchaseDetailHandler = getRestaurantPurchaseByIdHandler;
 
 module.exports = {
-  tablesCrud, ordersCrud, orderItemsCrud, cashiersCrud, sessionsCrud,
+  tablesCrud, ordersCrud, orderItemsCrud, cashiersCrud, sessionsCrud, productsCrud,
   createOrderHandler, orderDetailHandler, orderInvoiceHandler, ordersInProgressHandler,
   orderInvoicePdfHandler, closeAllRestaurantOrdersHandler,
   restaurantStockHandler, restaurantStockMovementsHandler,
