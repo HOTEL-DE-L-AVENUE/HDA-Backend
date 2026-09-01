@@ -6,7 +6,7 @@ class SeedQuintanaSkyDrinks {
         try {
             console.log('🚀 Début du seeder des boissons Quintana Sky pour le Bar...');
 
-            // Liste complète des 75 boissons avec leurs catégories textuelles, prix, alcool et stock initial
+            // Liste complète des boissons avec leurs catégories textuelles, prix, alcool et stock initial
             const items = [
                 // =========================================================================
                 // BIERES & SOFTS
@@ -24,20 +24,32 @@ class SeedQuintanaSkyDrinks {
                 { nom: '1664 (bière blonde)', ingredients: 'Bière blonde', prix: 22000, categorie: 'Bières & Softs', alcool: 1, stock: 20 },
                 { nom: 'Bière Importée (50cl)', ingredients: 'Bière importée 50cl', prix: 25000, categorie: 'Bières & Softs', alcool: 1, stock: 15 },
 
-                { nom: 'World Cola / Fanta (PM)', ingredients: 'Boisson gazeuse', prix: 6000, categorie: 'Bières & Softs', alcool: 0, stock: 40 },
-                { nom: 'World Cola / Fanta (GM)', ingredients: 'Boisson gazeuse grand format', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 40 },
-                { nom: 'Youzu / Caprice (PM)', ingredients: 'Boisson fruitée', prix: 6000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
-                { nom: 'Youzu / Caprice (GM)', ingredients: 'Boisson fruitée grand format', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
+                { nom: 'World Cola (PM)', ingredients: 'Boisson gazeuse', prix: 6000, categorie: 'Bières & Softs', alcool: 0, stock: 40 },
+                { nom: 'Fanta (PM)', ingredients: 'Boisson gazeuse', prix: 6000, categorie: 'Bières & Softs', alcool: 0, stock: 40 },
+                { nom: 'World Cola (GM)', ingredients: 'Boisson gazeuse grand format', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 40 },
+                { nom: 'Fanta (GM)', ingredients: 'Boisson gazeuse grand format', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 40 },
+                { nom: 'Youzu (PM)', ingredients: 'Boisson fruitée', prix: 6000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
+                { nom: 'Caprice (PM)', ingredients: 'Boisson fruitée', prix: 6000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
+                { nom: 'Youzu (GM)', ingredients: 'Boisson fruitée grand format', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
+                { nom: 'Caprice (GM)', ingredients: 'Boisson fruitée grand format', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
                 { nom: 'Bonbon Anglais (PM)', ingredients: 'Sodas', prix: 6000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
                 { nom: 'Bonbon Anglais (GM)', ingredients: 'Sodas grand format', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
-                { nom: 'Schweppes / Booster / Ice Tea (PM)', ingredients: 'Boisson énergisante / thé glacé', prix: 12000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
-                { nom: 'Schweppes / Booster / Ice Tea (GM)', ingredients: 'Grand format', prix: 20000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
-                { nom: 'Tonic / Eau Vive (PM)', ingredients: 'Eau tonique', prix: 6000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
-                { nom: 'Tonic / Eau Vive (GM)', ingredients: 'Eau tonique grand format', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
+                { nom: 'Schweppes (PM)', ingredients: 'Boisson énergisante / thé glacé', prix: 12000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
+                { nom: 'Booster (PM)', ingredients: 'Boisson énergisante / thé glacé', prix: 12000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
+                { nom: 'Ice Tea (PM)', ingredients: 'Boisson énergisante / thé glacé', prix: 12000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
+                { nom: 'Schweppes (GM)', ingredients: 'Grand format', prix: 20000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
+                { nom: 'Booster (GM)', ingredients: 'Grand format', prix: 20000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
+                { nom: 'Ice Tea (GM)', ingredients: 'Grand format', prix: 20000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
+                { nom: 'Tonic (PM)', ingredients: 'Eau tonique', prix: 6000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
+                { nom: 'Eau Vive (PM)', ingredients: 'Eau tonique', prix: 6000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
+                { nom: 'Tonic (GM)', ingredients: 'Eau tonique grand format', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
+                { nom: 'Eau Vive (GM)', ingredients: 'Eau tonique grand format', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
                 { nom: 'Cristal (50cl)', ingredients: 'Eau plate 50cl', prix: 8000, categorie: 'Bières & Softs', alcool: 0, stock: 50 },
                 { nom: 'Cristal (1.5L)', ingredients: 'Eau plate 1.5L', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 50 },
-                { nom: 'Coca Cola / Sprite (PM)', ingredients: 'Sodas', prix: 8000, categorie: 'Bières & Softs', alcool: 0, stock: 40 },
-                { nom: 'Coca Cola / Sprite (GM)', ingredients: 'Sodas grand format', prix: 20000, categorie: 'Bières & Softs', alcool: 0, stock: 40 },
+                { nom: 'Coca Cola (PM)', ingredients: 'Sodas', prix: 8000, categorie: 'Bières & Softs', alcool: 0, stock: 40 },
+                { nom: 'Sprite (PM)', ingredients: 'Sodas', prix: 8000, categorie: 'Bières & Softs', alcool: 0, stock: 40 },
+                { nom: 'Coca Cola (GM)', ingredients: 'Sodas grand format', prix: 20000, categorie: 'Bières & Softs', alcool: 0, stock: 40 },
+                { nom: 'Sprite (GM)', ingredients: 'Sodas grand format', prix: 20000, categorie: 'Bières & Softs', alcool: 0, stock: 40 },
                 { nom: 'Jus Naturel (PM)', ingredients: 'Jus de fruit frais', prix: 8000, categorie: 'Bières & Softs', alcool: 0, stock: 25 },
                 { nom: 'Jus Naturel (GM)', ingredients: 'Jus de fruit frais grand format', prix: 20000, categorie: 'Bières & Softs', alcool: 0, stock: 25 },
 
@@ -45,14 +57,24 @@ class SeedQuintanaSkyDrinks {
                 // VIN / ALCOOLS FORTS (Vente au verre / cl)
                 // =========================================================================
                 { nom: 'Rhum Arrangé (10cl)', ingredients: 'Rhum macéré', prix: 15000, categorie: 'Vin & Alcools Forts', alcool: 1, stock: 30 },
-                { nom: 'Vin / Campari / Aperol (10cl)', ingredients: 'Alcool / Apéritif', prix: 20000, categorie: 'Vin & Alcools Forts', alcool: 1, stock: 30 },
-                { nom: 'Martini Rouge / Blanc (5cl)', ingredients: 'Vermouth', prix: 20000, categorie: 'Vin & Alcools Forts', alcool: 1, stock: 30 },
-                { nom: 'Pastis / Gin (5cl)', ingredients: 'Alcool fort', prix: 20000, categorie: 'Vin & Alcools Forts', alcool: 1, stock: 30 },
-                { nom: 'J&B / Red Label / Bailey\'s (5cl)', ingredients: 'Whisky / Liqueur', prix: 25000, categorie: 'Vin & Alcools Forts', alcool: 1, stock: 30 },
-                { nom: 'Black Label / Jack Daniel\'s / Chivas / Dewar\'s (5cl)', ingredients: 'Whisky supérieur', prix: 35000, categorie: 'Vin & Alcools Forts', alcool: 1, stock: 30 },
+                { nom: 'Vin (10cl)', ingredients: 'Alcool / Apéritif', prix: 20000, categorie: 'Vin & Alcools Forts', alcool: 1, stock: 30 },
+                { nom: 'Campari (10cl)', ingredients: 'Alcool / Apéritif', prix: 20000, categorie: 'Vin & Alcools Forts', alcool: 1, stock: 30 },
+                { nom: 'Aperol (10cl)', ingredients: 'Alcool / Apéritif', prix: 20000, categorie: 'Vin & Alcools Forts', alcool: 1, stock: 30 },
+                { nom: 'Martini Rouge (5cl)', ingredients: 'Vermouth', prix: 20000, categorie: 'Vin & Alcools Forts', alcool: 1, stock: 30 },
+                { nom: 'Martini Blanc (5cl)', ingredients: 'Vermouth', prix: 20000, categorie: 'Vin & Alcools Forts', alcool: 1, stock: 30 },
+                { nom: 'Pastis (5cl)', ingredients: 'Alcool fort', prix: 20000, categorie: 'Vin & Alcools Forts', alcool: 1, stock: 30 },
+                { nom: 'Gin (5cl)', ingredients: 'Alcool fort', prix: 20000, categorie: 'Vin & Alcools Forts', alcool: 1, stock: 30 },
+                { nom: 'J&B (5cl)', ingredients: 'Whisky / Liqueur', prix: 25000, categorie: 'Vin & Alcools Forts', alcool: 1, stock: 30 },
+                { nom: 'Red Label (5cl)', ingredients: 'Whisky / Liqueur', prix: 25000, categorie: 'Vin & Alcools Forts', alcool: 1, stock: 30 },
+                { nom: 'Bailey\'s (5cl)', ingredients: 'Whisky / Liqueur', prix: 25000, categorie: 'Vin & Alcools Forts', alcool: 1, stock: 30 },
+                { nom: 'Black Label (5cl)', ingredients: 'Whisky supérieur', prix: 35000, categorie: 'Vin & Alcools Forts', alcool: 1, stock: 30 },
+                { nom: 'Jack Daniel\'s (5cl)', ingredients: 'Whisky supérieur', prix: 35000, categorie: 'Vin & Alcools Forts', alcool: 1, stock: 30 },
+                { nom: 'Chivas (5cl)', ingredients: 'Whisky supérieur', prix: 35000, categorie: 'Vin & Alcools Forts', alcool: 1, stock: 30 },
+                { nom: 'Dewar\'s (5cl)', ingredients: 'Whisky supérieur', prix: 35000, categorie: 'Vin & Alcools Forts', alcool: 1, stock: 30 },
                 { nom: 'Double Black (5cl)', ingredients: 'Whisky', prix: 45000, categorie: 'Vin & Alcools Forts', alcool: 1, stock: 20 },
                 { nom: 'Gold Label (5cl)', ingredients: 'Whisky de prestige', prix: 50000, categorie: 'Vin & Alcools Forts', alcool: 1, stock: 20 },
-                { nom: 'Platinum / Macallan (5cl)', ingredients: 'Whisky rare', prix: 65000, categorie: 'Vin & Alcools Forts', alcool: 1, stock: 15 },
+                { nom: 'Platinum (5cl)', ingredients: 'Whisky rare', prix: 65000, categorie: 'Vin & Alcools Forts', alcool: 1, stock: 15 },
+                { nom: 'Macallan (5cl)', ingredients: 'Whisky rare', prix: 65000, categorie: 'Vin & Alcools Forts', alcool: 1, stock: 15 },
 
                 // =========================================================================
                 // COCKTAILS
@@ -75,7 +97,8 @@ class SeedQuintanaSkyDrinks {
                 // =========================================================================
                 // SPIRITUEUX
                 // =========================================================================
-                { nom: 'Martini Rouge / Blanc', ingredients: 'Bouteille vermouth', prix: 375000, categorie: 'Spiritueux', alcool: 1, stock: 10 },
+                { nom: 'Martini Rouge', ingredients: 'Bouteille vermouth', prix: 375000, categorie: 'Spiritueux', alcool: 1, stock: 10 },
+                { nom: 'Martini Blanc', ingredients: 'Bouteille vermouth', prix: 375000, categorie: 'Spiritueux', alcool: 1, stock: 10 },
                 { nom: 'Bailey\'s', ingredients: 'Liqueur de crème', prix: 400000, categorie: 'Spiritueux', alcool: 1, stock: 10 },
                 { nom: 'Jagermeister', ingredients: 'Liqueur aux herbes', prix: 550000, categorie: 'Spiritueux', alcool: 1, stock: 10 },
 
