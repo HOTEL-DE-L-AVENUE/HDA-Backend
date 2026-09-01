@@ -79,9 +79,18 @@ class SeedQuintanaSkyDrinks {
                 // =========================================================================
                 // COCKTAILS
                 // =========================================================================
-                { nom: 'Spritz (Aperol/Campari, Bucks Fizz, Limoncello)', ingredients: 'Cocktail pétillant', prix: 30000, categorie: 'Cocktails', alcool: 1, stock: 40 },
-                { nom: 'Cocktail Avec Alcool (Margarita, Mojito, Piña Colada...)', ingredients: 'Cocktail standard', prix: 20000, categorie: 'Cocktails', alcool: 1, stock: 50 },
-                { nom: 'Cocktail Sans Alcool (Pink Panther, Bora Bora, Mojito...)', ingredients: 'Mocktail', prix: 15000, categorie: 'Cocktails', alcool: 0, stock: 50 },
+                { nom: 'Spritz Aperol', ingredients: 'Cocktail pétillant', prix: 30000, categorie: 'Cocktails', alcool: 1, stock: 40 },
+                { nom: 'Spritz Campari', ingredients: 'Cocktail pétillant', prix: 30000, categorie: 'Cocktails', alcool: 1, stock: 40 },
+                { nom: 'Spritz Bucks Fizz', ingredients: 'Cocktail pétillant', prix: 30000, categorie: 'Cocktails', alcool: 1, stock: 40 },
+                { nom: 'Spritz Limoncello', ingredients: 'Cocktail pétillant', prix: 30000, categorie: 'Cocktails', alcool: 1, stock: 40 },
+
+                { nom: 'Margarita', ingredients: 'Cocktail standard avec alcool', prix: 20000, categorie: 'Cocktails', alcool: 1, stock: 50 },
+                { nom: 'Mojito', ingredients: 'Cocktail standard avec alcool', prix: 20000, categorie: 'Cocktails', alcool: 1, stock: 50 },
+                { nom: 'Piña Colada', ingredients: 'Cocktail standard avec alcool', prix: 20000, categorie: 'Cocktails', alcool: 1, stock: 50 },
+
+                { nom: 'Pink Panther', ingredients: 'Mocktail sans alcool', prix: 15000, categorie: 'Cocktails', alcool: 0, stock: 50 },
+                { nom: 'Bora Bora', ingredients: 'Mocktail sans alcool', prix: 15000, categorie: 'Cocktails', alcool: 0, stock: 50 },
+                { nom: 'Mojito Sans Alcool', ingredients: 'Mocktail sans alcool', prix: 15000, categorie: 'Cocktails', alcool: 0, stock: 50 },
 
                 // =========================================================================
                 // RHUM - TEQUILA - VODKA (Bouteilles)
@@ -118,7 +127,8 @@ class SeedQuintanaSkyDrinks {
                 { nom: 'Double Black', ingredients: 'Whisky premium', prix: 680000, categorie: 'Whisky', alcool: 1, stock: 8 },
                 { nom: 'Gold Label (1L)', ingredients: 'Whisky de luxe 1L', prix: 850000, categorie: 'Whisky', alcool: 1, stock: 6 },
                 { nom: 'Fuji', ingredients: 'Whisky japonais', prix: 950000, categorie: 'Whisky', alcool: 1, stock: 5 },
-                { nom: 'Toki, Yoshi', ingredients: 'Whisky japonais', prix: 1200000, categorie: 'Whisky', alcool: 1, stock: 5 },
+                { nom: 'Toki', ingredients: 'Whisky japonais', prix: 1200000, categorie: 'Whisky', alcool: 1, stock: 5 },
+                { nom: 'Yoshi', ingredients: 'Whisky japonais', prix: 1200000, categorie: 'Whisky', alcool: 1, stock: 5 },
                 { nom: 'Platinum (1L)', ingredients: 'Whisky 1L', prix: 1200000, categorie: 'Whisky', alcool: 1, stock: 5 },
                 { nom: 'Nikka', ingredients: 'Whisky japonais', prix: 1200000, categorie: 'Whisky', alcool: 1, stock: 5 },
 
