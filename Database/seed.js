@@ -6,6 +6,8 @@ const SeedUnit = require('./seedUnit');
 const SeedProductType = require('./seedProductType');
 const SeedProducts = require('./seedProducts');
 const SeedBarProducts = require('./SeedBarProducts'); // <-- AJOUTÉ
+const { seedBillardExtras } = require('./seedBillardExtras');
+const { seedBottleExtras } = require('./seedBottleExtras');
 
 /**
  * Script principal pour exécuter tous les seeders
@@ -41,6 +43,12 @@ async function runAllSeeders() {
     // 7. Seeder des produits spécifiques au Bar (BOISSONS) <-- AJOUTÉ
     const seedBarProducts = new SeedBarProducts();
     await seedBarProducts.run();
+
+    // 8. Seeder des extras Billard (30 min)
+    await seedBillardExtras();
+
+    // 9. Seeder des extras Bouteille (verre cassé, consignation)
+    await seedBottleExtras();
 
     console.log('\n🎉 Tous les seeders ont été exécutés avec succès !');
     
