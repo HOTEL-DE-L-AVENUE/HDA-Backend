@@ -2,17 +2,26 @@ const { pool } = require('../config/db');
 
 const items = [
   {
-    nom: 'Billard 30 min',
-    ingredients: 'Accès billard 30 minutes',
-    prix: 5000,
-    categorie: 'Billard',
+    nom: 'Verre cassé',
+    ingredients: 'Dommage matériel',
+    prix: 7000,
+    categorie: 'Bouteille',
     alcool: 0,
     stock: 9999,
-    unite: 'session',
+    unite: 'unité',
+  },
+  {
+    nom: 'Consignation de bouteille',
+    ingredients: 'Consignation bouteille',
+    prix: 1000,
+    categorie: 'Bouteille',
+    alcool: 0,
+    stock: 9999,
+    unite: 'bouteille',
   },
 ];
 
-async function seedBillardExtras() {
+async function seedBottleExtras() {
   try {
     for (const item of items) {
       const [existing] = await pool.query(
@@ -59,15 +68,15 @@ async function seedBillardExtras() {
       console.log(`✅ ${item.nom} prêt (${productId})`);
     }
 
-    console.log('\n✅ Les articles Billard ont été ajoutés dans la base de données.');
+    console.log('\n✅ Les articles Bouteille ont été ajoutés dans la base de données.');
   } catch (error) {
-    console.error('Erreur seed billard extras:', error);
+    console.error('Erreur seed bottle extras:', error);
     throw error;
   }
 }
 
 if (require.main === module) {
-  seedBillardExtras()
+  seedBottleExtras()
     .then(() => process.exit(0))
     .catch((error) => {
       console.error(error);
@@ -75,4 +84,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { seedBillardExtras };
+module.exports = { seedBottleExtras };
