@@ -84,4 +84,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { seedBottleExtras };
+module.exports = seedBottleExtras;
