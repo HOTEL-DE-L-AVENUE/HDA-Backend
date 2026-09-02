@@ -331,7 +331,7 @@ exports.cashiersCrud.create = async (req, res, next) => {
 };
 
 exports.sessionsCrud = buildCrud('casino_cashier_sessions', {
-  allowedFields: ['cashier_id', 'user_id', 'ouverture_at', 'fermeture_at', 'fond_initial', 'fond_final_declare', 'statut', 'commentaire'],
+  allowedFields: ['cashier_id', 'user_id', 'ouverture_at', 'fermeture_at', 'fond_initial', 'fond_final_declare', 'fond_final_theorique', 'ecart', 'cash_check', 'cashing_verifie', 'cashing_verifie_le', 'cashing_verifie_par', 'cashing_montant_verifie', 'rack_check_verifie', 'rack_check_montant', 'rack_check_manquant', 'rack_check_le', 'rack_check_par', 'statut', 'commentaire'],
   orderBy: 'ouverture_at DESC',
 });
 
@@ -473,7 +473,8 @@ exports.ecartsCaisseHandler = async (req, res, next) => {
     const [rows] = await pool.query(
       `SELECT cs.id AS session_id, c.nom AS caisse, r.nom AS salle,
               cs.user_id, cs.ouverture_at, cs.fermeture_at, cs.fond_initial,
-              cs.fond_final_theorique, cs.fond_final_declare, cs.ecart
+              cs.fond_final_theorique, cs.fond_final_declare, cs.ecart, cs.cash_check,
+              cs.rack_check_verifie, cs.rack_check_montant, cs.rack_check_manquant
          FROM casino_cashier_sessions cs
          JOIN casino_cashiers c ON c.id = cs.cashier_id
          JOIN casino_rooms r ON r.id = c.room_id
@@ -580,7 +581,16 @@ async function computeSessionTotals(conn, sessionId) {
 exports.closeSessionHandler = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { fond_final_declare, commentaire } = req.body;
+    const {
+      fond_final_declare,
+      commentaire,
+      cash_check,
+      cashing_verifie,
+      cashing_montant,
+      rack_check_verifie,
+      rack_check_montant,
+      rack_check_manquant,
+    } = req.body;
 
     const updated = await withTransaction(async (conn) => {
       const session = await getOpenSession(conn, id);
@@ -590,15 +600,99 @@ exports.closeSessionHandler = async (req, res, next) => {
       const fondFinalTheorique = Number(session.fond_initial) + entrees - sorties;
       const declare = asMoney(fond_final_declare);
       const ecart = declare - fondFinalTheorique;
+      const verified = Boolean(cashing_verifie === true || cashing_verifie === 1 || cashing_verifie === 'true');
+      const verifiedAmount = cashing_montant === undefined || cashing_montant === null || cashing_montant === ''
+        ? declare
+        : asMoney(cashing_montant);
+      const cashCheckValue = cash_check === undefined || cash_check === null || cash_check === ''
+        ? (ecart < 0 ? Math.abs(ecart) : 0)
+        : asMoney(cash_check);
+
+      const rackCheckVerified = Boolean(rack_check_verifie === true || rack_check_verifie === 1 || rack_check_verifie === 'true');
+      const rackCheckAmount = rack_check_montant === undefined || rack_check_montant === null || rack_check_montant === ''
+        ? 220000
+        : asMoney(rack_check_montant);
+      const rackCheckMissing = rack_check_manquant === undefined || rack_check_manquant === null || rack_check_manquant === ''
+        ? 0
+        : asMoney(rack_check_manquant);
 
       await conn.query(
         `UPDATE casino_cashier_sessions
-           SET fermeture_at = NOW(), fond_final_declare = ?, fond_final_theorique = ?, ecart = ?,
+           SET fermeture_at = NOW(), fond_final_declare = ?, fond_final_theorique = ?, ecart = ?, cash_check = ?,
+               cashing_verifie = ?, cashing_verifie_le = ?, cashing_verifie_par = ?, cashing_montant_verifie = ?,
+               rack_check_verifie = ?, rack_check_montant = ?, rack_check_manquant = ?, rack_check_le = ?, rack_check_par = ?,
                statut = 'FERMEE', commentaire = ?
          WHERE id = ?`,
-        [declare, fondFinalTheorique, ecart, commentaire || null, id]
+        [
+          declare,
+          fondFinalTheorique,
+          ecart,
+          cashCheckValue,
+          verified ? 1 : 0,
+          verified ? new Date() : null,
+          verified ? req.user.id_admin : null,
+          verified ? verifiedAmount : null,
+          rackCheckVerified ? 1 : 0,
+          rackCheckAmount,
+          rackCheckMissing,
+          rackCheckVerified ? new Date() : null,
+          rackCheckVerified ? req.user.id_admin : null,
+          commentaire || null,
+          id,
+        ]
       );
       await conn.query(`UPDATE casino_cashiers SET statut = 'FERMEE' WHERE id = ?`, [session.cashier_id]);
+
+      if (verified) {
+        const [[cashier]] = await conn.query(
+          `SELECT nom, prenom FROM users WHERE id_admin = ? LIMIT 1`,
+          [req.user.id_admin]
+        );
+        const [[sessionMeta]] = await conn.query(
+          `SELECT c.nom AS caisse, r.nom AS salle
+             FROM casino_cashier_sessions cs
+             JOIN casino_cashiers c ON c.id = cs.cashier_id
+             JOIN casino_rooms r ON r.id = c.room_id
+            WHERE cs.id = ?`,
+          [id]
+        );
+        const [directionUsers] = await conn.query(
+          `SELECT id_admin, nom, prenom, role
+             FROM users
+            WHERE role IN ('admin', 'manager') AND statut = 'actif'`
+        );
+        const caissier = cashier ? `${cashier.prenom || ''} ${cashier.nom || ''}`.trim() : 'Caissier';
+        const message = `Validation du cashing effectuée — caisse ${sessionMeta?.caisse || ''} (${sessionMeta?.salle || 'salle'}). Le caissier ${caissier} confirme le montant en espèces : ${verifiedAmount} Ariary. Écart: ${ecart} Ariary.`;
+        for (const user of directionUsers) {
+          await conn.query(
+            `INSERT INTO notifications (titre, message, statut, created_at) VALUES (?, ?, 'nouveau', NOW())`,
+            [`Validation cashing caisse ${sessionMeta?.caisse || ''}`, `${message} — Référence session #${id}`]
+          );
+        }
+      }
+
+      if (rackCheckVerified && rackCheckMissing > 0) {
+        const [[sessionMeta]] = await conn.query(
+          `SELECT c.nom AS caisse, r.nom AS salle
+             FROM casino_cashier_sessions cs
+             JOIN casino_cashiers c ON c.id = cs.cashier_id
+             JOIN casino_rooms r ON r.id = c.room_id
+            WHERE cs.id = ?`,
+          [id]
+        );
+        const [directionUsers] = await conn.query(
+          `SELECT id_admin, nom, prenom, role
+             FROM users
+            WHERE role IN ('admin', 'manager') AND statut = 'actif'`
+        );
+        const message = `Rack check signalé — caisse ${sessionMeta?.caisse || ''} (${sessionMeta?.salle || 'salle'}). Manque de jetons constaté dans le rack : ${rackCheckMissing} Ariary.`;
+        for (const user of directionUsers) {
+          await conn.query(
+            `INSERT INTO notifications (titre, message, statut, created_at) VALUES (?, ?, 'nouveau', NOW())`,
+            [`Rack check caisse ${sessionMeta?.caisse || ''}`, `${message} — Référence session #${id}`]
+          );
+        }
+      }
 
       const [[row]] = await conn.query(`SELECT * FROM casino_cashier_sessions WHERE id = ?`, [id]);
       return row;
@@ -2182,6 +2276,24 @@ exports.savePlayerSheetHandler = async (req, res, next) => {
           WHERE game_date = ? AND table_name = ? AND casino_player_id IN (?)`,
         [row.id, date, tableName, casinoPlayerIds]
       );
+      const gameAmounts = new Map();
+      players.forEach((player) => {
+        const casinoPlayerId = Number(player.casinoPlayerId);
+        if (Number.isInteger(casinoPlayerId) && !gameAmounts.has(casinoPlayerId)) {
+          gameAmounts.set(casinoPlayerId, [parseCasinoAmount(player.initialDeposit), parseCasinoAmount(player.initialCredit)]);
+        }
+      });
+      for (const [casinoPlayerId, [depot, credit]] of gameAmounts) {
+        await pool.query(
+          `UPDATE casino_players SET depot = ?, credit = ? WHERE id = ?`,
+          [depot, credit, casinoPlayerId]
+        );
+        await pool.query(
+          `UPDATE casino_player_games SET depot = ?, credit = ?
+            WHERE casino_player_id = ? AND game_date = ? AND table_name = ?`,
+          [depot, credit, casinoPlayerId, date, tableName]
+        );
+      }
     }
     const savedData = typeof row.sheet_data === 'string' ? JSON.parse(row.sheet_data) : row.sheet_data;
     res.json({ id: row.id, date: row.date, table_name: row.table_name, ...savedData });
