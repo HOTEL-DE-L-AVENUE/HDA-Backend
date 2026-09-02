@@ -5,7 +5,10 @@ const SeedStockLocation = require('./seedStockLocation');
 const SeedUnit = require('./seedUnit');
 const SeedProductType = require('./seedProductType');
 const SeedProducts = require('./seedProducts');
-const SeedQuintanaSkyDrinks = require('./seedQuintanaSkyDrinks'); // <-- CORRIGÉ
+const SeedQuintanaSkyDrinks = require('./seedQuintanaSkyDrinks');
+const SeedBillardExtras = require('./seedBillardExtras');
+const SeedBottleExtras = require('./seedBottleExtras');
+const SeedRestaurantIngredients = require('./seedRestaurantIngredients');
 
 /**
  * Script principal pour exécuter tous les seeders
@@ -39,16 +42,16 @@ async function runAllSeeders() {
     await seedProducts.run();
 
     // 7. Seeder des boissons Quintana Sky
-    const seedBarProducts = new SeedQuintanaSkyDrinks(); // <-- CORRIGÉ
+    const seedBarProducts = new SeedQuintanaSkyDrinks();
     await seedBarProducts.run();
 
-    // 8. Seeder des extras Billard (30 min)
-    await seedBillardExtras();
+    // 8. Seeder des extras Billard
+    await SeedBillardExtras();
 
-    // 9. Seeder des extras Bouteille (verre cassé, consignation)
-    await seedBottleExtras();
+    // 9. Seeder des extras Bouteille
+    await SeedBottleExtras();
 
-    // 10. Seeder des ingrédients du restaurant et recettes <-- AJOUTÉ
+    // 10. Seeder des ingrédients du restaurant (Correction ici : c'est une classe)
     const seedIngredients = new SeedRestaurantIngredients();
     await seedIngredients.run();
 
