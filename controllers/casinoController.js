@@ -2216,7 +2216,7 @@ exports.getPlayerSheetHandler = async (req, res, next) => {
 // PUT /player-sheets — remplace la fiche complète de la date et de la table.
 exports.savePlayerSheetHandler = async (req, res, next) => {
   try {
-    const { date, table_name: tableName, players, chips = [], restaurantPayments, finals, endGameTime = '', isFinished = false, finishedAt = '' } = req.body;
+    const { date, table_name: tableName, players, chips = [], rackChecks = [], restaurantPayments, finals, endGameTime = '', isFinished = false, finishedAt = '' } = req.body;
     if (!date || !tableName || !Array.isArray(players)) {
       throw ApiError.badRequest('La date, la table et les joueurs sont obligatoires');
     }
@@ -2245,6 +2245,7 @@ exports.savePlayerSheetHandler = async (req, res, next) => {
     const sheetData = JSON.stringify({
       players,
       chips,
+      rackChecks,
       restaurantPayments: restaurantPayments || { especes: false, tpe: false },
       finals: finals || {},
       endGameTime,
