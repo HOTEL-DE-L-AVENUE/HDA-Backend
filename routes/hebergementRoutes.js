@@ -1,4 +1,5 @@
-// routes/hebergementRoutes.js
+/*
+// routes/hebergementRoutes.js - COMMENTED OUT
 const express = require('express');
 const ctrl = require('../controllers/hebergementController');
 const { createCrudRouter } = require('./routeFactory');
@@ -53,4 +54,10 @@ router.post('/stock', ctrl.addHebergementStockHandler);                         
 router.put('/stock/:id', ctrl.updateHebergementStockHandler);                    // PUT /api/hebergement/stock/:id
 router.delete('/stock/:id', ctrl.deleteHebergementStockHandler);                 // DELETE /api/hebergement/stock/:id
 
+module.exports = router;
+*/
+
+// Empty export to prevent module errors when commented out
+const express = require('express');
+const router = express.Router();
 module.exports = router;

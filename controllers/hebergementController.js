@@ -1,4 +1,5 @@
-// controllers/hebergementController.js
+/*
+// controllers/hebergementController.js - COMMENTED OUT
 const heb = require('../models/hebergementModel');
 const stock = require('../models/stockModel');
 const { createCrudController } = require('./controllerFactory');
@@ -419,3 +420,7 @@ exports.checkIn = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+*/
+
+// Empty export to prevent module errors when commented out
+module.exports = {};
