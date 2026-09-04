@@ -107,7 +107,7 @@ class SeedQuintanaSkyDrinks {
                 { nom: 'Cubi Rouge', ingredients: 'Vin en cubi rouge', prix: 90000, categorie: 'Vin & Alcools Forts', alcool: 1, stock: 10 },
 
                 // =========================================================================
-                // VINS - BOUTEILLE
+                // VINS - BOUTEILLE (Existant)
                 // =========================================================================
                 { nom: 'Satyricon', ingredients: 'Vin bouteille', prix: 60000, categorie: 'Vins - Bouteille', alcool: 1, stock: 10 },
                 { nom: 'Cuvee de l\'Aubade (Cote de Provence 2015)', ingredients: 'Vin rosé', prix: 75000, categorie: 'Vins - Bouteille', alcool: 1, stock: 10 },
@@ -132,6 +132,76 @@ class SeedQuintanaSkyDrinks {
                 { nom: 'Protea Rose', ingredients: 'Vin rosé', prix: 80000, categorie: 'Vins - Bouteille', alcool: 1, stock: 10 },
                 { nom: 'Medaillon Rose', ingredients: 'Vin rosé', prix: 75000, categorie: 'Vins - Bouteille', alcool: 1, stock: 10 },
 
+                // =========================================================================
+                // NOUVEAUX VINS : VINS ROUGES
+                // =========================================================================
+                { nom: 'Vin de France', ingredients: 'Vieux Papes', prix: 70000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Vallée de la Loire, Saumur-Champigny', ingredients: 'Maison Plessis-Duval', prix: 170000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Alsace Pinot Noir', ingredients: 'Maison DRESCHLER, Pinot Noir', prix: 180000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Languedoc-Roussillon, IGP Pays d\'Hérault', ingredients: 'SAS Moulin de Gassac, Grenache-Syrah', prix: 130000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux, Bordeaux', ingredients: 'Cercle des Epicuriens', prix: 70000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux, Bordeaux', ingredients: 'Baron de Lestac', prix: 120000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux, Bordeaux', ingredients: 'Maison CASTEL, Bordeaux Merlot', prix: 130000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux, Bordeaux Supérieur', ingredients: 'Chateau du Lort', prix: 150000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux, Médoc', ingredients: 'Maison CASTEL, Médoc', prix: 150000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux, Bordeaux', ingredients: 'Cru de la Maqueline', prix: 160000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux, Saint-Emilion', ingredients: 'Maison CASTEL, Saint-Emilion', prix: 170000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux, 1ères Cotes de Bordeaux', ingredients: 'Chateau Campet', prix: 210000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'France, Médoc', ingredients: 'Château Tartuguière', prix: 200000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux, Côtes de Bourg', ingredients: 'Chateau du Bousquet', prix: 240000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux, Bordeaux', ingredients: 'Clarence Dillon Wines SAS, Clarendelle', prix: 280000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux, Haut-Médoc', ingredients: 'Chateau d\'Arcins', prix: 310000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux, Graves', ingredients: 'Château FERRANDE', prix: 400000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux, Médoc', ingredients: 'Clarence Dillon Wines SAS, Clarendelle', prix: 360000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux, Haut-Médoc', ingredients: 'Chateau Peyrat-Fourthon', prix: 370000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux, Médoc', ingredients: 'Tour Prignac, Grande Réserve', prix: 450000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux, Saint-Emilion Grand Cru', ingredients: 'Chateau La Croix Montlabert, Saint Emilion Grand Cru', prix: 460000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux, Saint-Emilion Grand Cru', ingredients: 'Chateau Montlabert, Saint Emilion Grand Cru', prix: 620000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Vallée du Rhône, AOP Côtes du Rhône', ingredients: 'Maison JEANTET, Côtes du Rhône', prix: 110000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Vallée du Rhône, AOP Côtes du Rhône', ingredients: 'Maison CASTEL, Syrah-Grenache', prix: 120000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Vallée du Rhône, AOP Chateauneuf du Pape', ingredients: 'Maison JEANTET, Châteauneuf du Pape', prix: 600000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Vallée du Rhône, AOP Chateauneuf du Pape', ingredients: 'Maison CASTEL, Châteauneuf du Pape', prix: 630000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Provence, Bandol', ingredients: 'Château Canadel', prix: 440000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Espagne, Rioja', ingredients: 'Domaine Igay, Marques de Murrieta', prix: 300000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux, Haut-Médoc', ingredients: 'Chateau d\'Arcins (Magnum)', prix: 670000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+
+                // =========================================================================
+                // NOUVEAUX VINS : VINS BLANCS
+                // =========================================================================
+                { nom: 'Vin de France', ingredients: 'Vieux Papes Chardonnay-Colombard', prix: 80000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Vin de France', ingredients: 'Maison CASTEL, Chardonnay', prix: 100000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Vallée de la Loire, Muscadet Sèvre-et-Maine', ingredients: 'Maison CASTEL', prix: 130000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Vallée de la Loire, Touraine', ingredients: 'Maison Plessis-Duval', prix: 140000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux, Bordeaux', ingredients: 'Maison CASTEL, Bordeaux Sauvignon Blanc', prix: 150000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux, Bordeaux', ingredients: 'Clarence Dillon Wines SAS, Clarendelle', prix: 290000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Sud-Ouest, IGP Côtes de Gascogne', ingredients: 'Maison CASTEL Sauvignon Blanc', prix: 110000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Languedoc-Roussillon, IGP Pays d\'Oc', ingredients: 'La Roche Mazet, Chardonnay Blanc', prix: 100000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Languedoc-Roussillon, IGP Pays d\'Hérault', ingredients: 'SAS Moulin de Gassac, Grenache Blanc-Colombard-Rolle', prix: 130000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Languedoc-Roussillon, IGP Pays d\'Oc', ingredients: 'Maison CASTEL, Muscat Semi-Sweet', prix: 140000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Bourgogne, Chablis', ingredients: 'Maison CASTEL', prix: 440000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Alsace Riesling', ingredients: 'Maison DRESCHLER, Riesling', prix: 180000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Alsace Gewurztraminer', ingredients: 'Maison DRESCHLER, Gewurztraminer', prix: 220000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+
+                // =========================================================================
+                // NOUVEAUX VINS : VINS ROSES
+                // =========================================================================
+                { nom: 'Vallée de la Loire, AOP Cabernet d\'Anjou', ingredients: 'Maison Plessis-Duval', prix: 130000, categorie: 'Vins roses', alcool: 1, stock: 10 },
+                { nom: 'Côtes de Provence, AOP Côtes de Provence', ingredients: 'Maison CASTEL', prix: 180000, categorie: 'Vins roses', alcool: 1, stock: 10 },
+                { nom: 'Côtes de Provence, AOP Côtes de Provence', ingredients: 'Maison CAVALIER, Marafiance', prix: 310000, categorie: 'Vins roses', alcool: 1, stock: 10 },
+                { nom: 'Languedoc-Roussillon, IGP Pays d\'Hérault', ingredients: 'SAS Moulin de Gassac, Grenache-Carignan-Cinsault', prix: 130000, categorie: 'Vins roses', alcool: 1, stock: 10 },
+
+                // =========================================================================
+                // NOUVEAUX VINS : VINS EFFERVESCENTS
+                // =========================================================================
+                { nom: 'Languedoc-Roussillon, Vin Pétillant', ingredients: 'SAS Moulin de Gassac, Folie by Gassac', prix: 210000, categorie: 'Vins effervescents', alcool: 1, stock: 10 },
+                { nom: 'Vin de France, Mousseux 1/2 Sec', ingredients: 'Maison CASTEL, ICE Blanc', prix: 200000, categorie: 'Vins effervescents', alcool: 1, stock: 10 },
+                { nom: 'Vin de France, Mousseux 1/2 Sec', ingredients: 'Maison CASTEL, ICE Rosé', prix: 190000, categorie: 'Vins effervescents', alcool: 1, stock: 10 },
+
+                // =========================================================================
+                // NOUVEAUX VINS : BAGS IN BOX
+                // =========================================================================
+                { nom: 'Afrique du Sud', ingredients: 'L\'Incontournable Blanc (Format 5L)', prix: 170000, categorie: 'Bags in Box', alcool: 1, stock: 5 },
+                { nom: 'Afrique du Sud', ingredients: 'L\'Incontournable Rouge (Format 5L)', prix: 190000, categorie: 'Bags in Box', alcool: 1, stock: 5 },
                 // =========================================================================
                 // CHAMPAGNE / VIN MOUSSEUX
                 // =========================================================================
