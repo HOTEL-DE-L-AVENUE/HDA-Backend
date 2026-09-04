@@ -164,6 +164,14 @@ class SeedQuintanaSkyDrinks {
                 { nom: 'Provence, Bandol', ingredients: 'Château Canadel', prix: 440000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
                 { nom: 'Espagne, Rioja', ingredients: 'Domaine Igay, Marques de Murrieta', prix: 300000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
                 { nom: 'Bordeaux, Haut-Médoc', ingredients: 'Chateau d\'Arcins (Magnum)', prix: 670000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Marianne Craft Wines, Natana Red Blend', ingredients: 'Natana Red Blend', prix: 100000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Ken Forrester Wines, Petit Cabernet-Sauvignon', ingredients: 'Petit Cabernet-Sauvignon', prix: 150000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Kanonkop Estate, Kadette Cape Blend', ingredients: 'Kadette Cape Blend', prix: 160000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Kanonkop Estate, Kadette Pinotage', ingredients: 'Kadette Pinotage', prix: 180000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'A.A. Badenhorst, Secateurs Shiraz Blend', ingredients: 'Secateurs Shiraz Blend', prix: 190000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Mullineux Wines, Kloof Street', ingredients: 'Kloof Street', prix: 200000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'La Vierge Collection, Nymphomane', ingredients: 'Nymphomane', prix: 270000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'La Vierge Collection, Pinot Noir', ingredients: 'Pinot Noir', prix: 430000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
 
                 // =========================================================================
                 // NOUVEAUX VINS : VINS BLANCS
