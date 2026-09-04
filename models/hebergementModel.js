@@ -1,11 +1,10 @@
-/*
-// models/hebergementModel.js - COMMENTED OUT
+// models/hebergementModel.js
 const { pool, withTransaction } = require('../config/db');
 const { createCrudModel } = require('./crudFactory');
 const stockModel = require('./stockModel');
 
 const RoomTypes = createCrudModel({
-  table: 'room_types', pk: 'id', fields: ['nom', 'description'], sortable: ['id', 'nom'],
+  table: 'room_types', pk: 'id', fields: ['nom', 'description', 'prix_base'], sortable: ['id', 'nom', 'prix_base'],
 });
 
 const Rooms = createCrudModel({
@@ -16,21 +15,29 @@ const Rooms = createCrudModel({
 
 const Equipments = createCrudModel({
   table: 'equipments', pk: 'id',
-  fields: ['code', 'nom', 'categorie', 'description'],
-  sortable: ['id', 'nom', 'categorie'],
+  fields: ['code', 'nom', 'categorie', 'description', 'zone'],
+  sortable: ['id', 'nom', 'categorie', 'zone'],
 });
 
 const RoomEquipments = createCrudModel({
   table: 'room_equipments', pk: 'id',
-  fields: ['room_id', 'equipment_id', 'quantite', 'statut'],
-  sortable: ['id', 'statut'],
+  fields: ['room_id', 'equipment_id', 'quantite', 'statut', 'zone'],
+  sortable: ['id', 'statut', 'zone'],
 });
 
 const RoomMaintenance = createCrudModel({
   table: 'room_maintenance', pk: 'id',
   fields: ['room_id', 'equipment_id', 'type_intervention', 'description', 'statut',
-    'date_declaration', 'date_resolution', 'cout', 'created_by'],
+    'date_declaration', 'date_resolution', 'cout', 'created_by', 'location',
+    'equipment_label', 'worker_id', 'execution_date', 'finish_date',
+    'materials_cost', 'labor_cost', 'total_cost'],
   sortable: ['id', 'statut', 'date_declaration'],
+});
+
+const MaintenanceWorkers = createCrudModel({
+  table: 'maintenance_workers', pk: 'id',
+  fields: ['nom', 'prenom', 'telephone', 'email', 'specialite', 'date_debut', 'date_fin', 'statut'],
+  sortable: ['id', 'nom', 'specialite', 'date_debut'],
 });
 
 const RoomMinibar = createCrudModel({
@@ -47,7 +54,7 @@ const RoomStatusHistory = createCrudModel({
 
 const Reservations = createCrudModel({
   table: 'reservations', pk: 'id',
-  fields: ['client_id', 'room_id', 'date_arrivee', 'date_depart', 'montant_total', 'statut'],
+  fields: ['client_id', 'room_id', 'date_arrivee', 'date_depart', 'montant_brut', 'remise_pourcentage', 'montant_remise', 'remise_validee_par', 'remise_validee_at', 'montant_total', 'statut'],
   sortable: ['id', 'date_arrivee', 'date_depart', 'statut'],
 });
 
@@ -251,15 +258,15 @@ async function isRoomAvailable(roomId, dateArrivee, dateDepart, excludeReservati
 }
 
 // Crée une réservation + ses accompagnants dans une transaction
-async function createReservationWithGuests({ clientId, roomId, dateArrivee, dateDepart, montantTotal, statut, guests = [] }) {
+async function createReservationWithGuests({ clientId, roomId, dateArrivee, dateDepart, montantTotal, montantBrut, remisePourcentage, montantRemise, statut, guests = [] }) {
   return withTransaction(async (conn) => {
     // Utilise le statut envoyé par le contrôleur ou 'EN_COURS' par défaut
     const statusValue = statut || 'EN_COURS';
 
     const [result] = await conn.query(
-      `INSERT INTO reservations (client_id, room_id, date_arrivee, date_depart, montant_total, statut)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [clientId, roomId, dateArrivee, dateDepart, montantTotal, statusValue]
+      `INSERT INTO reservations (client_id, room_id, date_arrivee, date_depart, montant_brut, remise_pourcentage, montant_remise, montant_total, statut)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [clientId, roomId, dateArrivee, dateDepart, montantBrut, remisePourcentage || 0, montantRemise || 0, montantTotal, statusValue]
     );
     const reservationId = result.insertId;
     for (const g of guests) {
@@ -273,6 +280,16 @@ async function createReservationWithGuests({ clientId, roomId, dateArrivee, date
     const [row] = await conn.query('SELECT * FROM reservations WHERE id = ?', [reservationId]);
     return row[0];
   });
+}
+
+async function validateReservationDiscount(id, validatedBy) {
+  await pool.query(
+    `UPDATE reservations
+        SET remise_validee_par = ?, remise_validee_at = CURRENT_TIMESTAMP
+      WHERE id = ? AND remise_pourcentage > 0`,
+    [validatedBy, id]
+  );
+  return findReservationWithDetails(id);
 }
 
 async function recordReservationPayment(reservationId, module = 'HEBERGEMENT') {
@@ -421,6 +438,9 @@ async function updateMaintenanceStatus(id, statut) {
   }
 
   const [updated] = await pool.query('SELECT * FROM room_maintenance WHERE id = ?', [id]);
+  if (['TERMINE', 'ANNULE'].includes(statut) && existing[0].room_id) {
+    await pool.query('UPDATE rooms SET statut = "LIBRE" WHERE id = ? AND statut = "MAINTENANCE"', [existing[0].room_id]);
+  }
   return updated[0];
 }
 
@@ -792,15 +812,11 @@ async function restockMinibar({ roomId, productId, quantity, userId }) {
 
 module.exports = {
   RoomTypes, Rooms, Equipments, RoomEquipments, RoomMaintenance, RoomMinibar,
-  RoomStatusHistory, Reservations, ReservationGuests, Stays, HousekeepingTasks,
+  RoomStatusHistory, Reservations, ReservationGuests, Stays, HousekeepingTasks, MaintenanceWorkers,
   LostAndFound, MinibarConsumptions,
-  isRoomAvailable, createReservationWithGuests, recordReservationPayment, checkIn, checkOut, availableRooms,
+  isRoomAvailable, createReservationWithGuests, validateReservationDiscount, recordReservationPayment, checkIn, checkOut, availableRooms,
   updateMaintenanceStatus, getMaintenanceStats, getReservationStats,
   updateRoomStatus, getEquipmentByCode, getEquipmentCategories, getEquipmentStats,
   updateRoomEquipmentStatus, getRoomStats, updateHousekeepingStatus, getHousekeepingStats,
   transferStockToMinibar, handleMinibarConsumption, getMinibarWithAlerts, getLowStockMinibarItems, restockMinibar,
 };
-*/
-
-// Empty export to prevent module errors when commented out
-module.exports = {};

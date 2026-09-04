@@ -17,6 +17,27 @@ const suppliersCrud = createCrudController(stock.Suppliers, {});
 const purchasesCrud = createCrudController(stock.Purchases, { filterable: ['supplier_id', 'statut'] });
 const purchaseItemsCrud = createCrudController(stock.PurchaseItems, { filterable: ['purchase_id'] });
 
+function validateStockPayload(body) {
+  if (body.quantite !== undefined && (!Number.isFinite(Number(body.quantite)) || Number(body.quantite) < 0)) {
+    throw ApiError.badRequest('La quantité de stock doit être positive ou nulle');
+  }
+  if (body.seuil_minimum !== undefined && (!Number.isFinite(Number(body.seuil_minimum)) || Number(body.seuil_minimum) < 0)) {
+    throw ApiError.badRequest('Le seuil minimum doit être positif ou nul');
+  }
+}
+
+async function createStockHandler(req, res) {
+  validateStockPayload(req.body);
+  return created(res, await stock.Stocks.create(req.body));
+}
+
+async function updateStockHandler(req, res) {
+  validateStockPayload(req.body);
+  const existing = await stock.Stocks.findById(req.params.id);
+  if (!existing) throw ApiError.notFound(`stocks #${req.params.id} introuvable`);
+  return ok(res, await stock.Stocks.update(req.params.id, req.body));
+}
+
 /**
  * Enregistre un mouvement de stock manuel ou provenant d'un module tiers
  */
@@ -160,5 +181,7 @@ module.exports = {
   lowStockHandler,
   stockByProductHandler,
   getProductsWithStockHandler,
+  createStockHandler,
+  updateStockHandler,
   consumePortionHandler,
 };

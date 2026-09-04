@@ -1,16 +1,20 @@
-/*
-// controllers/hebergementController.js - COMMENTED OUT
+// controllers/hebergementController.js
 const heb = require('../models/hebergementModel');
 const stock = require('../models/stockModel');
 const { createCrudController } = require('./controllerFactory');
 const ApiError = require('../utils/ApiError');
 const { ok, created } = require('../utils/apiResponse');
 
+function isAdmin(req) {
+  return String(req.user?.role || '').toLowerCase() === 'admin';
+}
+
 const roomTypesCrud = createCrudController(heb.RoomTypes, {});
 const roomsCrud = createCrudController(heb.Rooms, { filterable: ['statut', 'room_type_id'] });
 const equipmentsCrud = createCrudController(heb.Equipments, { filterable: ['categorie'] });
 const roomEquipmentsCrud = createCrudController(heb.RoomEquipments, { filterable: ['room_id', 'statut'] });
 const roomMaintenanceCrud = createCrudController(heb.RoomMaintenance, { filterable: ['room_id', 'statut', 'type_intervention'] });
+const maintenanceWorkersCrud = createCrudController(heb.MaintenanceWorkers, { filterable: ['statut', 'specialite'] });
 const roomMinibarCrud = createCrudController(heb.RoomMinibar, { filterable: ['room_id'] });
 const roomStatusHistoryCrud = createCrudController(heb.RoomStatusHistory, { filterable: ['room_id'] });
 const reservationsCrud = createCrudController(heb.Reservations, { filterable: ['client_id', 'room_id', 'statut'] });
@@ -19,6 +23,38 @@ const staysCrud = createCrudController(heb.Stays, { filterable: ['reservation_id
 const housekeepingCrud = createCrudController(heb.HousekeepingTasks, { filterable: ['room_id', 'statut', 'assigned_user_id'] });
 const lostAndFoundCrud = createCrudController(heb.LostAndFound, { filterable: ['room_id', 'statut'] });
 const minibarConsumptionsCrud = createCrudController(heb.MinibarConsumptions, { filterable: ['room_id', 'client_id', 'facturee'] });
+
+async function createMaintenanceHandler(req, res) {
+  const data = { ...req.body };
+  data.room_id = data.room_id ? Number(data.room_id) : null;
+  data.equipment_id = data.equipment_id ? Number(data.equipment_id) : null;
+  data.worker_id = data.worker_id ? Number(data.worker_id) : null;
+  delete data.date_declaration;
+  data.total_cost = Number(data.materials_cost || 0) + Number(data.labor_cost || 0);
+  data.cout = data.total_cost;
+  if (!data.location || !data.type_intervention) throw ApiError.badRequest('Le lieu et le type d’intervention sont requis');
+  const row = await heb.RoomMaintenance.create(data);
+  if (data.room_id) await heb.updateRoomStatus(data.room_id, 'MAINTENANCE');
+  return created(res, row);
+}
+
+async function updateRoomHandler(req, res) {
+  if (Object.prototype.hasOwnProperty.call(req.body, 'prix_nuit') && !isAdmin(req)) {
+    throw ApiError.forbidden('Seul un administrateur peut modifier le tarif d’une chambre');
+  }
+  const existing = await heb.Rooms.findById(req.params.id);
+  if (!existing) throw ApiError.notFound(`rooms #${req.params.id} introuvable`);
+  return ok(res, await heb.Rooms.update(req.params.id, req.body));
+}
+
+async function updateRoomTypeHandler(req, res) {
+  if (Object.prototype.hasOwnProperty.call(req.body, 'prix_base') && !isAdmin(req)) {
+    throw ApiError.forbidden('Seul un administrateur peut modifier le tarif du type de chambre');
+  }
+  const existing = await heb.RoomTypes.findById(req.params.id);
+  if (!existing) throw ApiError.notFound(`room_types #${req.params.id} introuvable`);
+  return ok(res, await heb.RoomTypes.update(req.params.id, req.body));
+}
 
 // --- Logique métier ----------------------------------------------------------
 
@@ -35,24 +71,47 @@ async function availableRoomsHandler(req, res) {
 }
 
 async function createReservationHandler(req, res) {
-  const { client_id, room_id, date_arrivee, date_depart, montant_total, guests, statut } = req.body;
+  const { client_id, room_id, date_arrivee, date_depart, remise_pourcentage = 0, guests, statut } = req.body;
   if (!client_id || !room_id || !date_arrivee || !date_depart) {
     throw ApiError.badRequest('client_id, room_id, date_arrivee, date_depart sont requis');
   }
   const disponible = await heb.isRoomAvailable(room_id, date_arrivee, date_depart);
   if (!disponible) throw ApiError.conflict('Chambre non disponible sur cette période');
 
+  const discount = Number(remise_pourcentage);
+  if (!Number.isFinite(discount) || discount < 0 || discount > 100) {
+    throw ApiError.badRequest('La remise doit être comprise entre 0 et 100 %');
+  }
+  const room = await heb.Rooms.findById(room_id);
+  const nights = Math.ceil((new Date(date_depart) - new Date(date_arrivee)) / 86400000);
+  if (!room || nights <= 0) throw ApiError.badRequest('Dates ou chambre invalides');
+  const gross = Number(room.prix_nuit || 0) * nights;
+  const discountAmount = Math.round(gross * discount / 100);
+
   const reservation = await heb.createReservationWithGuests({
     clientId: client_id,
     roomId: room_id,
     dateArrivee: date_arrivee,
     dateDepart: date_depart,
-    montantTotal: montant_total,
+    montantTotal: gross - discountAmount,
+    montantBrut: gross,
+    remisePourcentage: discount,
+    montantRemise: discountAmount,
     statut: statut || 'EN_COURS',
     guests: guests || [],
   });
   const reservationWithDetails = await heb.Reservations.findById(reservation.id);
   return created(res, reservationWithDetails);
+}
+
+async function validateReservationDiscountHandler(req, res) {
+  const role = String(req.user?.role || '').toLowerCase();
+  if (!['admin', 'manager'].includes(role)) {
+    throw ApiError.forbidden('Seule la direction peut valider une remise');
+  }
+  const reservation = await heb.validateReservationDiscount(req.params.id, req.user.id_admin || req.user.id);
+  if (!reservation) throw ApiError.notFound('Réservation introuvable');
+  return ok(res, reservation);
 }
 
 async function checkInHandler(req, res) {
@@ -398,10 +457,10 @@ async function deleteHebergementStockHandler(req, res) {
 }
 
 module.exports = {
-  roomTypesCrud, roomsCrud, equipmentsCrud, roomEquipmentsCrud, roomMaintenanceCrud,
+  roomTypesCrud, roomsCrud, equipmentsCrud, roomEquipmentsCrud, roomMaintenanceCrud, maintenanceWorkersCrud,
   roomMinibarCrud, roomStatusHistoryCrud, reservationsCrud, reservationGuestsCrud,
   staysCrud, housekeepingCrud, lostAndFoundCrud, minibarConsumptionsCrud,
-  availabilityHandler, availableRoomsHandler, createReservationHandler, checkInHandler, checkOutHandler,
+  availabilityHandler, availableRoomsHandler, updateRoomHandler, updateRoomTypeHandler, createReservationHandler, validateReservationDiscountHandler, createMaintenanceHandler, checkInHandler, checkOutHandler,
   updateMaintenanceStatusHandler, maintenanceStatsHandler, reservationStatsHandler,
   updateRoomStatusHandler, equipmentByCodeHandler, equipmentCategoriesHandler,
   equipmentStatsHandler, updateRoomEquipmentStatusHandler,
@@ -409,18 +468,3 @@ module.exports = {
   transferStockToMinibarHandler, handleMinibarConsumptionHandler, getMinibarWithAlertsHandler, restockMinibarHandler, getLowStockMinibarHandler,
   getHebergementStockHandler, addHebergementStockHandler, updateHebergementStockHandler, deleteHebergementStockHandler,
 };
-
-const hebergementModel = require('../models/hebergementModel');
-
-exports.checkIn = async (req, res) => {
-  try {
-    const stay = await hebergementModel.checkIn(req.params.id);
-    res.status(200).json({ message: 'Check-in réussi', stay });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-};
-*/
-
-// Empty export to prevent module errors when commented out
-module.exports = {};

@@ -19,6 +19,8 @@ router.use('/locations', managementRoles, createCrudRouter(ctrl.stockLocationsCr
 router.get('/alerts/low-stock', ctrl.lowStockHandler);            // GET /api/stock/alerts/low-stock?threshold=
 router.get('/products/:id/stock', ctrl.stockByProductHandler);    // GET /api/stock/products/:id/stock
 router.get('/stocks/with-products', ctrl.getProductsWithStockHandler); // GET /api/stock/stocks/with-products?location_id=
+router.post('/stocks', managementRoles, ctrl.createStockHandler);
+router.put('/stocks/:id', managementRoles, ctrl.updateStockHandler);
 router.use('/stocks', createCrudRouter(ctrl.stocksCrud));
 
 router.post('/movements', managementRoles, ctrl.movementHandler);                  // POST /api/stock/movements

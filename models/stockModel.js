@@ -36,7 +36,7 @@ const StockLocations = createCrudModel({
 
 const Stocks = createCrudModel({
   table: 'stocks', pk: 'id',
-  fields: ['product_id', 'location_id', 'quantite'],
+  fields: ['product_id', 'location_id', 'quantite', 'seuil_minimum', 'etat'],
   sortable: ['id', 'quantite'],
 });
 
