@@ -6,7 +6,7 @@ const adminRoutes = require('./adminRoutes');
 const clientRoutes = require('./clientRoutes');
 const casinoRoutes = require('./casinoRoutes');
 const caisseTransfersRoutes = require('./caisseTransfersRoutes');
-// const hebergementRoutes = require('./hebergementRoutes'); // COMMENTED OUT
+const hebergementRoutes = require('./hebergementRoutes');
 const restaurantRoutes = require('./restaurantRoutes');
 const stockRoutes = require('./stockRoutes');
 const financeRoutes = require('./financeRoutes');
@@ -20,7 +20,7 @@ router.get('/', (req, res) => res.json({
   success: true,
   data: {
     message: 'API HDA opérationnelle',
-    modules: ['auth', 'admin', 'clients', 'casino', /* 'hebergement', */ 'restaurant', 'stock', 'finance', 'bar', 'alcool', 'alchool', 'signatures'],
+    modules: ['auth', 'admin', 'clients', 'casino', 'hebergement', 'restaurant', 'stock', 'finance', 'bar', 'alcool', 'alchool', 'signatures'],
   },
 }));
 
@@ -29,7 +29,7 @@ router.use('/admin', adminRoutes);
 router.use('/clients', clientRoutes);
 router.use('/casino', casinoRoutes);
 router.use('/caisse-transfers', caisseTransfersRoutes);
-// router.use('/hebergement', hebergementRoutes); // COMMENTED OUT
+router.use('/hebergement', hebergementRoutes);
 router.use('/restaurant', restaurantRoutes);
 router.use('/stock', stockRoutes);
 router.use('/finance', financeRoutes);
