@@ -1,3 +1,5 @@
+/*
+// models/hebergementModel.js - COMMENTED OUT
 const { pool, withTransaction } = require('../config/db');
 const { createCrudModel } = require('./crudFactory');
 const stockModel = require('./stockModel');
@@ -798,3 +800,7 @@ module.exports = {
   updateRoomEquipmentStatus, getRoomStats, updateHousekeepingStatus, getHousekeepingStats,
   transferStockToMinibar, handleMinibarConsumption, getMinibarWithAlerts, getLowStockMinibarItems, restockMinibar,
 };
+*/
+
+// Empty export to prevent module errors when commented out
+module.exports = {};
