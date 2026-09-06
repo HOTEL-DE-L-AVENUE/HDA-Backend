@@ -2232,6 +2232,20 @@ exports.savePlayerSheetHandler = async (req, res, next) => {
         if (removedLine) throw ApiError.forbidden('Un croupier ne peut pas supprimer une ligne de joueur');
       }
     }
+    const [[existingSheet]] = await pool.query(
+      `SELECT sheet_data FROM casino_player_sheets WHERE sheet_date = ? AND table_name = ? LIMIT 1`,
+      [date, tableName]
+    );
+    const previousData = existingSheet
+      ? (typeof existingSheet.sheet_data === 'string' ? JSON.parse(existingSheet.sheet_data) : existingSheet.sheet_data)
+      : {};
+    const previousChecks = new Map((previousData.rackChecks || []).map((check) => [String(check.id), check]));
+    const newlyValidatedCashChecks = rackChecks.filter((check) => check.type === 'Cash check'
+      && check.verified
+      && !previousChecks.get(String(check.id))?.verified);
+    const newlyValidatedRackChecks = rackChecks.filter((check) => String(check.type || '').startsWith('Rack check')
+      && check.verified
+      && !previousChecks.get(String(check.id))?.verified);
     const cashingBySheet = new Map();
     players.forEach((player) => {
       const sheetId = player.ficheId || player.id;
@@ -2264,6 +2278,51 @@ exports.savePlayerSheetHandler = async (req, res, next) => {
        ON DUPLICATE KEY UPDATE sheet_data = VALUES(sheet_data), updated_by = VALUES(updated_by)`,
       [date, tableName, sheetData, userId, userId]
     );
+    if (newlyValidatedCashChecks.length) {
+      const [[cashier]] = await pool.query(
+        `SELECT nom, prenom FROM users WHERE id_admin = ? LIMIT 1`,
+        [userId]
+      );
+      const [directionUsers] = await pool.query(
+        `SELECT id_admin FROM users WHERE role IN ('admin', 'manager') AND statut = 'actif'`
+      );
+      const caissier = cashier ? `${cashier.prenom || ''} ${cashier.nom || ''}`.trim() : 'Caissier';
+      for (const check of newlyValidatedCashChecks) {
+        const expected = Number(check.expected) || 0;
+        const actual = Number(check.actual) || 0;
+        const missing = Math.max(0, expected - actual);
+        const variance = actual - expected;
+        const message = `Cash check horaire validé par ${caissier} — table ${tableName}, le ${check.date || date} à ${check.time || '--:--'}. Attendu : ${expected} Ariary, constaté : ${actual} Ariary, écart : ${variance} Ariary${missing > 0 ? `, manque : ${missing} Ariary` : ''}.`;
+        for (const user of directionUsers) {
+          await pool.query(
+            `INSERT INTO notifications (titre, message, statut, created_at) VALUES (?, ?, 'nouveau', NOW())`,
+            [`Cash check horaire — ${tableName}`, `${message} Référence fiche ${date}.`]
+          );
+        }
+      }
+    }
+    if (newlyValidatedRackChecks.length) {
+      const [[cashier]] = await pool.query(
+        `SELECT nom, prenom FROM users WHERE id_admin = ? LIMIT 1`,
+        [userId]
+      );
+      const [directionUsers] = await pool.query(
+        `SELECT id_admin FROM users WHERE role IN ('admin', 'manager') AND statut = 'actif'`
+      );
+      const caissier = cashier ? `${cashier.prenom || ''} ${cashier.nom || ''}`.trim() : 'Caissier';
+      for (const check of newlyValidatedRackChecks) {
+        const expected = Number(check.expected) || 220000;
+        const actual = Number(check.actual) || 0;
+        const missing = Math.max(0, expected - actual);
+        const message = `Rack check validé par ${caissier} — table ${tableName}, le ${check.date || date} à ${check.time || '--:--'}. ${check.type}, attendu : ${expected} Ariary, constaté : ${actual} Ariary, manque : ${missing} Ariary.`;
+        for (const user of directionUsers) {
+          await pool.query(
+            `INSERT INTO notifications (titre, message, statut, created_at) VALUES (?, ?, 'nouveau', NOW())`,
+            [`Rack check — ${tableName}`, `${message} Référence fiche ${date}.`]
+          );
+        }
+      }
+    }
     const [[row]] = await pool.query(
       `SELECT id, sheet_date AS date, table_name, sheet_data
          FROM casino_player_sheets
