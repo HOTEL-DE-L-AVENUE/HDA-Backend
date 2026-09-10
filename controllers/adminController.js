@@ -96,7 +96,7 @@ async function login(req, res) {
   if (!valid) throw ApiError.unauthorized('Identifiants invalides');
 
   const token = jwt.sign(
-    { id_admin: user.id_admin, role: user.role, email: user.email },
+    { id_admin: user.id_admin, role: user.role, email: user.email, module: user.module },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN || '8h' }
   );
@@ -152,7 +152,7 @@ async function refreshToken(req, res) {
     if (!user || user.statut !== 'actif') throw ApiError.unauthorized('Token invalide');
 
     const newToken = jwt.sign(
-      { id_admin: user.id_admin, role: user.role, email: user.email },
+      { id_admin: user.id_admin, role: user.role, email: user.email, module: user.module },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN || '8h' }
     );
