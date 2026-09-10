@@ -13,6 +13,7 @@ const financeRoutes = require('./financeRoutes');
 const barRoutes = require('./barRoutes');
 const alcoolRoutes = require('./alcoolRoutes');
 const signatureRoutes = require('./signatureRoutes');
+const rhRoutes = require('./rhRoutes');
 
 const router = express.Router();
 
@@ -20,7 +21,7 @@ router.get('/', (req, res) => res.json({
   success: true,
   data: {
     message: 'API HDA opérationnelle',
-    modules: ['auth', 'admin', 'clients', 'casino', 'hebergement', 'restaurant', 'stock', 'finance', 'bar', 'alcool', 'alchool', 'signatures'],
+    modules: ['auth', 'admin', 'clients', 'casino', 'hebergement', 'restaurant', 'stock', 'finance', 'bar', 'alcool', 'alchool', 'signatures', 'rh'],
   },
 }));
 
@@ -37,5 +38,6 @@ router.use('/bar', barRoutes);
 router.use('/alcool', alcoolRoutes);
 router.use('/alchool', alcoolRoutes);
 router.use('/signatures', signatureRoutes);
+router.use('/rh', rhRoutes);
 
 module.exports = router;
