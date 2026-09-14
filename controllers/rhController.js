@@ -113,5 +113,28 @@ async function myLeaveCreate(req, res) {
     return created(res, row);
   } catch (err) { businessError(err); }
 }
+async function myAttendanceList(req, res) {
+  const employee = await myEmployee(req);
+  const p = page(req);
+  const result = await model.listMyAttendance(employee.id, p);
+  return ok(res, result.rows, result.meta);
+}
+async function myCheckIn(req, res) {
+  const employee = await myEmployee(req);
+  try {
+    const row = await model.checkIn(employee.id, req.body?.notes);
+    if (!row) throw ApiError.notFound('Votre fiche employé est introuvable ou inactive');
+    await audit(req, 'HR_CHECK_IN_SELF', 'rh_attendance', row.id, { employee_id: row.employee_id });
+    return created(res, row);
+  } catch (err) { businessError(err); }
+}
+async function myCheckOut(req, res) {
+  const employee = await myEmployee(req);
+  try {
+    const row = await model.checkOut(employee.id, req.body?.notes);
+    await audit(req, 'HR_CHECK_OUT_SELF', 'rh_attendance', row.id, { employee_id: row.employee_id });
+    return ok(res, row);
+  } catch (err) { businessError(err); }
+}
 
-module.exports = { employeesList, getEmployee, createEmployee, updateEmployee, offboardEmployee, dashboard, leaveList, leaveCreate, leaveStatus, attendanceList, checkIn, checkOut, payrollList, payrollGenerate, payrollUpdate, payrollStatus, payrollPayslip, evaluationsCrud, evaluationCreate, myProfile, myLeaveList, myLeaveCreate };
+module.exports = { employeesList, getEmployee, createEmployee, updateEmployee, offboardEmployee, dashboard, leaveList, leaveCreate, leaveStatus, attendanceList, checkIn, checkOut, payrollList, payrollGenerate, payrollUpdate, payrollStatus, payrollPayslip, evaluationsCrud, evaluationCreate, myProfile, myLeaveList, myLeaveCreate, myAttendanceList, myCheckIn, myCheckOut };

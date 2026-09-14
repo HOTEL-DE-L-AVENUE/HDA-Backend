@@ -157,6 +157,12 @@ async function checkOut(employeeId, notes) {
   return (await pool.query('SELECT * FROM rh_attendance WHERE id=?', [entry.id]))[0][0];
 }
 
+async function listMyAttendance(employeeId, { page = 1, limit = 31, offset = 0 } = {}) {
+  const [[count]] = await pool.query(`SELECT COUNT(*) total FROM rh_attendance WHERE employee_id=?`, [employeeId]);
+  const [rows] = await pool.query(`SELECT * FROM rh_attendance WHERE employee_id=? ORDER BY attendance_date DESC LIMIT ? OFFSET ?`, [employeeId, limit, offset]);
+  return { rows, meta: paginationMeta(page, limit, count.total) };
+}
+
 async function payrollAdjustments(conn, employeeId, start, end, baseSalary) {
   const [[days]] = await conn.query(`SELECT COUNT(*) total FROM (SELECT attendance_date d FROM rh_attendance WHERE employee_id=? AND attendance_date BETWEEN ? AND ? AND status='ABSENT' UNION SELECT d FROM (SELECT DATE_ADD(start_date, INTERVAL seq.n DAY) d FROM rh_leave_requests JOIN (SELECT 0 n UNION SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 4 UNION SELECT 5 UNION SELECT 6 UNION SELECT 7 UNION SELECT 8 UNION SELECT 9 UNION SELECT 10 UNION SELECT 11 UNION SELECT 12 UNION SELECT 13 UNION SELECT 14 UNION SELECT 15 UNION SELECT 16 UNION SELECT 17 UNION SELECT 18 UNION SELECT 19 UNION SELECT 20 UNION SELECT 21 UNION SELECT 22 UNION SELECT 23 UNION SELECT 24 UNION SELECT 25 UNION SELECT 26 UNION SELECT 27 UNION SELECT 28 UNION SELECT 29 UNION SELECT 30) seq WHERE leave_type='SANS_SOLDE' AND status='APPROUVE' AND DATE_ADD(start_date, INTERVAL seq.n DAY) <= end_date AND DATE_ADD(start_date, INTERVAL seq.n DAY) BETWEEN ? AND ? AND DAYOFWEEK(DATE_ADD(start_date, INTERVAL seq.n DAY)) NOT IN (1,7)) unpaid) missing`, [employeeId, start, end, start, end]);
   const businessDays = workingDays(start, end) || 1;
@@ -215,4 +221,4 @@ async function transitionPayroll(id, status) {
   return (await pool.query('SELECT * FROM rh_payroll WHERE id=?', [id]))[0][0];
 }
 
-module.exports = { employees, evaluations, listEmployees, dashboard, listLeaveRequests, createLeaveRequest, updateLeaveStatus, listAttendance, checkIn, checkOut, generatePayroll, listPayroll, updatePayroll, transitionPayroll, monthBounds, findEmployeeByUserId, createOrLinkEmployeeFromUser };
+module.exports = { employees, evaluations, listEmployees, dashboard, listLeaveRequests, createLeaveRequest, updateLeaveStatus, listAttendance, checkIn, checkOut, listMyAttendance, generatePayroll, listPayroll, updatePayroll, transitionPayroll, monthBounds, findEmployeeByUserId, createOrLinkEmployeeFromUser };
