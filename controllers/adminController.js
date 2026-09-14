@@ -2,6 +2,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { Users, findUserByEmail, AuditLogs, logAction, Notifications } = require('../models/adminModel');
+const { createOrLinkEmployeeFromUser } = require('../models/rhModel');
 const { createCrudController } = require('./controllerFactory');
 const { renderUser, renderUserList } = require('../views/userView');
 const ApiError = require('../utils/ApiError');
@@ -81,6 +82,8 @@ async function register(req, res) {
     statut: statut || 'actif'
   });
   await logAction({ userId: user.id_admin, action: 'CREATE_USER', entite: 'users', entiteId: user.id_admin });
+  // Le module RH ne doit jamais empêcher la création d'un compte : erreur avalée et loguée.
+  await createOrLinkEmployeeFromUser(user).catch((err) => console.error('Création de la fiche RH impossible:', err.message));
   return created(res, renderUser(user));
 }
 

@@ -91,4 +91,50 @@ async function payrollPayslip(req, res) {
 }
 const evaluationsCrud = require('./controllerFactory').createCrudController(model.evaluations, { filterable: ['employee_id', 'status'] });
 async function evaluationCreate(req, res) { const body = { ...(req.body || {}), reviewer_id: req.user?.id_admin }; if (!body.employee_id || !body.period || !body.evaluation_date) throw ApiError.badRequest('employee_id, period et evaluation_date sont obligatoires'); const row = await model.evaluations.create(body); await audit(req, 'CREATE_HR_EVALUATION', 'rh_evaluations', row.id, { employee_id: row.employee_id }); return created(res, row); }
-module.exports = { employeesList, getEmployee, createEmployee, updateEmployee, offboardEmployee, dashboard, leaveList, leaveCreate, leaveStatus, attendanceList, checkIn, checkOut, payrollList, payrollGenerate, payrollUpdate, payrollStatus, payrollPayslip, evaluationsCrud, evaluationCreate };
+
+// --- Espace personnel : tout utilisateur connecté, limité à SA propre fiche -----
+// L'employee_id vient toujours de la fiche liée au compte connecté, jamais du body,
+// pour qu'un utilisateur ne puisse jamais lire ou agir au nom d'un collègue.
+async function myEmployee(req) {
+  const employee = await model.findEmployeeByUserId(req.user.id_admin);
+  if (!employee) throw ApiError.notFound('Aucune fiche RH n’est encore liée à votre compte. Contactez un administrateur.');
+  return employee;
+}
+async function myProfile(req, res) { const employee = await myEmployee(req); return ok(res, renderEmployee(employee)); }
+async function myLeaveList(req, res) { const employee = await myEmployee(req); const p = page(req); const result = await model.listLeaveRequests({ ...p, employeeId: employee.id }); return ok(res, result.rows, result.meta); }
+async function myLeaveCreate(req, res) {
+  const employee = await myEmployee(req);
+  const body = req.body || {};
+  if (!body.start_date || !body.end_date || !LEAVE_TYPES.includes(String(body.leave_type || '').toUpperCase())) throw ApiError.badRequest(`dates et leave_type (${LEAVE_TYPES.join(', ')}) sont obligatoires`);
+  try {
+    const row = await model.createLeaveRequest({ employee_id: employee.id, leave_type: String(body.leave_type).toUpperCase(), start_date: body.start_date, end_date: body.end_date, reason: body.reason });
+    if (!row) throw ApiError.notFound('Votre fiche employé est introuvable ou inactive');
+    await audit(req, 'CREATE_HR_LEAVE_SELF', 'rh_leave_requests', row.id, { employee_id: row.employee_id });
+    return created(res, row);
+  } catch (err) { businessError(err); }
+}
+async function myAttendanceList(req, res) {
+  const employee = await myEmployee(req);
+  const p = page(req);
+  const result = await model.listMyAttendance(employee.id, p);
+  return ok(res, result.rows, result.meta);
+}
+async function myCheckIn(req, res) {
+  const employee = await myEmployee(req);
+  try {
+    const row = await model.checkIn(employee.id, req.body?.notes);
+    if (!row) throw ApiError.notFound('Votre fiche employé est introuvable ou inactive');
+    await audit(req, 'HR_CHECK_IN_SELF', 'rh_attendance', row.id, { employee_id: row.employee_id });
+    return created(res, row);
+  } catch (err) { businessError(err); }
+}
+async function myCheckOut(req, res) {
+  const employee = await myEmployee(req);
+  try {
+    const row = await model.checkOut(employee.id, req.body?.notes);
+    await audit(req, 'HR_CHECK_OUT_SELF', 'rh_attendance', row.id, { employee_id: row.employee_id });
+    return ok(res, row);
+  } catch (err) { businessError(err); }
+}
+
+module.exports = { employeesList, getEmployee, createEmployee, updateEmployee, offboardEmployee, dashboard, leaveList, leaveCreate, leaveStatus, attendanceList, checkIn, checkOut, payrollList, payrollGenerate, payrollUpdate, payrollStatus, payrollPayslip, evaluationsCrud, evaluationCreate, myProfile, myLeaveList, myLeaveCreate, myAttendanceList, myCheckIn, myCheckOut };

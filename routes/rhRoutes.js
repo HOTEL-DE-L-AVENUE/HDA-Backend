@@ -3,6 +3,15 @@ const ctrl = require('../controllers/rhController');
 const { requireAuth } = require('../middlewares/auth');
 const router = express.Router();
 
+// Espace personnel : tout utilisateur connecté (n'importe quel rôle), limité à sa
+// propre fiche. Défini avant requireHR ci-dessous, donc non soumis à ce filtre.
+router.get('/me', requireAuth, ctrl.myProfile);
+router.get('/me/leave-requests', requireAuth, ctrl.myLeaveList);
+router.post('/me/leave-requests', requireAuth, ctrl.myLeaveCreate);
+router.get('/me/attendance', requireAuth, ctrl.myAttendanceList);
+router.post('/me/attendance/check-in', requireAuth, ctrl.myCheckIn);
+router.post('/me/attendance/check-out', requireAuth, ctrl.myCheckOut);
+
 function requireHR(req, res, next) {
   let modules = req.user?.module;
   if (typeof modules === 'string') { try { modules = JSON.parse(modules); } catch { modules = modules.split(','); } }

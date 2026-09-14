@@ -2,9 +2,46 @@ const { pool, withTransaction } = require('../config/db');
 const { createCrudModel } = require('./crudFactory');
 const { workingDays, monthBounds, calculateNet } = require('../utils/hr');
 
-const employeeFields = ['matricule', 'first_name', 'last_name', 'photo_url', 'birth_date', 'phone', 'address', 'email', 'identification_number', 'department', 'position', 'joined_at', 'contract_type', 'contract_end_date', 'salary', 'status', 'departure_date', 'departure_reason'];
+const employeeFields = ['user_id', 'matricule', 'first_name', 'last_name', 'photo_url', 'birth_date', 'phone', 'address', 'email', 'identification_number', 'department', 'position', 'joined_at', 'contract_type', 'contract_end_date', 'salary', 'status', 'departure_date', 'departure_reason'];
 const employees = createCrudModel({ table: 'rh_employees', fields: employeeFields, sortable: ['id', 'matricule', 'first_name', 'last_name', 'department', 'position', 'joined_at', 'salary', 'status', 'created_at'] });
 const evaluations = createCrudModel({ table: 'rh_evaluations', fields: ['employee_id', 'period', 'reviewer_id', 'score', 'comment', 'evaluation_date', 'status'], sortable: ['id', 'employee_id', 'period', 'score', 'evaluation_date', 'status', 'created_at'] });
+
+// --- Lien avec les comptes utilisateurs (gestion d'accès) ---------------------
+
+async function findEmployeeByUserId(userId) {
+  const [rows] = await pool.query('SELECT * FROM rh_employees WHERE user_id = ? LIMIT 1', [userId]);
+  return rows[0] || null;
+}
+
+// Appelée à la création d'un compte utilisateur : relie une fiche RH existante
+// (même email, pas encore liée) ou crée une nouvelle fiche RH minimale.
+// Ne jette jamais d'erreur bloquante : la création du compte utilisateur ne doit
+// jamais échouer à cause du module RH.
+async function createOrLinkEmployeeFromUser(user) {
+  if (user.email) {
+    const [rows] = await pool.query('SELECT id FROM rh_employees WHERE email = ? AND user_id IS NULL LIMIT 1', [user.email]);
+    if (rows[0]) {
+      await pool.query('UPDATE rh_employees SET user_id = ? WHERE id = ?', [user.id_admin, rows[0].id]);
+      return employees.findById(rows[0].id);
+    }
+  }
+  const matricule = `HDA-${Date.now().toString().slice(-8)}`;
+  const row = await employees.create({
+    user_id: user.id_admin,
+    matricule,
+    first_name: user.prenom,
+    last_name: user.nom,
+    email: user.email || null,
+    department: 'Administration',
+    position: user.role || 'Employé',
+    joined_at: new Date().toISOString().slice(0, 10),
+    contract_type: 'CDI',
+    salary: 0,
+    status: 'ACTIF',
+  });
+  await pool.query('INSERT IGNORE INTO rh_leave_balances (employee_id, annual_accrued, annual_used) VALUES (?, 24, 0)', [row.id]);
+  return row;
+}
 
 async function syncCurrentLeaveStatus(connection = pool) {
   // Employment status is not used to record daily absence. A current approved leave
@@ -120,6 +157,12 @@ async function checkOut(employeeId, notes) {
   return (await pool.query('SELECT * FROM rh_attendance WHERE id=?', [entry.id]))[0][0];
 }
 
+async function listMyAttendance(employeeId, { page = 1, limit = 31, offset = 0 } = {}) {
+  const [[count]] = await pool.query(`SELECT COUNT(*) total FROM rh_attendance WHERE employee_id=?`, [employeeId]);
+  const [rows] = await pool.query(`SELECT * FROM rh_attendance WHERE employee_id=? ORDER BY attendance_date DESC LIMIT ? OFFSET ?`, [employeeId, limit, offset]);
+  return { rows, meta: paginationMeta(page, limit, count.total) };
+}
+
 async function payrollAdjustments(conn, employeeId, start, end, baseSalary) {
   const [[days]] = await conn.query(`SELECT COUNT(*) total FROM (SELECT attendance_date d FROM rh_attendance WHERE employee_id=? AND attendance_date BETWEEN ? AND ? AND status='ABSENT' UNION SELECT d FROM (SELECT DATE_ADD(start_date, INTERVAL seq.n DAY) d FROM rh_leave_requests JOIN (SELECT 0 n UNION SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 4 UNION SELECT 5 UNION SELECT 6 UNION SELECT 7 UNION SELECT 8 UNION SELECT 9 UNION SELECT 10 UNION SELECT 11 UNION SELECT 12 UNION SELECT 13 UNION SELECT 14 UNION SELECT 15 UNION SELECT 16 UNION SELECT 17 UNION SELECT 18 UNION SELECT 19 UNION SELECT 20 UNION SELECT 21 UNION SELECT 22 UNION SELECT 23 UNION SELECT 24 UNION SELECT 25 UNION SELECT 26 UNION SELECT 27 UNION SELECT 28 UNION SELECT 29 UNION SELECT 30) seq WHERE leave_type='SANS_SOLDE' AND status='APPROUVE' AND DATE_ADD(start_date, INTERVAL seq.n DAY) <= end_date AND DATE_ADD(start_date, INTERVAL seq.n DAY) BETWEEN ? AND ? AND DAYOFWEEK(DATE_ADD(start_date, INTERVAL seq.n DAY)) NOT IN (1,7)) unpaid) missing`, [employeeId, start, end, start, end]);
   const businessDays = workingDays(start, end) || 1;
@@ -178,4 +221,4 @@ async function transitionPayroll(id, status) {
   return (await pool.query('SELECT * FROM rh_payroll WHERE id=?', [id]))[0][0];
 }
 
-module.exports = { employees, evaluations, listEmployees, dashboard, listLeaveRequests, createLeaveRequest, updateLeaveStatus, listAttendance, checkIn, checkOut, generatePayroll, listPayroll, updatePayroll, transitionPayroll, monthBounds };
+module.exports = { employees, evaluations, listEmployees, dashboard, listLeaveRequests, createLeaveRequest, updateLeaveStatus, listAttendance, checkIn, checkOut, listMyAttendance, generatePayroll, listPayroll, updatePayroll, transitionPayroll, monthBounds, findEmployeeByUserId, createOrLinkEmployeeFromUser };
