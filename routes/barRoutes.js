@@ -7,13 +7,13 @@ const { requireAuth, requireRole } = require('../middlewares/auth');
 const router = express.Router();
 const managementRoles = requireRole('admin', 'manager', 'stock_manager');
 const adminOnly = requireRole('admin');
-const cashierRoles = requireRole('admin', 'caisse', 'caissier');
-const orderRoles = requireRole('admin', 'caisse', 'caissier', 'water', 'barman');
+const cashierRoles = requireRole('admin', 'manager', 'caisse', 'caissier');
+const orderRoles = requireRole('admin', 'manager', 'caisse', 'caissier', 'water', 'barman');
 const tableRoles = requireRole('admin', 'manager', 'stock_manager', 'water', 'barman', 'caisse', 'caissier');
 
 const orderStatusRoles = (req, res, next) => {
 	const middleware = req.body?.statut === 'ENCAISSEE'
-		? requireRole('admin', 'caisse', 'caissier')
+		? requireRole('admin', 'manager', 'caisse', 'caissier')
 		: orderRoles;
 	return middleware(req, res, next);
 };
@@ -60,7 +60,7 @@ router.post('/orders', orderRoles, ctrl.createBarOrderHandler);
 router.put('/orders/:id', orderRoles, ctrl.updateBarOrderHandler);
 router.put('/orders/:id/status', orderStatusRoles, ctrl.updateBarOrderStatusHandler);
 router.post('/orders/close-all', orderStatusRoles, ctrl.closeAllBarOrdersHandler);
-router.delete('/orders/:id', adminOnly, ctrl.deleteBarOrderHandler);
+router.delete('/orders/:id', requireRole('admin', 'manager'), ctrl.deleteBarOrderHandler);
 
 // Transactions — commandes caisse
 router.get('/transactions', ctrl.listTransactionsHandler);
