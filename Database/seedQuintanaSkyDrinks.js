@@ -89,6 +89,7 @@ class SeedQuintanaSkyDrinks {
                 { nom: 'Martini Rouge (5cl)', ingredients: 'Vermouth', prix: 20000, categorie: 'Vin & Alcools Forts', alcool: 1, stock: 30 },
                 { nom: 'Martini Blanc (5cl)', ingredients: 'Vermouth', prix: 20000, categorie: 'Vin & Alcools Forts', alcool: 1, stock: 30 },
                 { nom: 'Pastis (5cl)', ingredients: 'Alcool fort', prix: 20000, categorie: 'Vin & Alcools Forts', alcool: 1, stock: 30 },
+                { nom: 'PASTIS de Marseille Duval 45% 100Cl', ingredients: 'Pastis alcool fort', prix: 300000, categorie: 'Vin & Alcools Forts', alcool: 1, stock: 15 },
                 { nom: 'Gin (5cl)', ingredients: 'Alcool fort', prix: 20000, categorie: 'Vin & Alcools Forts', alcool: 1, stock: 30 },
                 { nom: 'J&B (5cl)', ingredients: 'Whisky / Liqueur', prix: 25000, categorie: 'Vin & Alcools Forts', alcool: 1, stock: 30 },
                 { nom: 'Red Label (5cl)', ingredients: 'Whisky / Liqueur', prix: 25000, categorie: 'Vin & Alcools Forts', alcool: 1, stock: 30 },
@@ -319,6 +320,118 @@ class SeedQuintanaSkyDrinks {
                 { nom: 'Monkey Brain', ingredients: 'Shot', prix: 15000, categorie: 'Shooters', alcool: 1, stock: 30 },
                 { nom: 'Vodka Rainbow', ingredients: 'Shot multicolore', prix: 25000, categorie: 'Shooters', alcool: 1, stock: 20 },
                 { nom: 'Tequila Slammer\'s', ingredients: 'Shot tequila', prix: 25000, categorie: 'Shooters', alcool: 1, stock: 20 },
+
+                // =========================================================================
+                // VINS BLANCS ITALIENS
+                // =========================================================================
+                { nom: 'CHARDONNAY Fruili Zonin 13% 2023 75cl', ingredients: 'Vin blanc italien Chardonnay', prix: 180000, categorie: 'Vins Blancs Italiens', alcool: 1, stock: 20 },
+                { nom: 'PINOT GRIGIO FRUILI Zonin 12% 2023 75cl', ingredients: 'Vin blanc italien Pinot Grigio', prix: 180000, categorie: 'Vins Blancs Italiens', alcool: 1, stock: 20 },
+                { nom: 'SOAVE CLASSICO Zonin 12.5% 75cl', ingredients: 'Vin blanc italien Soave', prix: 180000, categorie: 'Vins Blancs Italiens', alcool: 1, stock: 20 },
+
+                // =========================================================================
+                // VINS ROUGES ITALIENS
+                // =========================================================================
+                { nom: 'MONTEPULCIANO D\'ABRUZZO Zonin 13.5% 2022 75cl', ingredients: 'Vin rouge italien Montepulciano', prix: 180000, categorie: 'Vins Rouges Italiens', alcool: 1, stock: 20 },
+                { nom: 'CHIANTI Zonin 12.5% 75cl', ingredients: 'Vin rouge italien Chianti', prix: 210000, categorie: 'Vins Rouges Italiens', alcool: 1, stock: 20 },
+                { nom: 'VALPOLICELLA CLASSICO Zonin 12.5% 75cl', ingredients: 'Vin rouge italien Valpolicella', prix: 210000, categorie: 'Vins Rouges Italiens', alcool: 1, stock: 20 },
+                { nom: 'MONTEPULCIANO d\'Abruzzo Malandrino Cataldi Madonna 12% 2022 75cl', ingredients: 'Vin rouge italien Montepulciano premium', prix: 300000, categorie: 'Vins Rouges Italiens', alcool: 1, stock: 15 },
+                { nom: 'VALPOLICELLA Classico Salvaterra 13% 2021 75cl', ingredients: 'Vin rouge italien Valpolicella premium', prix: 320000, categorie: 'Vins Rouges Italiens', alcool: 1, stock: 15 },
+                { nom: 'CHIANTI IL Palazzo 14% 2020 75CL', ingredients: 'Vin rouge italien Chianti premium', prix: 330000, categorie: 'Vins Rouges Italiens', alcool: 1, stock: 15 },
+
+                // =========================================================================
+                // VINS ROUGES AMERICAINS
+                // =========================================================================
+                { nom: 'CABERNET Rouge Eagle Creek California 12.5% 75cl', ingredients: 'Vin rouge californien Cabernet', prix: 180000, categorie: 'Vins Rouges Americains', alcool: 1, stock: 20 },
+                { nom: 'CABERNET SAUVIGNON Southern H. Wente Vineyards Es Gro 13.5% 2019 75cl', ingredients: 'Vin rouge californien Cabernet Sauvignon', prix: 480000, categorie: 'Vins Rouges Americains', alcool: 1, stock: 10 },
+                { nom: 'ZINFANDEL Rouge California Wente Vineyards Beyer Ranch 14.5% 2021 75C', ingredients: 'Vin rouge californien Zinfandel', prix: 480000, categorie: 'Vins Rouges Americains', alcool: 1, stock: 10 },
+
+                // =========================================================================
+                // Vin DOOKAN : A bulles
+                // =========================================================================
+                { nom: 'LES ANGES BRUT Cuvée Réserve Méthode Traditionnelle 12.5%', ingredients: 'Vin mousseux français', prix: 180000, categorie: 'Vin DOOKAN : A bulles', alcool: 1, stock: 15 },
+                { nom: 'BOURGOGNE Cremant Blanc Brut Maison CHANZY 12% 2021 75Cl', ingredients: 'Vin mousseux français', prix: 480000, categorie: 'Vin DOOKAN : A bulles', alcool: 1, stock: 10 },
+                { nom: 'PROSECCO BRUT Blanc Zonin 11% 20Cl', ingredients: 'Vin mousseux italien', prix: 70000, categorie: 'Vin DOOKAN : A bulles', alcool: 1, stock: 15 },
+                { nom: 'PROSECCO BRUT Blanc Zonin 11% 75Cl', ingredients: 'Vin mousseux italien', prix: 240000, categorie: 'Vin DOOKAN : A bulles', alcool: 1, stock: 15 },
+                { nom: 'SPARKLING Brut Sauvignon Blanc Du Toitskioof 12.5% 75Cl', ingredients: 'Vin mousseux sud-africain', prix: 220000, categorie: 'Vin DOOKAN : A bulles', alcool: 1, stock: 15 },
+                { nom: 'SPARKLING Brut Rosé Kaapse Vonkel Cap Classic Simonsig 12% 2012 75Cl', ingredients: 'Vin mousseux sud-africain', prix: 360000, categorie: 'Vin DOOKAN : A bulles', alcool: 1, stock: 10 },
+
+                // =========================================================================
+                // Vin DOOKAN : CHAMPAGNE
+                // =========================================================================
+                { nom: 'TAITTINGER BRUT 12,5% 75Cl', ingredients: 'Champagne', prix: 2310000, categorie: 'Vin DOOKAN : CHAMPAGNE', alcool: 1, stock: 8 },
+                { nom: 'TAITTINGER BRUT 12,5% 150Cl', ingredients: 'Champagne', prix: 4500000, categorie: 'Vin DOOKAN : CHAMPAGNE', alcool: 1, stock: 6 },
+
+                // =========================================================================
+                // VINS BLANCS Sud-Africains
+                // =========================================================================
+                { nom: 'SAUVIGNON Whispering Mountain 13.5% 2023 75Cl', ingredients: 'Vin blanc sud-africain', prix: 100000, categorie: 'VINS BLANCS Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'SAUVIGNON Welmoed 13% 2024/2025 75Cl', ingredients: 'Vin blanc sud-africain', prix: 120000, categorie: 'VINS BLANCS Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'SAUVIGNON Semillon Simonsig 13.5% 2023 75Cl', ingredients: 'Vin blanc sud-africain', prix: 150000, categorie: 'VINS BLANCS Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'SAUVIGNON Stellenbosch Vineyards 13.5% 2023 75Cl', ingredients: 'Vin blanc sud-africain', prix: 180000, categorie: 'VINS BLANCS Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'CHARDONNAY Whispering Mountain 13.5% 2023 75Cl', ingredients: 'Vin blanc sud-africain', prix: 100000, categorie: 'VINS BLANCS Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'CHARDONNAY Welmoed 13.5% 2023 75Cl', ingredients: 'Vin blanc sud-africain', prix: 120000, categorie: 'VINS BLANCS Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'CHARDONNAY Du Toitskioof 13.5% 2025 75Cl', ingredients: 'Vin blanc sud-africain', prix: 120000, categorie: 'VINS BLANCS Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'CHARDONNAY Pierre Dumont 13.5% 2023 75Cl', ingredients: 'Vin blanc sud-africain', prix: 120000, categorie: 'VINS BLANCS Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'CHARDONNAY (Unwooded) Stellenbosch Vineyards 13% 2022 75Cl', ingredients: 'Vin blanc sud-africain', prix: 180000, categorie: 'VINS BLANCS Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'CHARDONNAY Cape Fox Simonsig 13% 2021 75Cl', ingredients: 'Vin blanc sud-africain', prix: 270000, categorie: 'VINS BLANCS Sud-Africains', alcool: 1, stock: 10 },
+                { nom: 'CHARDONNAY CREDO Stellenbosch Vineyards 14% 2024 75Cl', ingredients: 'Vin blanc sud-africain', prix: 380000, categorie: 'VINS BLANCS Sud-Africains', alcool: 1, stock: 10 },
+                { nom: 'CHENIN Du Toitskioof 12.5% 2025 75Cl', ingredients: 'Vin blanc sud-africain', prix: 102000, categorie: 'VINS BLANCS Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'CHENIN Blanc Pierre Dumont 13.5% 2023 75Cl', ingredients: 'Vin blanc sud-africain', prix: 120000, categorie: 'VINS BLANCS Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'CHENIN Bushvine Stellenbosch Vineyards 13.5% 2022 75Cl', ingredients: 'Vin blanc sud-africain', prix: 180000, categorie: 'VINS BLANCS Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'CHENIN CREDO Stellenbosch Vineyards 14% 2024 75Cl', ingredients: 'Vin blanc sud-africain', prix: 380000, categorie: 'VINS BLANCS Sud-Africains', alcool: 1, stock: 10 },
+                { nom: 'PINOT GRIGIO Welmoed 12.5% 2023 75Cl', ingredients: 'Vin blanc sud-africain', prix: 120000, categorie: 'VINS BLANCS Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'MEDITERRANEO The Grapesmi 13% 2020 75Cl (Bouchon)', ingredients: 'Vin blanc sud-africain', prix: 390000, categorie: 'VINS BLANCS Sud-Africains', alcool: 1, stock: 10 },
+                { nom: 'DIE KLUISENAAR The Grapesmi 13% 2020 75Cl (Bouchon)', ingredients: 'Vin blanc sud-africain', prix: 390000, categorie: 'VINS BLANCS Sud-Africains', alcool: 1, stock: 10 },
+                { nom: 'GEWURZTRAMINER Jamala Simonsig 13% 2023 75Cl', ingredients: 'Vin blanc sud-africain', prix: 200000, categorie: 'VINS BLANCS Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'VERSUS PENGVINO Cool White 13% 2024 75Cl', ingredients: 'Vin blanc sud-africain', prix: 90000, categorie: 'VINS BLANCS Sud-Africains', alcool: 1, stock: 20 },
+                { nom: 'VERSUS PENGVINO Sweet White Sensation 13% 75Cl', ingredients: 'Vin blanc sud-africain', prix: 90000, categorie: 'VINS BLANCS Sud-Africains', alcool: 1, stock: 20 },
+
+                // =========================================================================
+                // VINS ROUGES Sud-Africains
+                // =========================================================================
+                { nom: 'CABERNET SAUVIGNON Whispering Mountain 12.5% 2021/2023 75Cl', ingredients: 'Vin rouge sud-africain', prix: 100000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'CABERNET SAUVIGNON Welmoed 12.5% 2024 75Cl', ingredients: 'Vin rouge sud-africain', prix: 120000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'CABERNET SAUVIGNON SHIRAZ Du Toitskioof 13.5% 2023 75Cl', ingredients: 'Vin rouge sud-africain', prix: 120000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'CABERNET SAUVIGNON Pierre Dumont 13.5% 2021 75Cl', ingredients: 'Vin rouge sud-africain', prix: 140000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'CABERNET SAUVIGNON MERLOT Simonsig 13.5% 2020 75Cl (Bouchon)', ingredients: 'Vin rouge sud-africain', prix: 150000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'CABERNET SAUVIGNON SHIRAZ Simonsig 13% 2021 75Cl', ingredients: 'Vin rouge sud-africain', prix: 150000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'CABERNET SAUVIGNON Stellenbosch Vineyards 13.5% 2021 75Cl (Bouchon)', ingredients: 'Vin rouge sud-africain', prix: 240000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 10 },
+                { nom: 'PINOTAGE Welmoed 14% 2023 75Cl', ingredients: 'Vin rouge sud-africain', prix: 120000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'PINOTAGE MERLOT RUBY CABERNET Du Toitskioof 14% 2023 75Cl', ingredients: 'Vin rouge sud-africain', prix: 120000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'PINOTAGE Du Toitskioof 14.5% 2023 75Cl', ingredients: 'Vin rouge sud-africain', prix: 120000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'PINOTAGE Bushvine Stellenbosch Vineyards 13.5% 2022 75Cl', ingredients: 'Vin rouge sud-africain', prix: 250000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 10 },
+                { nom: 'SHIRAZ Welmoed 13.5% 2021 75Cl', ingredients: 'Vin rouge sud-africain', prix: 120000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'SHIRAZ Du Toitskioof 14% 2021 75Cl', ingredients: 'Vin rouge sud-africain', prix: 120000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'SHIRAZ Stellenbosch Vineyards 14% 2021 75Cl', ingredients: 'Vin rouge sud-africain', prix: 240000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 10 },
+                { nom: 'SHIRAZ MERLOT VIOGNIER CREDO Stellenbosch Vineyards 14% 2022 75Cl', ingredients: 'Vin rouge sud-africain', prix: 380000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 10 },
+                { nom: 'VERSUS PENGVINO Dry RIP Current Red 12.5% 2021/2023 75Cl', ingredients: 'Vin rouge sud-africain', prix: 90000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 20 },
+                { nom: 'VERSUS PENGVINO Sweet Red Sensation 13% 75Cl', ingredients: 'Vin rouge sud-africain', prix: 90000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 20 },
+                { nom: 'SEVEN CENTURIES Pierre Dumont 14.5% 2022/2023 75Cl', ingredients: 'Vin rouge sud-africain', prix: 140000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'GRENACHE LIMITED RELEASE CREDO Stellenbosch Vineyards 13.5% 75Cl (Bouchon)', ingredients: 'Vin rouge sud-africain', prix: 380000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 10 },
+
+                // =========================================================================
+                // VINS ROSES Sud-Africains
+                // =========================================================================
+                { nom: 'VERSUS PENGVINO Sweet Sensation Rosé 9.5% 75Cl', ingredients: 'Vin rosé sud-africain', prix: 90000, categorie: 'VINS ROSES Sud-Africains', alcool: 1, stock: 20 },
+                { nom: 'VERSUS PENGVINO Dry All Day Rosé 12.5% 2025 75Cl', ingredients: 'Vin rosé sud-africain', prix: 90000, categorie: 'VINS ROSES Sud-Africains', alcool: 1, stock: 20 },
+                { nom: 'ROSE Welmoed 12% 2024 75Cl', ingredients: 'Vin rosé sud-africain', prix: 120000, categorie: 'VINS ROSES Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'PINOTAGE Rosé Du Toitskioof 13% 2025 75Cl', ingredients: 'Vin rosé sud-africain', prix: 120000, categorie: 'VINS ROSES Sud-Africains', alcool: 1, stock: 15 },
+
+                // =========================================================================
+                // CUBITAINERS Sud-Africains
+                // =========================================================================
+                { nom: 'SAUVIGNON Blanc DU TOITSKLOOF 12.5% Cubi 3L', ingredients: 'Vin blanc cubitainer', prix: 220000, categorie: 'CUBITAINERS Sud-Africains', alcool: 1, stock: 10 },
+                { nom: 'CHENIN Blanc DU TOITSKIOOF 13% Cubi 3L', ingredients: 'Vin blanc cubitainer', prix: 220000, categorie: 'CUBITAINERS Sud-Africains', alcool: 1, stock: 10 },
+                { nom: 'Pinotage Merlot Ruby Cabernet 14% Cubi 3L', ingredients: 'Vin rouge cubitainer', prix: 220000, categorie: 'CUBITAINERS Sud-Africains', alcool: 1, stock: 10 },
+                { nom: 'Cabernet Sauvignon Shiraz DU TOITSKOOLF 13.5% Cubi 3L', ingredients: 'Vin rouge cubitainer', prix: 220000, categorie: 'CUBITAINERS Sud-Africains', alcool: 1, stock: 10 },
+                { nom: 'Pinotage Rosé DU TOITSKIOOF 13% Cubi 3L', ingredients: 'Vin rosé cubitainer', prix: 220000, categorie: 'CUBITAINERS Sud-Africains', alcool: 1, stock: 10 },
+
+                // =========================================================================
+                // EN BRIQUE Sud-Africains
+                // =========================================================================
+                { nom: 'ORC Natural Sweet White 11.5% Brique 1L', ingredients: 'Vin blanc brique', prix: 80000, categorie: 'EN BRIQUE Sud-Africains', alcool: 1, stock: 20 },
+                { nom: 'ORC Blanc de Blanc Crisp & Fruity 11% Brique 1L', ingredients: 'Vin blanc brique', prix: 80000, categorie: 'EN BRIQUE Sud-Africains', alcool: 1, stock: 20 },
+                { nom: 'ORC Dry Red 12.5% Brique 1L', ingredients: 'Vin rouge brique', prix: 80000, categorie: 'EN BRIQUE Sud-Africains', alcool: 1, stock: 20 },
 
                 // =========================================================================
                 // CONSIGNES & DIVERS (Accessoires, Shisha, Bouteilles vides, Cageots)
