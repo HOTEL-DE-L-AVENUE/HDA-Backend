@@ -14,7 +14,7 @@ router.use('/subcategories', managementRoles, createCrudRouter(ctrl.subcategorie
 router.use('/product-types', managementRoles, createCrudRouter(ctrl.productTypesCrud));
 router.use('/units', managementRoles, createCrudRouter(ctrl.unitsCrud));
 router.use('/products', managementRoles, createCrudRouter(ctrl.productsCrud));
-router.use('/locations', managementRoles, createCrudRouter(ctrl.stockLocationsCrud));
+router.use('/locations', createCrudRouter(ctrl.stockLocationsCrud)); // Read-only access to locations for all authenticated users
 
 router.get('/alerts/low-stock', ctrl.lowStockHandler);            // GET /api/stock/alerts/low-stock?threshold=
 router.get('/products/:id/stock', ctrl.stockByProductHandler);    // GET /api/stock/products/:id/stock
