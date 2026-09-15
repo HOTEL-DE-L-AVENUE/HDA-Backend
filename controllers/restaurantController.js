@@ -648,7 +648,11 @@ async function billToRoomHandler(req, res) {
   }
   
   const [result] = await pool.query(
-    'INSERT INTO invoices (client_id, montant_total, statut, date_facture) VALUES ((SELECT client_id FROM stays WHERE room_id = ? AND date_depart IS NULL LIMIT 1), (SELECT total FROM orders WHERE id = ?), "EMISE", NOW())',
+    `INSERT INTO invoices (client_id, montant_total, statut) VALUES (
+      (SELECT r.client_id FROM stays s JOIN reservations r ON r.id = s.reservation_id WHERE r.room_id = ? AND s.checkout_at IS NULL LIMIT 1),
+      (SELECT montant_total FROM orders WHERE id = ?),
+      "EMISE"
+    )`,
     [room_id, order_id]
   );
   
@@ -667,9 +671,9 @@ async function statsHandler(req, res) {
   }
   
   const [[ordersStats]] = await pool.query(
-    `SELECT COUNT(*) as total_orders, SUM(total) as total_revenue 
-     FROM orders 
-     WHERE date_commande BETWEEN ? AND ?`,
+    `SELECT COUNT(*) as total_orders, SUM(montant_total) as total_revenue
+     FROM orders
+     WHERE created_at BETWEEN ? AND ?`,
     [date_debut, date_fin]
   );
   

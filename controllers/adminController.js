@@ -51,12 +51,14 @@ const usersCrud = {
   ...baseUsersCrud,
   delete: customDeleteMethod,
   remove: customDeleteMethod,
-  getAll: async (req, res) => {
+  // createCrudRouter monte GET / sur `.list` (pas `.getAll`) : c'est cette clé
+  // qui doit être surchargée pour que le filtre par défaut s'applique réellement.
+  list: async (req, res) => {
     // Par défaut, masquer les utilisateurs inactifs pour qu'ils ne reviennent pas à l'actualisation
     if (!req.query.statut) {
       req.query.statut = 'actif';
     }
-    return baseUsersCrud.getAll(req, res);
+    return baseUsersCrud.list(req, res);
   }
 };
 

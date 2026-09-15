@@ -93,13 +93,25 @@ Reservations.create = async function (data) {
   return findReservationWithDetails(row.id);
 };
 Reservations.update = async function (id, data) {
+  const willComplete = String(data?.statut || '').toUpperCase() === 'TERMINEE';
+  const changesAmount = Object.prototype.hasOwnProperty.call(data || {}, 'montant_total');
+  if (willComplete || changesAmount) {
+    // reservationsUpdate() committe immédiatement (pas de transaction). Si on laissait
+    // recordReservationPayment() faire cette même vérification après coup, un montant
+    // invalide committerait quand même le passage à TERMINEE avant de faire échouer la
+    // requête (statut incohérent : TERMINEE sans paiement enregistré). On valide donc
+    // avant d'écrire quoi que ce soit.
+    const [[current]] = await pool.query('SELECT statut, montant_total FROM reservations WHERE id = ? LIMIT 1', [id]);
+    const nextStatut = data?.statut !== undefined ? String(data.statut).toUpperCase() : String(current?.statut || '').toUpperCase();
+    const nextMontant = changesAmount ? Number(data.montant_total) : Number(current?.montant_total);
+    if (nextStatut === 'TERMINEE' && !(nextMontant > 0)) throw new Error('Montant de réservation invalide');
+  }
   await reservationsUpdate.call(this, id, data);
   // Depuis la page Hôtel, « encaisser » met directement la réservation à
   // TERMINEE. Synchroniser son montant dans la caisse Hôtel.
   const updatedReservation = await findReservationWithDetails(id);
   const isCompleted = String(updatedReservation?.statut || '').toUpperCase() === 'TERMINEE';
-  const changesAmount = Object.prototype.hasOwnProperty.call(data || {}, 'montant_total');
-  if (isCompleted && (String(data?.statut || '').toUpperCase() === 'TERMINEE' || changesAmount)) {
+  if (isCompleted && (willComplete || changesAmount)) {
     await recordReservationPayment(id, 'HOTEL');
   }
   return findReservationWithDetails(id);
