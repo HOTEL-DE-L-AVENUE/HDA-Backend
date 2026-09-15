@@ -171,7 +171,7 @@ async function payrollAdjustments(conn, employeeId, start, end, baseSalary) {
 
 async function generatePayroll(period) {
   const bounds = monthBounds(period);
-  return withTransaction(async (conn) => {
+  await withTransaction(async (conn) => {
     const [staff] = await conn.query(`SELECT id, salary FROM rh_employees WHERE status <> 'SORTI'`);
     for (const employee of staff) {
       const deduction = await payrollAdjustments(conn, employee.id, bounds.start, bounds.end, employee.salary);
@@ -185,8 +185,10 @@ async function generatePayroll(period) {
       if (existing) await conn.query('UPDATE rh_payroll SET base_salary=?, deductions=?, absence_deductions=?, net_amount=? WHERE id=?', [values.base_salary, values.deductions, values.absence_deductions, net, existing.id]);
       else await conn.query('INSERT INTO rh_payroll (employee_id, period_month, base_salary, deductions, absence_deductions, net_amount, status) VALUES (?, ?, ?, ?, ?, ?, "BROUILLON")', [employee.id, bounds.period, values.base_salary, values.deductions, values.absence_deductions, net]);
     }
-    return listPayroll({ period: bounds.period, page: 1, limit: 100 });
   });
+  // Relu hors transaction (connexion séparée du pool) : le commit ci-dessus doit
+  // être visible, sinon cette lecture retombe sur l'état d'avant génération.
+  return listPayroll({ period: bounds.period, page: 1, limit: 100 });
 }
 
 async function listPayroll({ period, page = 1, limit = 20, offset = 0 } = {}) {
