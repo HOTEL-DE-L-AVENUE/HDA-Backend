@@ -8,10 +8,13 @@ const router = express.Router();
 const managementRoles = requireRole('admin', 'manager', 'stock_manager');
 const adminOnly = requireRole('admin');
 const cashierRoles = requireRole('admin', 'caisse', 'caissier');
+const orderRoles = requireRole('admin', 'caisse', 'caissier', 'water', 'barman');
+const tableRoles = requireRole('admin', 'manager', 'stock_manager', 'water', 'barman', 'caisse', 'caissier');
+
 const orderStatusRoles = (req, res, next) => {
 	const middleware = req.body?.statut === 'ENCAISSEE'
 		? requireRole('admin', 'caisse', 'caissier')
-		: cashierRoles;
+		: orderRoles;
 	return middleware(req, res, next);
 };
 
@@ -31,10 +34,15 @@ router.use('/products', managementRoles, createCrudRouter(ctrl.productsCrud));
 // Tables — stats route BEFORE CRUD so it doesn't get caught by/:id wildcard
 router.get('/tables/stats', ctrl.tablesStatsHandler);
 router.get('/tables', ctrl.tablesCrud.list);
-router.use('/tables', managementRoles, createCrudRouter(ctrl.tablesCrud));
+router.get('/tables/:id', ctrl.tablesCrud.getOne);
+router.post('/tables', tableRoles, ctrl.tablesCrud.create);
+router.put('/tables/:id', managementRoles, ctrl.tablesCrud.update);
+router.delete('/tables/:id', managementRoles, ctrl.tablesCrud.remove);
 
 // Cashiers
 router.get('/cashier-status', ctrl.cashierStatusHandler);
+router.get('/cashiers', ctrl.cashiersCrud.list);
+router.get('/cashiers/:id', ctrl.cashiersCrud.getOne);
 router.use('/cashiers', managementRoles, createCrudRouter(ctrl.cashiersCrud));
 
 // Sessions — all specific routes BEFORE CRUD middleware
@@ -42,13 +50,14 @@ router.post('/sessions/open', cashierRoles, ctrl.openCashierHandler);
 router.post('/sessions/close', cashierRoles, ctrl.closeCashierHandler);
 router.get('/sessions/open', ctrl.openSessionsHandler);
 router.get('/sessions/stats', ctrl.sessionStatsHandler);
+router.get('/sessions', ctrl.sessionsCrud.list);
 router.get('/sessions/:id', ctrl.currentSessionHandler);
 router.use('/sessions', managementRoles, createCrudRouter(ctrl.sessionsCrud));
 
 // Commandes bar
 router.get('/orders', ctrl.listBarOrdersHandler);
-router.post('/orders', cashierRoles, ctrl.createBarOrderHandler);
-router.put('/orders/:id', cashierRoles, ctrl.updateBarOrderHandler);
+router.post('/orders', orderRoles, ctrl.createBarOrderHandler);
+router.put('/orders/:id', orderRoles, ctrl.updateBarOrderHandler);
 router.put('/orders/:id/status', orderStatusRoles, ctrl.updateBarOrderStatusHandler);
 router.post('/orders/close-all', orderStatusRoles, ctrl.closeAllBarOrdersHandler);
 router.delete('/orders/:id', adminOnly, ctrl.deleteBarOrderHandler);

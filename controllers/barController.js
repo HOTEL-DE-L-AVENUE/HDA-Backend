@@ -33,6 +33,11 @@ const productsCrud = {
     const { id } = req.params;
     await barProductModel.deleteBarProductWithStock(id);
     return ok(res, { message: 'Supprimé' });
+  },
+  remove: async (req, res) => {
+    const { id } = req.params;
+    await barProductModel.deleteBarProductWithStock(id);
+    return ok(res, { message: 'Supprimé' });
   }
 };
 
