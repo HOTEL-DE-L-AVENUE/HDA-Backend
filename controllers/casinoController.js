@@ -2394,10 +2394,9 @@ exports.finishPlayerSheetHandler = async (req, res, next) => {
       if (playerIds.length) {
         await conn.query(
           `UPDATE casino_players p
-             JOIN (SELECT DISTINCT casino_player_id FROM casino_player_games WHERE id IN (${playerIds.map(() => '?').join(',')})) closed ON closed.casino_player_id = p.id
              LEFT JOIN casino_player_games active ON active.casino_player_id = p.id AND active.statut = 'EN_JEU'
              SET p.statut_jeu = 'ARRETE'
-           WHERE active.id IS NULL`,
+           WHERE p.id IN (${playerIds.map(() => '?').join(',')}) AND active.id IS NULL`,
           playerIds
         );
       }
