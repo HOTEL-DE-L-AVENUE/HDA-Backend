@@ -16,7 +16,7 @@ function requireHR(req, res, next) {
   let modules = req.user?.module;
   if (typeof modules === 'string') { try { modules = JSON.parse(modules); } catch { modules = modules.split(','); } }
   modules = (Array.isArray(modules) ? modules : []).map((item) => String(item).trim().toLowerCase());
-  if (req.user?.role === 'admin' || req.user?.role === 'rh_manager' || req.user?.role === 'rh' || modules.includes('rh')) return next();
+  if (req.user?.role === 'admin' || req.user?.role === 'manager' || req.user?.role === 'rh_manager' || req.user?.role === 'rh' || modules.includes('rh')) return next();
   return next(require('../utils/ApiError').forbidden('Accès RH réservé aux personnes autorisées'));
 }
 router.use(requireAuth, requireHR);
