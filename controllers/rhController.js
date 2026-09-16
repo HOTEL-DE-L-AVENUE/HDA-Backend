@@ -26,7 +26,7 @@ async function ensureDuplicates(body, excludeId) {
 }
 function page(req) { return getPagination(req.query); }
 function businessError(error) {
-  const messages = { OVERLAP: 'Cette demande chevauche un congé déjà approuvé', LEAVE_FINAL: 'Une demande traitée ne peut plus être modifiée', INSUFFICIENT_BALANCE: 'Solde de congé annuel insuffisant', ALREADY_CHECKED_IN: 'Employé déjà pointé à l’arrivée', NO_CHECK_IN: 'Aucun pointage d’arrivée pour aujourd’hui', ALREADY_CHECKED_OUT: 'Employé déjà pointé au départ', PAYROLL_LOCKED: 'Une paie validée ou payée ne peut plus être modifiée', INVALID_PAYROLL_TRANSITION: 'Transition de statut de paie invalide', INVALID_PAYROLL_AMOUNT: 'Les montants de paie doivent être positifs' };
+  const messages = { OVERLAP: 'Cette demande chevauche un congé déjà approuvé', LEAVE_FINAL: 'Une demande traitée ne peut plus être modifiée', INSUFFICIENT_BALANCE: 'Solde de congé annuel insuffisant', ALREADY_CHECKED_IN: 'Employé déjà pointé à l’arrivée', NO_CHECK_IN: 'Aucun pointage d’arrivée pour aujourd’hui', ALREADY_CHECKED_OUT: 'Employé déjà pointé au départ', PAYROLL_LOCKED: 'Une paie validée ou payée ne peut plus être modifiée', INVALID_PAYROLL_TRANSITION: 'Transition de statut de paie invalide', INVALID_PAYROLL_AMOUNT: 'Les montants de paie doivent être positifs', PAYROLL_PAID_DELETE: 'Une paie déjà payée ne peut pas être supprimée' };
   if (messages[error.message]) throw ApiError.badRequest(messages[error.message]);
   if (/date|jour ouvré/i.test(error.message || '')) throw ApiError.badRequest(error.message);
   throw error;
@@ -81,6 +81,7 @@ async function payrollList(req, res) { try { const p = page(req); const result =
 async function payrollGenerate(req, res) { try { const result = await model.generatePayroll(req.params.period); await audit(req, 'GENERATE_HR_PAYROLL', 'rh_payroll', null, { period: req.params.period }); return ok(res, result.rows, { ...result.meta, period: result.period }); } catch (err) { businessError(err); } }
 async function payrollUpdate(req, res) { try { const row = await model.updatePayroll(req.params.id, req.body || {}); if (!row) throw ApiError.notFound('Ligne de paie introuvable'); await audit(req, 'UPDATE_HR_PAYROLL', 'rh_payroll', row.id, { fields: Object.keys(req.body || {}) }); return ok(res, row); } catch (err) { businessError(err); } }
 async function payrollStatus(req, res) { const status = String(req.body?.status || '').toUpperCase(); if (!PAYROLL_STATUSES.includes(status) || status === 'BROUILLON') throw ApiError.badRequest('Statut de paie invalide'); try { const row = await model.transitionPayroll(req.params.id, status); if (!row) throw ApiError.notFound('Ligne de paie introuvable'); await audit(req, `HR_PAYROLL_${status}`, 'rh_payroll', row.id, { employee_id: row.employee_id }); return ok(res, row); } catch (err) { businessError(err); } }
+async function payrollDelete(req, res) { try { const row = await model.deletePayroll(req.params.id); if (!row) throw ApiError.notFound('Ligne de paie introuvable'); await audit(req, 'DELETE_HR_PAYROLL', 'rh_payroll', row.id, { employee_id: row.employee_id, period: row.period_month }); return noContent(res); } catch (err) { businessError(err); } }
 async function payrollPayslip(req, res) {
   const rows = (await model.listPayroll({ period: req.params.period, page: 1, limit: 1000 })).rows; const line = rows.find((item) => String(item.employee_id) === String(req.params.employeeId));
   if (!line) throw ApiError.notFound('Bulletin de paie introuvable');
@@ -137,4 +138,4 @@ async function myCheckOut(req, res) {
   } catch (err) { businessError(err); }
 }
 
-module.exports = { employeesList, getEmployee, createEmployee, updateEmployee, offboardEmployee, dashboard, leaveList, leaveCreate, leaveStatus, attendanceList, checkIn, checkOut, payrollList, payrollGenerate, payrollUpdate, payrollStatus, payrollPayslip, evaluationsCrud, evaluationCreate, myProfile, myLeaveList, myLeaveCreate, myAttendanceList, myCheckIn, myCheckOut };
+module.exports = { employeesList, getEmployee, createEmployee, updateEmployee, offboardEmployee, dashboard, leaveList, leaveCreate, leaveStatus, attendanceList, checkIn, checkOut, payrollList, payrollGenerate, payrollUpdate, payrollStatus, payrollDelete, payrollPayslip, evaluationsCrud, evaluationCreate, myProfile, myLeaveList, myLeaveCreate, myAttendanceList, myCheckIn, myCheckOut };
