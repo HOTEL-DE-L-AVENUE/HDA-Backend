@@ -223,4 +223,12 @@ async function transitionPayroll(id, status) {
   return (await pool.query('SELECT * FROM rh_payroll WHERE id=?', [id]))[0][0];
 }
 
-module.exports = { employees, evaluations, listEmployees, dashboard, listLeaveRequests, createLeaveRequest, updateLeaveStatus, listAttendance, checkIn, checkOut, listMyAttendance, generatePayroll, listPayroll, updatePayroll, transitionPayroll, monthBounds, findEmployeeByUserId, createOrLinkEmployeeFromUser };
+async function deletePayroll(id) {
+  const [[row]] = await pool.query('SELECT * FROM rh_payroll WHERE id=?', [id]);
+  if (!row) return null;
+  if (row.status === 'PAYE') { const err = new Error('PAYROLL_PAID_DELETE'); throw err; }
+  await pool.query('DELETE FROM rh_payroll WHERE id=?', [id]);
+  return row;
+}
+
+module.exports = { employees, evaluations, listEmployees, dashboard, listLeaveRequests, createLeaveRequest, updateLeaveStatus, listAttendance, checkIn, checkOut, listMyAttendance, generatePayroll, listPayroll, updatePayroll, transitionPayroll, deletePayroll, monthBounds, findEmployeeByUserId, createOrLinkEmployeeFromUser };
