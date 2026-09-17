@@ -107,10 +107,10 @@ router.get('/visits/in-room/:roomId', ctrl.currentlyInRoomHandler);         // G
 router.use('/visits', createCrudRouter(ctrl.visitsCrud));                   // /api/casino/visits
 router.get('/players', ctrl.playersCrud.list);                              // consultation du registre durable
 router.get('/players/:id', ctrl.playersCrud.getOne);
-router.post('/players', requireRole('admin', 'croupier'), ctrl.playersCrud.create); // création par l'admin ou le croupier
+router.post('/players', requireRole('admin', 'manager', 'croupier'), ctrl.playersCrud.create); // création par l'admin, le manager ou le croupier
 router.put('/players/:id', requireRole('admin'), ctrl.playersCrud.update);   // modification réservée à l'admin
 router.delete('/players/:id', requireRole('admin'), ctrl.playersCrud.remove); // suppression réservée à l'admin
-router.post('/players/:id/play', requireRole('admin', 'croupier'), ctrl.playCasinoPlayerHandler); // ajout à une partie par l'admin ou le croupier
+router.post('/players/:id/play', requireRole('admin', 'manager', 'croupier'), ctrl.playCasinoPlayerHandler); // ajout à une partie par l'admin, le manager ou le croupier
 
 // =====================================================================
 // Tables de jeu & Caves/Recaves (une salle -> plusieurs tables ; chaque
