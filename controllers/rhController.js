@@ -53,6 +53,7 @@ async function updateEmployee(req, res) {
   if (body.status === 'SORTI') throw ApiError.badRequest('Utilisez la procédure de sortie avec un motif');
   if (body.status === 'EN_CONGE') throw ApiError.badRequest('Le statut en congé est défini automatiquement par une demande approuvée');
   const row = await model.employees.update(req.params.id, body);
+  await model.syncEmployeePayrollSnapshot(row.id, row);
   await audit(req, Number(body.salary) !== Number(existing.salary) ? 'UPDATE_HR_SALARY' : 'UPDATE_HR_EMPLOYEE', 'rh_employees', row.id, { fields: Object.keys(body) });
   return ok(res, renderEmployee(row));
 }

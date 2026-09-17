@@ -223,6 +223,20 @@ async function updatePayroll(id, data) {
   return (await pool.query('SELECT * FROM rh_payroll WHERE id=?', [id]))[0][0];
 }
 
+async function syncEmployeePayrollSnapshot(employeeId, employee) {
+  const [rows] = await pool.query('SELECT * FROM rh_payroll WHERE employee_id=? AND status = "BROUILLON" ORDER BY period_month DESC', [employeeId]);
+  if (!rows.length) return [];
+  const payloads = [];
+  for (const row of rows) {
+    const baseSalary = Number(employee?.salary ?? row.base_salary ?? 0);
+    const next = { ...row, base_salary: baseSalary };
+    const net = calculateNet(next);
+    await pool.query('UPDATE rh_payroll SET base_salary=?, net_amount=? WHERE id=?', [baseSalary, net, row.id]);
+    payloads.push({ ...row, base_salary: baseSalary, net_amount: net });
+  }
+  return payloads;
+}
+
 async function transitionPayroll(id, status) {
   const [[row]] = await pool.query('SELECT * FROM rh_payroll WHERE id=?', [id]);
   if (!row) return null;
@@ -240,4 +254,4 @@ async function deletePayroll(id) {
   return row;
 }
 
-module.exports = { employees, evaluations, listEmployees, dashboard, listLeaveRequests, createLeaveRequest, updateLeaveStatus, listAttendance, checkIn, checkOut, listMyAttendance, generatePayroll, listPayroll, updatePayroll, transitionPayroll, deletePayroll, monthBounds, findEmployeeByUserId, createOrLinkEmployeeFromUser };
+module.exports = { employees, evaluations, listEmployees, dashboard, listLeaveRequests, createLeaveRequest, updateLeaveStatus, listAttendance, checkIn, checkOut, listMyAttendance, generatePayroll, listPayroll, updatePayroll, syncEmployeePayrollSnapshot, transitionPayroll, deletePayroll, monthBounds, findEmployeeByUserId, createOrLinkEmployeeFromUser };
