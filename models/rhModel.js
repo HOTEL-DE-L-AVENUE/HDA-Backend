@@ -9,6 +9,7 @@ const evaluations = createCrudModel({ table: 'rh_evaluations', fields: ['employe
 // --- Lien avec les comptes utilisateurs (gestion d'accès) ---------------------
 
 async function findEmployeeByUserId(userId) {
+  await syncCurrentLeaveStatus();
   const [rows] = await pool.query('SELECT * FROM rh_employees WHERE user_id = ? LIMIT 1', [userId]);
   return rows[0] || null;
 }
@@ -126,16 +127,24 @@ async function updateLeaveStatus(id, status, reviewedBy) {
   });
 }
 
+// Un congé approuvé retire l'employé du suivi des présences sur toute sa durée :
+// il n'est ni attendu ni pointable ces jours-là, donc ne doit pas compter comme absent.
+const NOT_ON_APPROVED_LEAVE = `NOT EXISTS (SELECT 1 FROM rh_leave_requests l WHERE l.employee_id = e.id AND l.status = 'APPROUVE' AND ? BETWEEN l.start_date AND l.end_date)`;
+
 async function listAttendance({ date, page = 1, limit = 20, offset = 0 } = {}) {
+  await syncCurrentLeaveStatus();
   const attendanceDate = date || new Date().toISOString().slice(0, 10);
-  const [[count]] = await pool.query(`SELECT COUNT(*) total FROM rh_employees WHERE status <> 'SORTI'`);
+  const [[count]] = await pool.query(`SELECT COUNT(*) total FROM rh_employees e WHERE e.status <> 'SORTI' AND ${NOT_ON_APPROVED_LEAVE}`, [attendanceDate]);
   const [rows] = await pool.query(`SELECT e.id employee_id, e.matricule, e.first_name, e.last_name, e.department, a.attendance_date, a.check_in, a.check_out,
     CASE WHEN a.id IS NOT NULL THEN a.status WHEN ? < CURDATE() THEN 'ABSENT' ELSE 'NON_POINTE' END attendance_status, a.notes
-    FROM rh_employees e LEFT JOIN rh_attendance a ON a.employee_id=e.id AND a.attendance_date=? WHERE e.status <> 'SORTI' ORDER BY e.last_name, e.first_name LIMIT ? OFFSET ?`, [attendanceDate, attendanceDate, limit, offset]);
+    FROM rh_employees e LEFT JOIN rh_attendance a ON a.employee_id=e.id AND a.attendance_date=? WHERE e.status <> 'SORTI' AND ${NOT_ON_APPROVED_LEAVE} ORDER BY e.last_name, e.first_name LIMIT ? OFFSET ?`, [attendanceDate, attendanceDate, attendanceDate, limit, offset]);
   return { rows, meta: paginationMeta(page, limit, count.total) };
 }
 
 async function checkIn(employeeId, notes) {
+  // Remet d'abord à ACTIF les employés dont le congé est terminé : le pointage
+  // redevient possible dès le lendemain de la fin du congé, sans réactivation manuelle.
+  await syncCurrentLeaveStatus();
   return withTransaction(async (conn) => {
     const [[employee]] = await conn.query(`SELECT id FROM rh_employees WHERE id=? AND status = 'ACTIF' FOR UPDATE`, [employeeId]);
     if (!employee) return null;
