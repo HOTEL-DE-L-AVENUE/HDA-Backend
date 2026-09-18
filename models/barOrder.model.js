@@ -139,6 +139,18 @@ async function createBarOrder({ clientName, tableId, nombrePersonnes = 1, moyenP
       );
     }
 
+    // Sortie de stock datée : sans cette écriture, la consommation de stock du
+    // Bar n'a aucune trace temporelle (bar_stock n'a pas d'historique), ce qui
+    // la rend invisible du reporting mensuel par département.
+    if (total > 0) {
+      await conn.query(
+        `INSERT INTO financial_transactions
+           (module, type_flux, montant, reference_id, ref_flux_global, description, statut_sync, created_at)
+         VALUES ('BAR', 'SORTIE', ?, ?, ?, ?, 'SYNCED', NOW())`,
+        [total, orderId, `BAR-ORDER-${orderId}-STOCK`, `Sortie de stock — commande bar #${orderId}`]
+      );
+    }
+
     const transactionItems = (items || []).map((item) => ({
       product_id: item.product_id ?? item.id,
       quantite: Number(item.quantite || 1),
@@ -287,6 +299,17 @@ async function updateBarOrder(id, { clientName, tableId, nombrePersonnes = 1, mo
       );
     }
 
+    // Sortie de stock datée pour les articles ajoutés à une commande existante
+    // (voir la même écriture dans createBarOrder pour le contexte).
+    if (totalNewItems > 0) {
+      await conn.query(
+        `INSERT INTO financial_transactions
+           (module, type_flux, montant, reference_id, ref_flux_global, description, statut_sync, created_at)
+         VALUES ('BAR', 'SORTIE', ?, ?, ?, ?, 'SYNCED', NOW())`,
+        [totalNewItems, id, `BAR-ORDER-${id}-STOCK`, `Sortie de stock — ajout commande bar #${id}`]
+      );
+    }
+
     const clientId = await findOrCreateClient(clientValue, conn);
     const transactionItems = additions.map((item) => ({
       product_id: item.product_id,
@@ -343,8 +366,8 @@ async function deleteBarOrder(id) {
     await conn.query('DELETE FROM bar_transactions WHERE order_id = ?', [id]);
     await conn.query(
       `DELETE FROM financial_transactions
-       WHERE module = 'BAR' AND ref_flux_global = ?`,
-      [`BAR-ORDER-${id}`]
+       WHERE module = 'BAR' AND ref_flux_global IN (?, ?)`,
+      [`BAR-ORDER-${id}`, `BAR-ORDER-${id}-STOCK`]
     );
     await conn.query('DELETE FROM bar_orders WHERE id = ?', [id]);
     return true;
