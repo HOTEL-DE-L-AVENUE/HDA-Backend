@@ -165,14 +165,6 @@ class SeedQuintanaSkyDrinks {
                 { nom: 'Provence, Bandol', ingredients: 'Château Canadel', prix: 440000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
                 { nom: 'Espagne, Rioja', ingredients: 'Domaine Igay, Marques de Murrieta', prix: 300000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
                 { nom: 'Bordeaux, Haut-Médoc', ingredients: 'Chateau d\'Arcins (Magnum)', prix: 670000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Marianne Craft Wines, Natana Red Blend', ingredients: 'Natana Red Blend', prix: 100000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Ken Forrester Wines, Petit Cabernet-Sauvignon', ingredients: 'Petit Cabernet-Sauvignon', prix: 150000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Kanonkop Estate, Kadette Cape Blend', ingredients: 'Kadette Cape Blend', prix: 160000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Kanonkop Estate, Kadette Pinotage', ingredients: 'Kadette Pinotage', prix: 180000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'A.A. Badenhorst, Secateurs Shiraz Blend', ingredients: 'Secateurs Shiraz Blend', prix: 190000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Mullineux Wines, Kloof Street', ingredients: 'Kloof Street', prix: 200000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'La Vierge Collection, Nymphomane', ingredients: 'Nymphomane', prix: 270000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'La Vierge Collection, Pinot Noir', ingredients: 'Pinot Noir', prix: 430000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
 
                 // =========================================================================
                 // NOUVEAUX VINS : VINS BLANCS
@@ -385,6 +377,13 @@ class SeedQuintanaSkyDrinks {
                 { nom: 'GEWURZTRAMINER Jamala Simonsig 13% 2023 75Cl', ingredients: 'Vin blanc sud-africain', prix: 200000, categorie: 'VINS BLANCS Sud-Africains', alcool: 1, stock: 15 },
                 { nom: 'VERSUS PENGVINO Cool White 13% 2024 75Cl', ingredients: 'Vin blanc sud-africain', prix: 90000, categorie: 'VINS BLANCS Sud-Africains', alcool: 1, stock: 20 },
                 { nom: 'VERSUS PENGVINO Sweet White Sensation 13% 75Cl', ingredients: 'Vin blanc sud-africain', prix: 90000, categorie: 'VINS BLANCS Sud-Africains', alcool: 1, stock: 20 },
+                { nom: 'Marianne Craft Wines, Natana White Blend', ingredients: 'Vin blanc sud-africain', prix: 96000, categorie: 'VINS BLANCS Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'Ken Forrester Wines, Petit Sauvignon', ingredients: 'Vin blanc sud-africain', prix: 160000, categorie: 'VINS BLANCS Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'Ken Forrester Wines, Petit Chardonnay', ingredients: 'Vin blanc sud-africain', prix: 160000, categorie: 'VINS BLANCS Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'A.A. Badenhorst, Secateurs Chenin Blanc', ingredients: 'Vin blanc sud-africain', prix: 190000, categorie: 'VINS BLANCS Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'Southern Right, Sauvignon Blanc', ingredients: 'Vin blanc sud-africain', prix: 210000, categorie: 'VINS BLANCS Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'La Vierge Collection, Original Sin (Sauvignon Blanc)', ingredients: 'Vin blanc sud-africain', prix: 240000, categorie: 'VINS BLANCS Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'Hamilton Russell Vineyard, Chardonnay', ingredients: 'Vin blanc sud-africain', prix: 600000, categorie: 'VINS BLANCS Sud-Africains', alcool: 1, stock: 15 },
 
                 // =========================================================================
                 // VINS ROUGES Sud-Africains
@@ -408,6 +407,14 @@ class SeedQuintanaSkyDrinks {
                 { nom: 'VERSUS PENGVINO Sweet Red Sensation 13% 75Cl', ingredients: 'Vin rouge sud-africain', prix: 90000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 20 },
                 { nom: 'SEVEN CENTURIES Pierre Dumont 14.5% 2022/2023 75Cl', ingredients: 'Vin rouge sud-africain', prix: 140000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
                 { nom: 'GRENACHE LIMITED RELEASE CREDO Stellenbosch Vineyards 13.5% 75Cl (Bouchon)', ingredients: 'Vin rouge sud-africain', prix: 380000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 10 },
+                { nom: 'Marianne Craft Wines, Natana Red Blend', ingredients: 'Vin rouge sud-africain', prix: 96000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'Ken Forrester Wines, Petit Cabernet-Sauvignon', ingredients: 'Vin rouge sud-africain', prix: 160000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'Kanonkop Estate, Kadette Cape Blend', ingredients: 'Vin rouge sud-africain', prix: 170000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'Kanonkop Estate, Kadette Pinotage', ingredients: 'Vin rouge sud-africain', prix: 180000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'A.A. Badenhorst, Secateurs Shiraz Blend', ingredients: 'Vin rouge sud-africain', prix: 190000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'Mullineux Wines, Kloof Street', ingredients: 'Vin rouge sud-africain', prix: 200000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'La Vierge Collection, Nymphomane', ingredients: 'Vin rouge sud-africain', prix: 270000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'La Vierge Collection, Pinot Noir', ingredients: 'Vin rouge sud-africain', prix: 440000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
 
                 // =========================================================================
                 // VINS ROSES Sud-Africains
@@ -416,7 +423,7 @@ class SeedQuintanaSkyDrinks {
                 { nom: 'VERSUS PENGVINO Dry All Day Rosé 12.5% 2025 75Cl', ingredients: 'Vin rosé sud-africain', prix: 90000, categorie: 'VINS ROSES Sud-Africains', alcool: 1, stock: 20 },
                 { nom: 'ROSE Welmoed 12% 2024 75Cl', ingredients: 'Vin rosé sud-africain', prix: 120000, categorie: 'VINS ROSES Sud-Africains', alcool: 1, stock: 15 },
                 { nom: 'PINOTAGE Rosé Du Toitskioof 13% 2025 75Cl', ingredients: 'Vin rosé sud-africain', prix: 120000, categorie: 'VINS ROSES Sud-Africains', alcool: 1, stock: 15 },
-                { nom: 'Afrique du Sud, W.O. Western Cape', ingredients: 'Vin rosé sud-africain', prix: 160000, categorie: 'VINS ROSES Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'Ken Forrester Wines, Petit Rosé', ingredients: 'Vin rosé sud-africain', prix: 160000, categorie: 'VINS ROSES Sud-Africains', alcool: 1, stock: 15 },
 
                 // =========================================================================
                 // CUBITAINERS Sud-Africains
