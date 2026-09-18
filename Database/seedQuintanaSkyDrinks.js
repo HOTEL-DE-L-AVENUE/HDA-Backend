@@ -416,6 +416,7 @@ class SeedQuintanaSkyDrinks {
                 { nom: 'VERSUS PENGVINO Dry All Day Rosé 12.5% 2025 75Cl', ingredients: 'Vin rosé sud-africain', prix: 90000, categorie: 'VINS ROSES Sud-Africains', alcool: 1, stock: 20 },
                 { nom: 'ROSE Welmoed 12% 2024 75Cl', ingredients: 'Vin rosé sud-africain', prix: 120000, categorie: 'VINS ROSES Sud-Africains', alcool: 1, stock: 15 },
                 { nom: 'PINOTAGE Rosé Du Toitskioof 13% 2025 75Cl', ingredients: 'Vin rosé sud-africain', prix: 120000, categorie: 'VINS ROSES Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'Afrique du Sud, W.O. Western Cape', ingredients: 'Vin rosé sud-africain', prix: 160000, categorie: 'VINS ROSES Sud-Africains', alcool: 1, stock: 15 },
 
                 // =========================================================================
                 // CUBITAINERS Sud-Africains
