@@ -54,7 +54,7 @@ const RoomStatusHistory = createCrudModel({
 
 const Reservations = createCrudModel({
   table: 'reservations', pk: 'id',
-  fields: ['client_id', 'room_id', 'date_arrivee', 'date_depart', 'montant_brut', 'remise_pourcentage', 'montant_remise', 'remise_validee_par', 'remise_validee_at', 'montant_total', 'statut'],
+  fields: ['client_id', 'room_id', 'date_arrivee', 'date_depart', 'pdj_inclus', 'moyen_paiement', 'montant_brut', 'remise_pourcentage', 'montant_remise', 'remise_validee_par', 'remise_validee_at', 'montant_total', 'statut'],
   sortable: ['id', 'date_arrivee', 'date_depart', 'statut'],
 });
 
@@ -270,15 +270,15 @@ async function isRoomAvailable(roomId, dateArrivee, dateDepart, excludeReservati
 }
 
 // Crée une réservation + ses accompagnants dans une transaction
-async function createReservationWithGuests({ clientId, roomId, dateArrivee, dateDepart, montantTotal, montantBrut, remisePourcentage, montantRemise, statut, guests = [] }) {
+async function createReservationWithGuests({ clientId, roomId, dateArrivee, dateDepart, pdjInclus = false, montantTotal, montantBrut, remisePourcentage, montantRemise, statut, guests = [] }) {
   return withTransaction(async (conn) => {
     // Utilise le statut envoyé par le contrôleur ou 'EN_COURS' par défaut
     const statusValue = statut || 'EN_COURS';
 
     const [result] = await conn.query(
-      `INSERT INTO reservations (client_id, room_id, date_arrivee, date_depart, montant_brut, remise_pourcentage, montant_remise, montant_total, statut)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [clientId, roomId, dateArrivee, dateDepart, montantBrut, remisePourcentage || 0, montantRemise || 0, montantTotal, statusValue]
+      `INSERT INTO reservations (client_id, room_id, date_arrivee, date_depart, pdj_inclus, montant_brut, remise_pourcentage, montant_remise, montant_total, statut)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [clientId, roomId, dateArrivee, dateDepart, Boolean(pdjInclus), montantBrut, remisePourcentage || 0, montantRemise || 0, montantTotal, statusValue]
     );
     const reservationId = result.insertId;
     for (const g of guests) {
@@ -307,7 +307,7 @@ async function validateReservationDiscount(id, validatedBy) {
 async function recordReservationPayment(reservationId, module = 'HEBERGEMENT') {
   return withTransaction(async (conn) => {
     const [[reservation]] = await conn.query(
-      'SELECT id, client_id, montant_total, statut FROM reservations WHERE id = ? FOR UPDATE',
+      'SELECT id, client_id, montant_total, statut, moyen_paiement FROM reservations WHERE id = ? FOR UPDATE',
       [reservationId]
     );
     if (!reservation) throw new Error(`Réservation #${reservationId} introuvable`);
@@ -323,14 +323,15 @@ async function recordReservationPayment(reservationId, module = 'HEBERGEMENT') {
 
     await conn.query(
       `INSERT INTO financial_transactions
-         (client_id, module, type_flux, montant, reference_id, ref_flux_global, description, statut_sync, created_at)
-       VALUES (?, ?, 'ENTREE', ?, ?, ?, ?, 'SYNCED', NOW())
+         (client_id, module, type_flux, montant, moyen_paiement, reference_id, ref_flux_global, description, statut_sync, created_at)
+       VALUES (?, ?, 'ENTREE', ?, ?, ?, ?, ?, 'SYNCED', NOW())
        ON DUPLICATE KEY UPDATE
          client_id = VALUES(client_id),
          montant = VALUES(montant),
+         moyen_paiement = VALUES(moyen_paiement),
          description = VALUES(description),
          statut_sync = 'SYNCED'`,
-      [reservation.client_id, financialModule, reservation.montant_total, reservation.id,
+      [reservation.client_id, financialModule, reservation.montant_total, reservation.moyen_paiement || 'ESPECES', reservation.id,
       `${financialModule}-RESERVATION-${reservation.id}`,
       `Encaissement réservation ${financialModule.toLowerCase()} #${reservation.id}`]
     );

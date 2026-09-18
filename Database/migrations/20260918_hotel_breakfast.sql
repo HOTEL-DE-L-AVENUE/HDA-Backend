@@ -1,0 +1,2 @@
+ALTER TABLE reservations
+  ADD COLUMN IF NOT EXISTS pdj_inclus TINYINT(1) NOT NULL DEFAULT 0 AFTER date_depart;

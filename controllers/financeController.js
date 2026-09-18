@@ -26,8 +26,11 @@ async function listFinancialTransactionsHandler(req, res) {
     }
   }
 
+  const findTransactions = ['HOTEL', 'HEBERGEMENT'].includes(String(req.query.module || '').toUpperCase())
+    ? finance.findFinancialTransactionsWithDetails
+    : finance.FinancialTransactions.findAll;
   const [rows, total] = await Promise.all([
-    finance.FinancialTransactions.findAll({ whereSql: finalWhereSql, whereValues, orderBy, limit, offset }),
+    findTransactions({ whereSql: finalWhereSql, whereValues, orderBy, limit, offset }),
     finance.FinancialTransactions.count({ whereSql: finalWhereSql, whereValues }),
   ]);
 

@@ -71,7 +71,7 @@ async function availableRoomsHandler(req, res) {
 }
 
 async function createReservationHandler(req, res) {
-  const { client_id, room_id, date_arrivee, date_depart, remise_pourcentage = 0, guests, statut } = req.body;
+  const { client_id, room_id, date_arrivee, date_depart, pdj_inclus = false, remise_pourcentage = 0, guests, statut } = req.body;
   if (!client_id || !room_id || !date_arrivee || !date_depart) {
     throw ApiError.badRequest('client_id, room_id, date_arrivee, date_depart sont requis');
   }
@@ -93,6 +93,7 @@ async function createReservationHandler(req, res) {
     roomId: room_id,
     dateArrivee: date_arrivee,
     dateDepart: date_depart,
+    pdjInclus: Boolean(pdj_inclus),
     montantTotal: gross - discountAmount,
     montantBrut: gross,
     remisePourcentage: discount,

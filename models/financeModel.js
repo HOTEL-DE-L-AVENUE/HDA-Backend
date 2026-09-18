@@ -22,9 +22,32 @@ const Payments = createCrudModel({
 
 const FinancialTransactions = createCrudModel({
   table: 'financial_transactions', pk: 'id',
-  fields: ['client_id', 'module', 'type_flux', 'montant', 'reference_id', 'description', 'created_at'],
+  fields: ['client_id', 'module', 'type_flux', 'montant', 'moyen_paiement', 'reference_id', 'description', 'created_at'],
   sortable: ['id', 'created_at', 'module', 'montant'],
 });
+
+async function findFinancialTransactionsWithDetails(options = {}) {
+  const { whereSql = '', whereValues = [], orderBy = '`id` DESC', limit, offset } = options;
+  let sql = `SELECT ft.*, r.pdj_inclus, r.moyen_paiement AS reservation_moyen_paiement,
+                    c.nom AS reservation_client_nom, c.prenom AS reservation_client_prenom,
+                    room.numero AS reservation_room_numero
+               FROM financial_transactions ft
+               LEFT JOIN reservations r
+                 ON UPPER(ft.module) IN ('HOTEL', 'HEBERGEMENT')
+                AND r.id = ft.reference_id
+                AND ft.ref_flux_global LIKE '%RESERVATION-%'
+               LEFT JOIN clients c ON c.id = r.client_id
+               LEFT JOIN rooms room ON room.id = r.room_id`;
+  if (whereSql) sql += ` ${whereSql}`;
+  sql += ` ORDER BY ${orderBy}`;
+  const values = [...whereValues];
+  if (limit !== undefined) {
+    sql += ' LIMIT ? OFFSET ?';
+    values.push(limit, offset || 0);
+  }
+  const [rows] = await pool.query(sql, values);
+  return rows;
+}
 
 // --- Départements / modules suivis par le reporting financier -------------
 
@@ -288,6 +311,7 @@ async function financialSummary() {
 
 module.exports = {
   Invoices, InvoiceItems, Payments, FinancialTransactions,
+  findFinancialTransactionsWithDetails,
   createInvoiceWithItems, recordPayment, invoiceWithItemsAndPayments, clientFinancialStatement, financialSummary,
   DEPARTMENTS, normaliseModule,
 };
