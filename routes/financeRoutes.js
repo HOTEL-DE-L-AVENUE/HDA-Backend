@@ -1,6 +1,7 @@
 // routes/financeRoutes.js
 const express = require('express');
 const ctrl = require('../controllers/financeController');
+const reportingCtrl = require('../controllers/financeReportingController');
 const { createCrudRouter } = require('./routeFactory');
 const { requireAuth, requireRole } = require('../middlewares/auth');
 
@@ -19,6 +20,8 @@ router.use('/payments', managementRoles, createCrudRouter(ctrl.paymentsCrud));
 
 router.get('/clients/:clientId/statement', ctrl.clientStatementHandler); // GET /api/finance/clients/:clientId/statement
 router.get('/summary', ctrl.financialSummaryHandler);                   // GET /api/finance/summary
+router.get('/reports/monthly', reportingCtrl.monthlyBreakdownHandler);  // GET /api/finance/reports/monthly?department=hotel&year=2026
+router.get('/reports/monthly/:department/:year/:month', reportingCtrl.departmentMonthHandler); // GET /api/finance/reports/monthly/hotel/2026/11
 router.post('/transactions', cashierRoles, ctrl.createFinancialTransactionHandler);   // POST /api/finance/transactions
 router.get('/transactions', ctrl.listFinancialTransactionsHandler);
 router.use('/transactions', managementRoles, createCrudRouter(ctrl.financialTransactionsCrud));

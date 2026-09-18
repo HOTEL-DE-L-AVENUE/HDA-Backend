@@ -26,6 +26,20 @@ const FinancialTransactions = createCrudModel({
   sortable: ['id', 'created_at', 'module', 'montant'],
 });
 
+// --- Départements / modules suivis par le reporting financier -------------
+
+const DEPARTMENTS = ['hebergement', 'hotel', 'restaurant', 'bar', 'casino'];
+
+function normaliseModule(value) {
+  const key = String(value || '').trim().toLowerCase();
+  if (key.includes('restaurant')) return 'restaurant';
+  if (key.includes('bar')) return 'bar';
+  if (key.includes('casino')) return 'casino';
+  if (key.includes('hotel') || key.includes('hôtel')) return 'hotel';
+  if (key.includes('hebergement') || key.includes('hébergement')) return 'hebergement';
+  return null;
+}
+
 // --- Logique métier -------------------------------------------------------
 
 // Crée une facture + ses lignes ; le montant_total est recalculé à partir des lignes.
@@ -106,15 +120,6 @@ async function financialSummary() {
     ['bar', { module: 'bar', entrees: 0, sorties: 0 }],
     ['casino', { module: 'casino', entrees: 0, sorties: 0 }],
   ]);
-  const normaliseModule = (value) => {
-    const key = String(value || '').trim().toLowerCase();
-    if (key.includes('restaurant')) return 'restaurant';
-    if (key.includes('bar')) return 'bar';
-    if (key.includes('casino')) return 'casino';
-    if (key.includes('hotel') || key.includes('hôtel')) return 'hotel';
-    if (key.includes('hebergement') || key.includes('hébergement')) return 'hebergement';
-    return null;
-  };
   const add = (module, field, amount) => {
     const key = normaliseModule(module);
     if (!key) return;
@@ -284,4 +289,5 @@ async function financialSummary() {
 module.exports = {
   Invoices, InvoiceItems, Payments, FinancialTransactions,
   createInvoiceWithItems, recordPayment, invoiceWithItemsAndPayments, clientFinancialStatement, financialSummary,
+  DEPARTMENTS, normaliseModule,
 };
