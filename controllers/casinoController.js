@@ -383,7 +383,7 @@ exports.visitsCrud = buildCrud('casino_visits', {
 });
 
 exports.playersCrud = buildCrud('casino_players', {
-  allowedFields: ['nom', 'prenom', 'telephone', 'email', 'date_inscription', 'depot', 'credit', 'mode_jeu', 'statut_jeu', 'statut'],
+  allowedFields: ['nom', 'prenom', 'surnom', 'telephone', 'whatsapp', 'date_inscription', 'depot', 'credit', 'mode_jeu', 'statut_jeu', 'statut'],
   orderBy: 'date_inscription DESC, nom ASC, prenom ASC',
 });
 
@@ -392,7 +392,7 @@ exports.playCasinoPlayerHandler = async (req, res, next) => {
     const playerId = Number(req.params.id);
     const { game_date: gameDate, table_name: tableName, depot = 0, credit = 0 } = req.body;
     if (!Number.isInteger(playerId) || !gameDate || !tableName) throw ApiError.badRequest('Joueur, date et table obligatoires');
-    const [[player]] = await pool.query(`SELECT id, nom, prenom, email FROM casino_players WHERE id = ? AND statut = 'ACTIF'`, [playerId]);
+    const [[player]] = await pool.query(`SELECT id, nom, prenom, surnom, whatsapp FROM casino_players WHERE id = ? AND statut = 'ACTIF'`, [playerId]);
     if (!player) throw ApiError.notFound('Joueur Casino introuvable ou inactif');
     const depositAmount = asMoney(depot);
     const creditAmount = asMoney(credit);
@@ -404,7 +404,7 @@ exports.playCasinoPlayerHandler = async (req, res, next) => {
     );
     await pool.query(`UPDATE casino_players SET statut_jeu = 'EN_JEU' WHERE id = ?`, [playerId]);
     const [[game]] = await pool.query(
-      `SELECT g.*, p.nom, p.prenom, p.email FROM casino_player_games g
+      `SELECT g.*, p.nom, p.prenom, p.surnom, p.whatsapp FROM casino_player_games g
        JOIN casino_players p ON p.id = g.casino_player_id
        WHERE g.casino_player_id = ? AND g.game_date = ? AND g.table_name = ?`,
       [playerId, gameDate, tableName]
