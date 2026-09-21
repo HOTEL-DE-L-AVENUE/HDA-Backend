@@ -2,6 +2,7 @@
 require('dotenv').config();
 require('express-async-errors'); // permet d'utiliser des handlers async sans try/catch manuel
 
+const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -40,6 +41,13 @@ app.use(cors({
 app.use(morgan('dev'));
 app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true }));
+
+// Fichiers téléversés (photos, contrats, devis...) : servis en dehors de /api,
+// avec Cross-Origin-Resource-Policy assoupli pour rester chargeables depuis le
+// frontend sur une autre origine (helmet le met à "same-origin" par défaut).
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
+  setHeaders: (res) => res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'),
+}));
 
 app.use('/api', apiRoutes);
 
