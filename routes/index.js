@@ -14,6 +14,7 @@ const barRoutes = require('./barRoutes');
 const alcoolRoutes = require('./alcoolRoutes');
 const signatureRoutes = require('./signatureRoutes');
 const rhRoutes = require('./rhRoutes');
+const uploadRoutes = require('./uploadRoutes');
 
 const router = express.Router();
 
@@ -39,5 +40,6 @@ router.use('/alcool', alcoolRoutes);
 router.use('/alchool', alcoolRoutes);
 router.use('/signatures', signatureRoutes);
 router.use('/rh', rhRoutes);
+router.use('/uploads', uploadRoutes);
 
 module.exports = router;

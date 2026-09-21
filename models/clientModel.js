@@ -57,6 +57,10 @@ function pickClientFields(data = {}) {
   for (const field of CLIENT_FIELDS) {
     if (data[field] !== undefined) out[field] = data[field];
   }
+  // date_naissance est une colonne DATE : une chaîne vide (formulaire non
+  // rempli) provoque une erreur SQL en mode strict, alors que NULL est la
+  // valeur par défaut légitime de la colonne pour "non renseignée".
+  if (out.date_naissance === '') out.date_naissance = null;
   return out;
 }
 
