@@ -2239,6 +2239,9 @@ exports.savePlayerSheetHandler = async (req, res, next) => {
     const previousData = existingSheet
       ? (typeof existingSheet.sheet_data === 'string' ? JSON.parse(existingSheet.sheet_data) : existingSheet.sheet_data)
       : {};
+    if (existingSheet && Array.isArray(previousData.players) && previousData.players.length > 0 && players.length === 0) {
+      throw ApiError.conflict('Protection des données : une fiche joueur existante ne peut pas être remplacée par une fiche vide');
+    }
     const previousChecks = new Map((previousData.rackChecks || []).map((check) => [String(check.id), check]));
     const newlyValidatedCashChecks = rackChecks.filter((check) => check.type === 'Cash check'
       && check.verified

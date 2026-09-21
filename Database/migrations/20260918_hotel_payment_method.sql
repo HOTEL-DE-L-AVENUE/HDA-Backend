@@ -1,0 +1,5 @@
+ALTER TABLE reservations
+  ADD COLUMN IF NOT EXISTS moyen_paiement VARCHAR(30) NOT NULL DEFAULT 'ESPECES' AFTER pdj_inclus;
+
+ALTER TABLE financial_transactions
+  ADD COLUMN IF NOT EXISTS moyen_paiement VARCHAR(30) NOT NULL DEFAULT 'ESPECES' AFTER montant;
