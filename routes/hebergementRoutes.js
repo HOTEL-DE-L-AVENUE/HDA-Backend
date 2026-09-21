@@ -20,6 +20,7 @@ router.use('/rooms', createCrudRouter(ctrl.roomsCrud));
 router.get('/equipments/categories', ctrl.equipmentCategoriesHandler);   // GET /api/hebergement/equipments/categories
 router.get('/equipments/stats', ctrl.equipmentStatsHandler);             // GET /api/hebergement/equipments/stats
 router.get('/equipments/code/:code', ctrl.equipmentByCodeHandler);       // GET /api/hebergement/equipments/code/:code
+router.post('/equipments', ctrl.createEquipmentHandler);                  // POST /api/hebergement/equipments (custom handler for stock integration)
 router.use('/equipments', createCrudRouter(ctrl.equipmentsCrud));
 router.put('/room-equipments/:id/status', ctrl.updateRoomEquipmentStatusHandler); // PUT /api/hebergement/room-equipments/:id/status
 router.use('/room-equipments', createCrudRouter(ctrl.roomEquipmentsCrud));

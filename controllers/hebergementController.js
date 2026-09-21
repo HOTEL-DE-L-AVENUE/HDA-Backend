@@ -12,6 +12,37 @@ function isAdmin(req) {
 const roomTypesCrud = createCrudController(heb.RoomTypes, {});
 const roomsCrud = createCrudController(heb.Rooms, { filterable: ['statut', 'room_type_id'] });
 const equipmentsCrud = createCrudController(heb.Equipments, { filterable: ['categorie'] });
+
+async function createEquipmentHandler(req, res) {
+  const data = { ...req.body };
+  const equipment = await heb.Equipments.create(data);
+  
+  // If equipment is consumable, automatically add to stock
+  if (data.is_consumable) {
+    try {
+      // Create a product in the products table for this equipment
+      const { pool } = require('../config/db');
+      const [productResult] = await pool.query(
+        `INSERT INTO products (nom, code, categorie, type_produit, prix_vente, actif) 
+         VALUES (?, ?, ?, 'CONSOMMABLE', 0, TRUE)`,
+        [data.nom, data.code || `EQ-${equipment.id}`, data.categorie || 'Équipement']
+      );
+      
+      // Add to hotel stock location (location_id = 5)
+      await pool.query(
+        `INSERT INTO stocks (product_id, location_id, quantite) 
+         VALUES (?, 5, ?) 
+         ON DUPLICATE KEY UPDATE quantite = quantite + VALUES(quantite)`,
+        [productResult.insertId, data.quantite || 1]
+      );
+    } catch (error) {
+      console.error('Error adding equipment to stock:', error);
+      // Don't fail the equipment creation if stock addition fails
+    }
+  }
+  
+  return created(res, equipment);
+}
 const roomEquipmentsCrud = createCrudController(heb.RoomEquipments, { filterable: ['room_id', 'statut'] });
 const roomMaintenanceCrud = createCrudController(heb.RoomMaintenance, { filterable: ['room_id', 'statut', 'type_intervention'] });
 const maintenanceWorkersCrud = createCrudController(heb.MaintenanceWorkers, { filterable: ['statut', 'specialite'] });
@@ -62,7 +93,7 @@ async function availabilityHandler(req, res) {
   const { room_id, date_arrivee, date_depart } = req.query;
   if (!room_id || !date_arrivee || !date_depart) throw ApiError.badRequest('room_id, date_arrivee, date_depart sont requis');
   const disponible = await heb.isRoomAvailable(room_id, date_arrivee, date_depart);
-  return ok(res, { room_id: Number(room_id), disponible });
+  return ok(res, { available: disponible, room_id: Number(room_id) });
 }
 
 async function availableRoomsHandler(req, res) {
@@ -71,7 +102,7 @@ async function availableRoomsHandler(req, res) {
 }
 
 async function createReservationHandler(req, res) {
-  const { client_id, room_id, date_arrivee, date_depart, pdj_inclus = false, remise_pourcentage = 0, guests, statut } = req.body;
+  const { client_id, room_id, date_arrivee, date_depart, pdj_inclus = false, remise_pourcentage = 0, guests, statut, type_reservation = 'BOOKING', laundry_included = false, laundry_price = 0, manual_price = 0 } = req.body;
   if (!client_id || !room_id || !date_arrivee || !date_depart) {
     throw ApiError.badRequest('client_id, room_id, date_arrivee, date_depart sont requis');
   }
@@ -85,7 +116,19 @@ async function createReservationHandler(req, res) {
   const room = await heb.Rooms.findById(room_id);
   const nights = Math.ceil((new Date(date_depart) - new Date(date_arrivee)) / 86400000);
   if (!room || nights <= 0) throw ApiError.badRequest('Dates ou chambre invalides');
-  const gross = Number(room.prix_nuit || 0) * nights;
+  
+  let gross = Number(room.prix_nuit || 0) * nights;
+  
+  // Add laundry price if included
+  if (laundry_included) {
+    gross += Number(laundry_price || 0);
+  }
+  
+  // Use manual price if provided and booking type
+  if (type_reservation === 'BOOKING' && manual_price > 0) {
+    gross = Number(manual_price);
+  }
+  
   const discountAmount = Math.round(gross * discount / 100);
 
   const reservation = await heb.createReservationWithGuests({
@@ -100,6 +143,10 @@ async function createReservationHandler(req, res) {
     montantRemise: discountAmount,
     statut: statut || 'EN_COURS',
     guests: guests || [],
+    typeReservation: type_reservation,
+    laundryIncluded: laundry_included,
+    laundryPrice: laundry_price,
+    manualPrice: manual_price,
   });
   const reservationWithDetails = await heb.Reservations.findById(reservation.id);
   return created(res, reservationWithDetails);
@@ -463,7 +510,7 @@ module.exports = {
   staysCrud, housekeepingCrud, lostAndFoundCrud, minibarConsumptionsCrud,
   availabilityHandler, availableRoomsHandler, updateRoomHandler, updateRoomTypeHandler, createReservationHandler, validateReservationDiscountHandler, createMaintenanceHandler, checkInHandler, checkOutHandler,
   updateMaintenanceStatusHandler, maintenanceStatsHandler, reservationStatsHandler,
-  updateRoomStatusHandler, equipmentByCodeHandler, equipmentCategoriesHandler,
+  updateRoomStatusHandler, equipmentByCodeHandler, equipmentCategoriesHandler, createEquipmentHandler,
   equipmentStatsHandler, updateRoomEquipmentStatusHandler,
   roomStatsHandler, updateHousekeepingStatusHandler, housekeepingStatsHandler,
   transferStockToMinibarHandler, handleMinibarConsumptionHandler, getMinibarWithAlertsHandler, restockMinibarHandler, getLowStockMinibarHandler,
