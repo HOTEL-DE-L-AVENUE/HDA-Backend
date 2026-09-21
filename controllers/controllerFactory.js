@@ -44,8 +44,13 @@ function createCrudController(model, { filterable = [], view } = {}) {
     const id = getId(req);
     const existing = await model.findById(id);
     if (!existing) throw ApiError.notFound(`${model.table} #${id} introuvable`);
-    const row = await model.update(id, req.body);
-    return ok(res, render(row));
+    try {
+      const row = await model.update(id, req.body);
+      return ok(res, render(row));
+    } catch (error) {
+      console.error(`Update error for ${model.table} #${id}:`, error);
+      throw error;
+    }
   }
 
   async function remove(req, res) {

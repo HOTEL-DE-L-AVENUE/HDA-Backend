@@ -15,7 +15,7 @@ const Rooms = createCrudModel({
 
 const Equipments = createCrudModel({
   table: 'equipments', pk: 'id',
-  fields: ['code', 'nom', 'categorie', 'description', 'zone'],
+  fields: ['code', 'nom', 'categorie', 'description', 'zone', 'quantite', 'is_consumable'],
   sortable: ['id', 'nom', 'categorie', 'zone'],
 });
 
@@ -36,7 +36,7 @@ const RoomMaintenance = createCrudModel({
 
 const MaintenanceWorkers = createCrudModel({
   table: 'maintenance_workers', pk: 'id',
-  fields: ['nom', 'prenom', 'telephone', 'email', 'specialite', 'date_debut', 'date_fin', 'statut'],
+  fields: ['nom', 'prenom', 'telephone', 'email', 'specialite', 'date_debut', 'date_fin', 'statut', 'photo_url', 'id_photo_url', 'contract_url', 'quote_url', 'time_slot'],
   sortable: ['id', 'nom', 'specialite', 'date_debut'],
 });
 
@@ -54,14 +54,15 @@ const RoomStatusHistory = createCrudModel({
 
 const Reservations = createCrudModel({
   table: 'reservations', pk: 'id',
-  fields: ['client_id', 'room_id', 'date_arrivee', 'date_depart', 'pdj_inclus', 'moyen_paiement', 'montant_brut', 'remise_pourcentage', 'montant_remise', 'remise_validee_par', 'remise_validee_at', 'montant_total', 'statut'],
+  fields: ['client_id', 'room_id', 'date_arrivee', 'date_depart', 'pdj_inclus', 'moyen_paiement', 'montant_brut', 'remise_pourcentage', 'montant_remise', 'remise_validee_par', 'remise_validee_at', 'montant_total', 'statut', 'type_reservation', 'laundry_included', 'laundry_price', 'manual_price'],
   sortable: ['id', 'date_arrivee', 'date_depart', 'statut'],
 });
 
 const reservationsFindAll = Reservations.findAll;
 const reservationsFindById = Reservations.findById;
 const reservationsCreate = Reservations.create;
-const reservationsUpdate = Reservations.update;
+const reservationsCrudUpdate = Reservations.update;
+const reservationsRemove = Reservations.remove;
 
 async function findReservationWithDetails(id) {
   const [rows] = await pool.query(
@@ -96,7 +97,7 @@ Reservations.update = async function (id, data) {
   const willComplete = String(data?.statut || '').toUpperCase() === 'TERMINEE';
   const changesAmount = Object.prototype.hasOwnProperty.call(data || {}, 'montant_total');
   if (willComplete || changesAmount) {
-    // reservationsUpdate() committe immédiatement (pas de transaction). Si on laissait
+    // reservationsCrudUpdate() committe immédiatement (pas de transaction). Si on laissait
     // recordReservationPayment() faire cette même vérification après coup, un montant
     // invalide committerait quand même le passage à TERMINEE avant de faire échouer la
     // requête (statut incohérent : TERMINEE sans paiement enregistré). On valide donc
@@ -106,7 +107,7 @@ Reservations.update = async function (id, data) {
     const nextMontant = changesAmount ? Number(data.montant_total) : Number(current?.montant_total);
     if (nextStatut === 'TERMINEE' && !(nextMontant > 0)) throw new Error('Montant de réservation invalide');
   }
-  await reservationsUpdate.call(this, id, data);
+  await reservationsCrudUpdate.call(this, id, data);
   // Depuis la page Hôtel, « encaisser » met directement la réservation à
   // TERMINEE. Synchroniser son montant dans la caisse Hôtel.
   const updatedReservation = await findReservationWithDetails(id);
@@ -230,6 +231,70 @@ MinibarConsumptions.update = async function (id, data) {
   return originalUpdate.call(this, id, data);
 };
 
+// Custom findById for Reservations to convert integer fields back to boolean
+const originalReservationsFindById = Reservations.findById;
+Reservations.findById = async function (id) {
+  const row = await originalReservationsFindById.call(this, id);
+  if (row) {
+    if (row.pdj_inclus !== undefined) {
+      row.pdj_inclus = row.pdj_inclus === 1 || row.pdj_inclus === true;
+    }
+    if (row.laundry_included !== undefined) {
+      row.laundry_included = row.laundry_included === 1 || row.laundry_included === true;
+    }
+  }
+  return row;
+};
+
+// Custom findAll for Reservations to convert integer fields back to boolean
+const originalReservationsFindAll = Reservations.findAll;
+Reservations.findAll = async function (options) {
+  const rows = await originalReservationsFindAll.call(this, options);
+  return rows.map(row => {
+    if (row) {
+      if (row.pdj_inclus !== undefined) {
+        row.pdj_inclus = row.pdj_inclus === 1 || row.pdj_inclus === true;
+      }
+      if (row.laundry_included !== undefined) {
+        row.laundry_included = row.laundry_included === 1 || row.laundry_included === true;
+      }
+    }
+    return row;
+  });
+};
+
+// Custom update method for Equipments to handle boolean to integer conversion
+const originalEquipmentsUpdate = Equipments.update;
+Equipments.update = async function (id, data) {
+  // Convert boolean is_consumable to integer for database
+  if (data.is_consumable !== undefined && typeof data.is_consumable === 'boolean') {
+    data.is_consumable = data.is_consumable ? 1 : 0;
+  }
+  return originalEquipmentsUpdate.call(this, id, data);
+};
+
+// Custom findById for Equipments to convert integer is_consumable back to boolean
+const originalEquipmentsFindById = Equipments.findById;
+Equipments.findById = async function (id) {
+  const row = await originalEquipmentsFindById.call(this, id);
+  if (row && row.is_consumable !== undefined) {
+    row.is_consumable = row.is_consumable === 1 || row.is_consumable === true;
+  }
+  return row;
+};
+
+// Custom findAll for Equipments to convert integer is_consumable back to boolean
+const originalEquipmentsFindAll = Equipments.findAll;
+Equipments.findAll = async function (options) {
+  const rows = await originalEquipmentsFindAll.call(this, options);
+  return rows.map(row => {
+    if (row && row.is_consumable !== undefined) {
+      row.is_consumable = row.is_consumable === 1 || row.is_consumable === true;
+    }
+    return row;
+  });
+};
+
 // Custom findById to convert integer facturee back to boolean
 const originalFindById = MinibarConsumptions.findById;
 MinibarConsumptions.findById = async function (id) {
@@ -270,15 +335,15 @@ async function isRoomAvailable(roomId, dateArrivee, dateDepart, excludeReservati
 }
 
 // Crée une réservation + ses accompagnants dans une transaction
-async function createReservationWithGuests({ clientId, roomId, dateArrivee, dateDepart, pdjInclus = false, montantTotal, montantBrut, remisePourcentage, montantRemise, statut, guests = [] }) {
+async function createReservationWithGuests({ clientId, roomId, dateArrivee, dateDepart, pdjInclus = false, montantTotal, montantBrut, remisePourcentage, montantRemise, statut, guests = [], typeReservation = 'BOOKING', laundryIncluded = false, laundryPrice = 0, manualPrice = 0 }) {
   return withTransaction(async (conn) => {
     // Utilise le statut envoyé par le contrôleur ou 'EN_COURS' par défaut
     const statusValue = statut || 'EN_COURS';
 
     const [result] = await conn.query(
-      `INSERT INTO reservations (client_id, room_id, date_arrivee, date_depart, pdj_inclus, montant_brut, remise_pourcentage, montant_remise, montant_total, statut)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [clientId, roomId, dateArrivee, dateDepart, Boolean(pdjInclus), montantBrut, remisePourcentage || 0, montantRemise || 0, montantTotal, statusValue]
+      `INSERT INTO reservations (client_id, room_id, date_arrivee, date_depart, pdj_inclus, montant_brut, remise_pourcentage, montant_remise, montant_total, statut, type_reservation, laundry_included, laundry_price, manual_price)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [clientId, roomId, dateArrivee, dateDepart, Boolean(pdjInclus), montantBrut, remisePourcentage || 0, montantRemise || 0, montantTotal, statusValue, typeReservation, Boolean(laundryIncluded), laundryPrice, manualPrice]
     );
     const reservationId = result.insertId;
     for (const g of guests) {

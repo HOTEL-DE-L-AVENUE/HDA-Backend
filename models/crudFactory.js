@@ -63,6 +63,10 @@ function createCrudModel({ table, pk = 'id', fields, sortable }) {
     const placeholders = cols.map(() => '?').join(', ');
     const values = cols.map((c) => {
       const val = data[c];
+      // Convert boolean to integer for MySQL
+      if (typeof val === 'boolean') {
+        return val ? 1 : 0;
+      }
       return typeof val === 'object' && val !== null ? JSON.stringify(val) : val;
     });
     const [result] = await pool.query(
@@ -79,6 +83,10 @@ function createCrudModel({ table, pk = 'id', fields, sortable }) {
     const values = [
       ...cols.map((c) => {
         const val = data[c];
+        // Convert boolean to integer for MySQL
+        if (typeof val === 'boolean') {
+          return val ? 1 : 0;
+        }
         return typeof val === 'object' && val !== null ? JSON.stringify(val) : val;
       }),
       id
