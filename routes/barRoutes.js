@@ -8,7 +8,7 @@ const router = express.Router();
 const managementRoles = requireRole('admin', 'manager', 'stock_manager');
 const adminOnly = requireRole('admin');
 const cashierRoles = requireRole('admin', 'manager', 'caisse', 'caissier');
-const orderRoles = requireRole('admin', 'manager', 'caisse', 'caissier', 'water', 'barman');
+const orderRoles = requireRole('admin', 'manager', 'caisse', 'caissier', 'water', 'barman', 'hotesse');
 const tableRoles = requireRole('admin', 'manager', 'stock_manager', 'water', 'barman', 'caisse', 'caissier');
 
 const orderStatusRoles = (req, res, next) => {
@@ -59,7 +59,7 @@ router.get('/orders', ctrl.listBarOrdersHandler);
 router.post('/orders', orderRoles, ctrl.createBarOrderHandler);
 router.put('/orders/:id', orderRoles, ctrl.updateBarOrderHandler);
 router.put('/orders/:id/status', orderStatusRoles, ctrl.updateBarOrderStatusHandler);
-router.post('/orders/close-all', orderStatusRoles, ctrl.closeAllBarOrdersHandler);
+router.post('/orders/close-all', cashierRoles, ctrl.closeAllBarOrdersHandler);
 router.delete('/orders/:id', requireRole('admin', 'manager'), ctrl.deleteBarOrderHandler);
 
 // Transactions — commandes caisse

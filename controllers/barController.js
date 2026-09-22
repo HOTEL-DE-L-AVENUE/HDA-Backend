@@ -153,7 +153,7 @@ async function listTransactionsHandler(req, res) {
 }
 
 async function listBarOrdersHandler(req, res) {
-  const orders = await listBarOrders();
+  const orders = await listBarOrders({ createdBy: req.user?.role === 'hotesse' ? req.user.id_admin : undefined });
   return ok(res, orders);
 }
 
@@ -171,7 +171,7 @@ async function createBarOrderHandler(req, res) {
   if (moyen_paiement && !allowedPayments.includes(moyen_paiement)) {
     throw ApiError.badRequest('Mode de paiement invalide');
   }
-  const order = await createBarOrder({ clientName: client || 'Client anonyme', tableId: table, nombrePersonnes: guestCount, moyenPaiement: moyen_paiement, observation: typeof observation === 'string' ? observation.trim() : '', items });
+  const order = await createBarOrder({ clientName: client || 'Client anonyme', tableId: table, nombrePersonnes: guestCount, moyenPaiement: moyen_paiement, observation: typeof observation === 'string' ? observation.trim() : '', items, createdBy: req.user?.id_admin });
   return created(res, order);
 }
 
@@ -193,6 +193,7 @@ async function updateBarOrderHandler(req, res) {
     moyenPaiement: moyen_paiement,
     observation: typeof observation === 'string' ? observation.trim() : '',
     items,
+    createdBy: req.user?.role === 'hotesse' ? req.user.id_admin : undefined,
   });
 
   if (!order) throw ApiError.notFound(`Commande #${req.params.id} introuvable`);

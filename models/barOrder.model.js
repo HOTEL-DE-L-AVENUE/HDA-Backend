@@ -22,9 +22,11 @@ async function ensureBarOrderTables() {
       observation TEXT DEFAULT NULL,
       statut VARCHAR(30) DEFAULT 'EN_ATTENTE',
       montant_total DECIMAL(10,2) DEFAULT 0.00,
+      created_by BIGINT UNSIGNED DEFAULT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (id),
-      KEY idx_bar_orders_table_id (table_id)
+      KEY idx_bar_orders_table_id (table_id),
+      KEY idx_bar_orders_created_by (created_by)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
 
@@ -53,11 +55,19 @@ async function ensureBarOrderTables() {
   if (!existing.has('observation')) {
     await pool.query('ALTER TABLE bar_orders ADD COLUMN observation TEXT DEFAULT NULL AFTER moyen_paiement');
   }
+  if (!existing.has('created_by')) {
+    await pool.query('ALTER TABLE bar_orders ADD COLUMN created_by BIGINT UNSIGNED DEFAULT NULL AFTER montant_total');
+    await pool.query('ALTER TABLE bar_orders ADD KEY idx_bar_orders_created_by (created_by)');
+  }
 }
 
-async function listBarOrders() {
+async function listBarOrders({ createdBy } = {}) {
   await ensureBarOrderTables();
-  const [orders] = await pool.query('SELECT * FROM bar_orders ORDER BY created_at DESC');
+  const hasCreatorFilter = createdBy !== undefined && createdBy !== null;
+  const [orders] = await pool.query(
+    `SELECT * FROM bar_orders ${hasCreatorFilter ? 'WHERE created_by = ?' : ''} ORDER BY created_at DESC`,
+    hasCreatorFilter ? [createdBy] : []
+  );
   const orderIds = orders.map((order) => order.id);
   if (!orderIds.length) return [];
 
@@ -91,7 +101,7 @@ async function listBarOrders() {
   }));
 }
 
-async function createBarOrder({ clientName, tableId, nombrePersonnes = 1, moyenPaiement = 'ESPECES', observation = '', items }) {
+async function createBarOrder({ clientName, tableId, nombrePersonnes = 1, moyenPaiement = 'ESPECES', observation = '', items, createdBy = null }) {
   await ensureBarOrderTables();
   await ensureBarTransactionsSchema();
 
@@ -126,8 +136,8 @@ async function createBarOrder({ clientName, tableId, nombrePersonnes = 1, moyenP
     const total = (items || []).reduce((sum, item) => sum + Number(item.quantite || 1) * Number(item.prix || 0), 0);
 
     const [result] = await conn.query(
-      'INSERT INTO bar_orders (client_name, table_id, nombre_personnes, moyen_paiement, observation, statut, montant_total, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())',
-      [clientName || null, tableId || null, Number(nombrePersonnes) || 1, moyenPaiement || 'ESPECES', observation || null, 'EN_ATTENTE', total]
+      'INSERT INTO bar_orders (client_name, table_id, nombre_personnes, moyen_paiement, observation, statut, montant_total, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())',
+      [clientName || null, tableId || null, Number(nombrePersonnes) || 1, moyenPaiement || 'ESPECES', observation || null, 'EN_ATTENTE', total, createdBy]
     );
 
     const orderId = result.insertId;
@@ -193,13 +203,16 @@ async function createBarOrder({ clientName, tableId, nombrePersonnes = 1, moyenP
   });
 }
 
-async function updateBarOrder(id, { clientName, tableId, nombrePersonnes = 1, moyenPaiement = 'ESPECES', observation = '', items }) {
+async function updateBarOrder(id, { clientName, tableId, nombrePersonnes = 1, moyenPaiement = 'ESPECES', observation = '', items, createdBy }) {
   await ensureBarOrderTables();
   await ensureBarTransactionsSchema();
 
   return withTransaction(async (conn) => {
     const [orders] = await conn.query('SELECT * FROM bar_orders WHERE id = ? FOR UPDATE', [id]);
     if (!orders.length) return null;
+    if (createdBy !== undefined && Number(orders[0].created_by) !== Number(createdBy)) {
+      throw ApiError.forbidden('Vous pouvez uniquement modifier vos propres commandes.');
+    }
 
     const [existingOrderItems] = await conn.query(
       'SELECT nom, quantite, prix FROM bar_order_items WHERE order_id = ?',
@@ -236,12 +249,22 @@ async function updateBarOrder(id, { clientName, tableId, nombrePersonnes = 1, mo
 
     if (!additions.length) {
       const currentOrder = orders[0];
+      const clientValue = clientName !== undefined ? (clientName || null) : currentOrder.client_name;
+      const tableValue = tableId !== undefined ? (tableId || null) : currentOrder.table_id;
+      const guestValue = Number(nombrePersonnes || currentOrder.nombre_personnes || 1);
+      const paymentValue = moyenPaiement || currentOrder.moyen_paiement || 'ESPECES';
+      const observationValue = observation !== undefined ? (observation || null) : currentOrder.observation || null;
+      await conn.query(
+        'UPDATE bar_orders SET client_name = ?, table_id = ?, nombre_personnes = ?, moyen_paiement = ?, observation = ? WHERE id = ?',
+        [clientValue, tableValue, guestValue, paymentValue, observationValue, id]
+      );
       return {
         id: Number(id),
-        client: clientName !== undefined ? (clientName || currentOrder.client_name) : currentOrder.client_name,
-        table: Number(tableId !== undefined ? (tableId || currentOrder.table_id) : currentOrder.table_id || 0),
-        nombre_personnes: Number(nombrePersonnes || currentOrder.nombre_personnes || 1),
-        moyen_paiement: (moyenPaiement || currentOrder.moyen_paiement || 'ESPECES'),
+        client: clientValue,
+        table: Number(tableValue || 0),
+        nombre_personnes: guestValue,
+        moyen_paiement: paymentValue,
+        observation: observationValue || '',
         statut: currentOrder.statut,
         total: Number(currentOrder.montant_total || 0),
         created_at: currentOrder.created_at,
