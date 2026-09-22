@@ -321,16 +321,26 @@ MinibarConsumptions.findAll = async function (options) {
 
 // Vérifie la disponibilité d'une chambre sur une période donnée
 async function isRoomAvailable(roomId, dateArrivee, dateDepart, excludeReservationId = null) {
+  // Check if dates are valid
+  if (!dateArrivee || !dateDepart) {
+    console.log('Invalid dates:', { dateArrivee, dateDepart });
+    return true; // Allow if dates are invalid (form validation should catch this)
+  }
+  
+  // For completed reservations, we should check overlap to prevent double booking
+  // Only exclude ANNULEE and NO_SHOW from blocking
   let sql = `
     SELECT COUNT(*) AS conflits FROM reservations
-    WHERE room_id = ? AND statut NOT IN ('ANNULEE', 'TERMINEE')
-    AND NOT (date_depart <= ? OR date_arrivee >= ?)`;
-  const params = [roomId, dateArrivee, dateDepart];
+    WHERE room_id = ? AND statut NOT IN ('ANNULEE', 'NO_SHOW')
+    AND date_arrivee < ? AND date_depart > ?`;
+  const params = [roomId, dateDepart, dateArrivee];
   if (excludeReservationId) {
     sql += ' AND id != ?';
     params.push(excludeReservationId);
   }
+  console.log('Availability check:', { sql, params });
   const [rows] = await pool.query(sql, params);
+  console.log('Availability result:', { roomId, dateArrivee, dateDepart, conflits: rows[0].conflits, available: rows[0].conflits === 0 });
   return rows[0].conflits === 0;
 }
 
