@@ -29,6 +29,23 @@ PREPARE reservation_manual_price_statement FROM @reservation_manual_price_sql;
 EXECUTE reservation_manual_price_statement;
 DEALLOCATE PREPARE reservation_manual_price_statement;
 
+SET @reservation_exchange_rate_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'reservations' AND COLUMN_NAME = 'exchange_rate');
+SET @reservation_exchange_rate_sql = IF(@reservation_exchange_rate_exists = 0, 'ALTER TABLE reservations ADD COLUMN exchange_rate DECIMAL(10,2) NOT NULL DEFAULT 39.76', 'SELECT 1');
+PREPARE reservation_exchange_rate_statement FROM @reservation_exchange_rate_sql;
+EXECUTE reservation_exchange_rate_statement;
+DEALLOCATE PREPARE reservation_exchange_rate_statement;
+
+-- Update reservation status to support CHECKED_IN using a more reliable method
+SET @column_type = (SELECT COLUMN_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'reservations' AND COLUMN_NAME = 'statut');
+SET @has_checked_in = IF(@column_type LIKE '%CHECKED_IN%', 1, 0);
+
+SET @update_status_sql = IF(@has_checked_in = 0, 
+  'ALTER TABLE reservations MODIFY COLUMN statut ENUM("EN_ATTENTE", "CONFIRMEE", "CHECKED_IN", "EN_COURS", "ANNULEE", "TERMINEE", "NO_SHOW") NOT NULL DEFAULT "CONFIRMEE"', 
+  'SELECT 1');
+PREPARE update_status_statement FROM @update_status_sql;
+EXECUTE update_status_statement;
+DEALLOCATE PREPARE update_status_statement;
+
 -- Add quantity fields to equipments table.
 SET @equipment_quantity_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'equipments' AND COLUMN_NAME = 'quantite');
 SET @equipment_quantity_sql = IF(@equipment_quantity_exists = 0, 'ALTER TABLE equipments ADD COLUMN quantite INT NOT NULL DEFAULT 1', 'SELECT 1');
