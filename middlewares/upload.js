@@ -37,4 +37,23 @@ const upload = multer({
   },
 });
 
-module.exports = { upload, UPLOAD_DIR };
+// Pièces du dossier RH (CIN, justificatif de résidence, CV, contrat) : données
+// personnelles, donc stockées HORS du dossier /uploads servi publiquement.
+// Elles ne sont lisibles que via GET /api/rh/employees/:id/documents/:docId (accès RH).
+const RH_DOCUMENTS_DIR = path.join(__dirname, '..', 'private_uploads', 'rh_documents');
+if (!fs.existsSync(RH_DOCUMENTS_DIR)) fs.mkdirSync(RH_DOCUMENTS_DIR, { recursive: true });
+
+const rhDocumentUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, RH_DOCUMENTS_DIR),
+    filename: (req, file, cb) => cb(null, `${Date.now()}-${crypto.randomBytes(12).toString('hex')}${path.extname(file.originalname).toLowerCase()}`),
+  }),
+  // Pas de limite de taille : les scans (contrats, CIN) peuvent être volumineux.
+  // Multer écrit le fichier sur disque au fil de l'eau, sans le garder en mémoire.
+  fileFilter: (req, file, cb) => {
+    if (!ALLOWED_MIME_TYPES.has(file.mimetype)) return cb(new Error('Type de fichier non autorisé (images ou PDF uniquement)'));
+    cb(null, true);
+  },
+});
+
+module.exports = { upload, UPLOAD_DIR, rhDocumentUpload, RH_DOCUMENTS_DIR };

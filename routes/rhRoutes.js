@@ -1,7 +1,17 @@
 const express = require('express');
 const ctrl = require('../controllers/rhController');
 const { requireAuth } = require('../middlewares/auth');
+const { rhDocumentUpload } = require('../middlewares/upload');
+const ApiError = require('../utils/ApiError');
 const router = express.Router();
+
+// Multipart : champ "file" + champ "doc_type" (CIN, RESIDENCE, CV, CONTRAT).
+function uploadDocument(req, res, next) {
+  rhDocumentUpload.single('file')(req, res, (err) => {
+    if (!err) return next();
+    return next(ApiError.badRequest(err.message || 'Erreur lors du téléversement du fichier'));
+  });
+}
 
 // Espace personnel : tout utilisateur connecté (n'importe quel rôle), limité à sa
 // propre fiche. Défini avant requireHR ci-dessous, donc non soumis à ce filtre.
@@ -25,5 +35,7 @@ router.get('/employees', ctrl.employeesList); router.post('/employees', ctrl.cre
 router.get('/leave-requests', ctrl.leaveList); router.post('/leave-requests', ctrl.leaveCreate); router.patch('/leave-requests/:id/status', ctrl.leaveStatus);
 router.get('/attendance', ctrl.attendanceList); router.post('/attendance/check-in', ctrl.checkIn); router.post('/attendance/check-out', ctrl.checkOut);
 router.get('/payroll', ctrl.payrollList); router.post('/payroll/:period/generate', ctrl.payrollGenerate); router.patch('/payroll/:id', ctrl.payrollUpdate); router.patch('/payroll/:id/status', ctrl.payrollStatus); router.delete('/payroll/:id', ctrl.payrollDelete); router.get('/payroll/:period/payslip/:employeeId', ctrl.payrollPayslip);
-router.get('/evaluations', ctrl.evaluationsCrud.list); router.post('/evaluations', ctrl.evaluationCreate); router.get('/evaluations/:id', ctrl.evaluationsCrud.getOne); router.put('/evaluations/:id', ctrl.evaluationsCrud.update);
+router.get('/employees/:id/documents', ctrl.documentList); router.post('/employees/:id/documents', uploadDocument, ctrl.documentUpload); router.get('/employees/:id/documents/:documentId', ctrl.documentDownload); router.delete('/employees/:id/documents/:documentId', ctrl.documentDelete);
+router.get('/budgets', ctrl.budgetList); router.put('/budgets/:department', ctrl.budgetUpdate);
+router.get('/evaluations', ctrl.evaluationList); router.post('/evaluations', ctrl.evaluationCreate); router.get('/evaluations/:id', ctrl.evaluationsCrud.getOne); router.put('/evaluations/:id', ctrl.evaluationsCrud.update);
 module.exports = router;
