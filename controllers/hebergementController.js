@@ -102,7 +102,7 @@ async function availableRoomsHandler(req, res) {
 }
 
 async function createReservationHandler(req, res) {
-  const { client_id, room_id, date_arrivee, date_depart, pdj_inclus = false, remise_pourcentage = 0, guests, statut, type_reservation = 'BOOKING', laundry_included = false, laundry_price = 0, manual_price = 0 } = req.body;
+  const { client_id, room_id, date_arrivee, date_depart, pdj_inclus = false, remise_pourcentage = 0, guests, statut, type_reservation = 'BOOKING', laundry_included = false, laundry_price = 0, manual_price = 0, exchange_rate = 39.76 } = req.body;
   if (!client_id || !room_id || !date_arrivee || !date_depart) {
     throw ApiError.badRequest('client_id, room_id, date_arrivee, date_depart sont requis');
   }
@@ -119,14 +119,15 @@ async function createReservationHandler(req, res) {
   
   let gross = Number(room.prix_nuit || 0) * nights;
   
+  // For Booking.com, convert EUR to Ariary using exchange rate
+  if (type_reservation === 'BOOKING' && manual_price > 0) {
+    const rate = Number(exchange_rate) || 39.76;
+    gross = Number(manual_price) * rate;
+  }
+  
   // Add laundry price if included
   if (laundry_included) {
     gross += Number(laundry_price || 0);
-  }
-  
-  // Use manual price if provided and booking type
-  if (type_reservation === 'BOOKING' && manual_price > 0) {
-    gross = Number(manual_price);
   }
   
   const discountAmount = Math.round(gross * discount / 100);
