@@ -383,17 +383,29 @@ exports.visitsCrud = buildCrud('casino_visits', {
 });
 
 exports.playersCrud = buildCrud('casino_players', {
-  allowedFields: ['nom', 'prenom', 'surnom', 'telephone', 'whatsapp', 'date_inscription', 'depot', 'credit', 'mode_jeu', 'statut_jeu', 'statut'],
+  allowedFields: ['nom', 'prenom', 'surnom', 'telephone', 'whatsapp', 'identite_type', 'identite_numero', 'identite_nom_complet', 'identite_date_emission', 'identite_verifiee', 'identite_fichier_url', 'identite_fichiers_urls', 'date_inscription', 'depot', 'credit', 'mode_jeu', 'statut_jeu', 'statut'],
   orderBy: 'date_inscription DESC, nom ASC, prenom ASC',
 });
+
+const playersCreate = exports.playersCrud.create;
+exports.playersCrud.create = async (req, res, next) => {
+  const { identite_type: identityType, identite_numero: identityNumber, identite_nom_complet: identityName, identite_date_emission: identityDate, identite_verifiee: identityVerified, identite_fichiers_urls: identityFiles } = req.body;
+  let identityFileList = [];
+  try { identityFileList = Array.isArray(identityFiles) ? identityFiles : JSON.parse(identityFiles || '[]'); } catch { identityFileList = []; }
+  if (!identityType || !identityNumber || !identityName || !identityDate || identityFileList.length < 3 || !(identityVerified === true || identityVerified === 1 || identityVerified === '1' || identityVerified === 'true')) {
+    return next(ApiError.badRequest('Au moins trois fichiers d’identité sont obligatoires avant l’inscription du joueur'));
+  }
+  return playersCreate(req, res, next);
+};
 
 exports.playCasinoPlayerHandler = async (req, res, next) => {
   try {
     const playerId = Number(req.params.id);
     const { game_date: gameDate, table_name: tableName, depot = 0, credit = 0 } = req.body;
     if (!Number.isInteger(playerId) || !gameDate || !tableName) throw ApiError.badRequest('Joueur, date et table obligatoires');
-    const [[player]] = await pool.query(`SELECT id, nom, prenom, surnom, whatsapp FROM casino_players WHERE id = ? AND statut = 'ACTIF'`, [playerId]);
+    const [[player]] = await pool.query(`SELECT id, nom, prenom, surnom, whatsapp, identite_verifiee FROM casino_players WHERE id = ? AND statut = 'ACTIF'`, [playerId]);
     if (!player) throw ApiError.notFound('Joueur Casino introuvable ou inactif');
+    if (!player.identite_verifiee) throw ApiError.forbidden('Le joueur doit avoir une identité vérifiée avant de jouer');
     const depositAmount = asMoney(depot);
     const creditAmount = asMoney(credit);
     await pool.query(
