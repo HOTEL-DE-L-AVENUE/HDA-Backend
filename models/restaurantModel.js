@@ -42,6 +42,12 @@ async function ensureRestaurantSchema() {
       if (!orderColumns.some((column) => column.Field === 'notes')) {
         await pool.query('ALTER TABLE orders ADD COLUMN notes TEXT NULL AFTER cloture_at');
       }
+      if (!orderColumns.some((column) => column.Field === 'location_type')) {
+        await pool.query('ALTER TABLE orders ADD COLUMN location_type VARCHAR(50) NULL AFTER notes');
+      }
+      if (!orderColumns.some((column) => column.Field === 'special_person_name')) {
+        await pool.query('ALTER TABLE orders ADD COLUMN special_person_name VARCHAR(255) NULL AFTER location_type');
+      }
 
       // Add cuisson column to order_items for cooking level customization
       const [orderItemColumns] = await pool.query('SHOW COLUMNS FROM order_items');
@@ -61,6 +67,19 @@ const TablesRestaurant = createCrudModel({
   fields: ['numero', 'capacite', 'statut'],
   sortable: ['id', 'numero', 'statut'],
 });
+
+const tablesRestaurantFindAll = TablesRestaurant.findAll;
+TablesRestaurant.findAll = async function(options) {
+  const [existingTables] = await pool.query('SELECT id FROM tables_restaurant LIMIT 1');
+  if (existingTables.length === 0) {
+    const tableRows = Array.from({ length: 16 }, (_, index) => [index + 1, String(index + 1), 4, 'LIBRE']);
+    await pool.query(
+      'INSERT INTO tables_restaurant (id, numero, capacite, statut) VALUES ? ON DUPLICATE KEY UPDATE id = id',
+      [tableRows]
+    );
+  }
+  return tablesRestaurantFindAll.call(this, options);
+};
 
 // `orders` est une table générique partagée entre modules (source_module)
 const Orders = createCrudModel({
@@ -97,15 +116,15 @@ const RestaurantSessions = createCrudModel({
 // --- Logique métier -------------------------------------------------------
 
 // Crée une commande + ses lignes, calcule le montant_total automatiquement.
-async function createOrderWithItems({ clientId, tableId, items, notes }) {
+async function createOrderWithItems({ clientId, tableId, items, notes, locationType, specialPersonName }) {
   await ensureRestaurantSchema();
   return withTransaction(async (conn) => {
     const montantTotal = items.reduce((sum, it) => sum + Number(it.quantite) * Number(it.prix_unitaire), 0);
 
     const [result] = await conn.query(
-      `INSERT INTO orders (client_id, table_id, source_module, montant_total, statut, created_at, notes)
-      VALUES (?, ?, 'RESTAURANT', ?, 'EN_ATTENTE', NOW(), ?)`,
-      [clientId, tableId, montantTotal, notes || null]
+      `INSERT INTO orders (client_id, table_id, source_module, montant_total, statut, created_at, notes, location_type, special_person_name)
+      VALUES (?, ?, 'RESTAURANT', ?, 'EN_ATTENTE', NOW(), ?, ?, ?)`,
+      [clientId, tableId, montantTotal, notes || null, locationType || null, specialPersonName || null]
     );
     const orderId = result.insertId;
 
@@ -117,6 +136,38 @@ async function createOrderWithItems({ clientId, tableId, items, notes }) {
     }
     const [order] = await conn.query('SELECT * FROM orders WHERE id = ?', [orderId]);
     return order[0];
+  });
+}
+
+async function updateOrderWithItems({ orderId, clientId, tableId, items, notes, locationType, specialPersonName }) {
+  await ensureRestaurantSchema();
+  return withTransaction(async (conn) => {
+    const montantTotal = items.reduce((sum, item) => sum + Number(item.quantite) * Number(item.prix_unitaire), 0);
+    const [existingRows] = await conn.query('SELECT id FROM orders WHERE id = ? LIMIT 1', [orderId]);
+    if (!existingRows[0]) return null;
+
+    await conn.query(
+      `UPDATE orders
+       SET client_id = ?, table_id = ?, montant_total = ?, notes = ?, location_type = ?, special_person_name = ?
+       WHERE id = ?`,
+      [clientId || null, tableId || null, montantTotal, notes || null, locationType || null, specialPersonName || null, orderId]
+    );
+    await conn.query('DELETE FROM order_items WHERE order_id = ?', [orderId]);
+    for (const item of items) {
+      await conn.query(
+        `INSERT INTO order_items (order_id, product_id, quantite, prix_unitaire, cuisson) VALUES (?, ?, ?, ?, ?)`,
+        [orderId, item.product_id, item.quantite, item.prix_unitaire, item.cuisson || null]
+      );
+    }
+
+    const [orders] = await conn.query('SELECT * FROM orders WHERE id = ?', [orderId]);
+    const [orderItems] = await conn.query(
+      `SELECT oi.*, p.nom AS product_nom FROM order_items oi
+       LEFT JOIN products p ON p.id = oi.product_id
+       WHERE oi.order_id = ?`,
+      [orderId]
+    );
+    return { ...orders[0], items: orderItems };
   });
 }
 
@@ -232,6 +283,6 @@ async function ordersByTable(statutFilter = 'EN_COURS') {
 module.exports = {
   TablesRestaurant, Orders, OrderItems,
   RestaurantCashiers, RestaurantSessions,
-  createOrderWithItems, orderWithItems, ordersByTable, ensureRestaurantSchema,
+  createOrderWithItems, updateOrderWithItems, orderWithItems, ordersByTable, ensureRestaurantSchema,
   closeAllRestaurantOrders,
 };
