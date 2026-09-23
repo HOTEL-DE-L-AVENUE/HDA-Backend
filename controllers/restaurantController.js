@@ -62,7 +62,7 @@ const productsCrud = {
 async function createOrderHandler(req, res) {
   // Debug: log incoming payload to help diagnose 400 errors from frontend
   console.debug('[restaurant] createOrderHandler body:', JSON.stringify(req.body));
-  const { client_id, table_id, items, notes } = req.body;
+  const { client_id, table_id, items, notes, location_type, special_person_name } = req.body;
   if (!items || !items.length) throw ApiError.badRequest('items requis (au moins une ligne)');
 
   // Validate referenced entities to return clearer 400 errors instead of DB foreign-key messages
@@ -92,8 +92,32 @@ async function createOrderHandler(req, res) {
     throw ApiError.badRequest('Données de référence invalides');
   }
 
-  const order = await resto.createOrderWithItems({ clientId: client_id, tableId: table_id, items, notes });
+  const order = await resto.createOrderWithItems({ clientId: client_id, tableId: table_id, items, notes, locationType: location_type, specialPersonName: special_person_name });
   return created(res, order);
+}
+
+async function updateOrderHandler(req, res) {
+  const { client_id, table_id, items, notes, location_type, special_person_name } = req.body;
+  if (!Array.isArray(items) || !items.length) throw ApiError.badRequest('items requis (au moins une ligne)');
+
+  const productIds = items.map((item) => Number(item.product_id)).filter(Boolean);
+  const placeholders = productIds.map(() => '?').join(',');
+  const [foundProducts] = await pool.query(`SELECT id FROM products WHERE id IN (${placeholders})`, productIds);
+  const foundIds = new Set(foundProducts.map((product) => Number(product.id)));
+  const missing = productIds.filter((id) => !foundIds.has(id));
+  if (missing.length) throw ApiError.badRequest(`product_id introuvable: ${missing.join(',')}`);
+
+  const order = await resto.updateOrderWithItems({
+    orderId: req.params.id,
+    clientId: client_id,
+    tableId: table_id,
+    items,
+    notes,
+    locationType: location_type,
+    specialPersonName: special_person_name,
+  });
+  if (!order) throw ApiError.notFound(`Commande #${req.params.id} introuvable`);
+  return ok(res, order);
 }
 
 async function orderDetailHandler(req, res) {
@@ -593,52 +617,48 @@ async function processPaymentHandler(req, res) {
   }
   const paymentMethod = moyen_paiement || 'ESPECES';
 
-  let finalMontant = Number(montant || 0);
-  let finalClientId = client_id || null;
-  let tableId = null;
+  const result = await withTransaction(async (conn) => {
+    const [[orderRow]] = await conn.query(
+      'SELECT id, client_id, table_id, montant_total, statut FROM orders WHERE id = ? LIMIT 1 FOR UPDATE',
+      [order_id]
+    );
+    if (!orderRow) throw ApiError.notFound(`Commande #${order_id} introuvable`);
 
-  const [[orderRow]] = await pool.query(
-    'SELECT id, client_id, table_id, montant_total FROM orders WHERE id = ? LIMIT 1',
-    [order_id]
-  );
+    // A retry or a double click must not create a second payment for one order.
+    const [[existingPayment]] = await conn.query(
+      'SELECT id, montant FROM payments WHERE order_id = ? ORDER BY id DESC LIMIT 1',
+      [order_id]
+    );
+    if (existingPayment) {
+      return { payment_id: existingPayment.id, montant: Number(existingPayment.montant || 0), alreadyPaid: true };
+    }
 
-  if (orderRow) {
+    const finalMontant = Number(montant || orderRow.montant_total || 0);
+    const finalClientId = client_id || orderRow.client_id || null;
     if (finalMontant <= 0) {
-      finalMontant = Number(orderRow.montant_total || 0);
+      throw ApiError.badRequest(`Le montant de la commande #${order_id} est invalide (${finalMontant})`);
     }
-    if (!finalClientId) {
-      finalClientId = orderRow.client_id || null;
+
+    const [paymentResult] = await conn.query(
+      'INSERT INTO payments (order_id, montant, moyen_paiement, client_id, date_paiement) VALUES (?, ?, ?, ?, NOW())',
+      [order_id, finalMontant, paymentMethod, finalClientId]
+    );
+    await conn.query('UPDATE orders SET statut = "PAYEE" WHERE id = ?', [order_id]);
+
+    if (orderRow.table_id) {
+      await conn.query('UPDATE tables_restaurant SET statut = "LIBRE" WHERE id = ?', [orderRow.table_id]);
     }
-    tableId = orderRow.table_id || null;
-  }
 
-  if (finalMontant <= 0) {
-    throw ApiError.badRequest(`Le montant de la commande #${order_id} est invalide (${finalMontant})`);
-  }
-  
-  const [result] = await pool.query(
-    'INSERT INTO payments (order_id, montant, moyen_paiement, client_id, date_paiement) VALUES (?, ?, ?, ?, NOW())',
-    [order_id, finalMontant, paymentMethod, finalClientId]
-  );
-  
-  await pool.query(
-    'UPDATE orders SET statut = "PAYEE" WHERE id = ?',
-    [order_id]
-  );
+    await conn.query(
+      `INSERT INTO financial_transactions
+         (client_id, module, type_flux, montant, reference_id, description, statut_sync, created_at)
+       VALUES (?, 'RESTAURANT', 'ENTREE', ?, ?, ?, 'SYNCED', NOW())`,
+      [finalClientId, finalMontant, order_id, `Paiement commande restaurant #${order_id}`]
+    );
+    return { payment_id: paymentResult.insertId, montant: finalMontant, alreadyPaid: false };
+  });
 
-  if (tableId) {
-    await pool.query('UPDATE tables_restaurant SET statut = "LIBRE" WHERE id = ?', [tableId]);
-  }
-
-  // Mirror the receipt in the consolidated Finance ledger.
-  await pool.query(
-    `INSERT INTO financial_transactions
-       (client_id, module, type_flux, montant, reference_id, description, statut_sync, created_at)
-     VALUES (?, 'RESTAURANT', 'ENTREE', ?, ?, ?, 'SYNCED', NOW())`,
-    [finalClientId, finalMontant, order_id, `Paiement commande restaurant #${order_id}`]
-  );
-
-  return created(res, { payment_id: result.insertId, montant: finalMontant });
+  return created(res, result);
 }
 
 async function billToRoomHandler(req, res) {
@@ -690,6 +710,29 @@ async function statsHandler(req, res) {
   });
 }
 
+async function historyTotalHandler(req, res) {
+  await resto.ensureRestaurantSchema();
+  const { date_debut, date_fin } = req.query;
+  if (!date_debut || !date_fin) {
+    throw ApiError.badRequest('date_debut et date_fin sont requis');
+  }
+
+  const [[history]] = await pool.query(
+    `SELECT COUNT(*) AS total_payments, COALESCE(SUM(p.montant), 0) AS total_collected
+     FROM payments p
+     INNER JOIN orders o ON o.id = p.order_id
+     WHERE o.source_module = 'RESTAURANT'
+       AND p.date_paiement >= ?
+       AND p.date_paiement < DATE_ADD(?, INTERVAL 1 DAY)`,
+    [`${date_debut} 00:00:00`, date_fin]
+  );
+
+  return ok(res, {
+    total_payments: Number(history.total_payments || 0),
+    total_collected: Number(history.total_collected || 0),
+  });
+}
+
 async function consumeRestaurantPortionHandler(req, res, next) {
   try {
     const { product_id, location_id, portion_size, portion_unit, reference_id } = req.body;
@@ -731,12 +774,12 @@ const restaurantPurchaseDetailHandler = getRestaurantPurchaseByIdHandler;
 
 module.exports = {
   tablesCrud, ordersCrud, orderItemsCrud, cashiersCrud, sessionsCrud, productsCrud,
-  createOrderHandler, orderDetailHandler, orderInvoiceHandler, ordersInProgressHandler,
+  createOrderHandler, updateOrderHandler, orderDetailHandler, orderInvoiceHandler, ordersInProgressHandler,
   orderInvoicePdfHandler, closeAllRestaurantOrdersHandler,
   restaurantStockHandler, restaurantStockMovementsHandler,
   adjustRestaurantStockHandler, removeRestaurantStockHandler, consumeRestaurantPortionHandler,
   getRestaurantPurchasesHandler, getRestaurantPurchaseByIdHandler,
   listRestaurantPurchasesHandler, restaurantPurchaseDetailHandler, createRestaurantPurchaseHandler,
-  menuHandler, updateOrderStatusHandler, openCashierHandler, closeCashierHandler,
+  menuHandler, updateOrderStatusHandler, historyTotalHandler, openCashierHandler, closeCashierHandler,
   cashierStatusHandler, processPaymentHandler, billToRoomHandler, statsHandler,
 };
