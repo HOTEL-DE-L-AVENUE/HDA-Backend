@@ -55,6 +55,7 @@ router.get('/sessions/:id', ctrl.currentSessionHandler);
 router.use('/sessions', managementRoles, createCrudRouter(ctrl.sessionsCrud));
 
 // Commandes bar
+router.get('/history', adminOnly, ctrl.listBarHistoryHandler);
 router.get('/orders', ctrl.listBarOrdersHandler);
 router.post('/orders', orderRoles, ctrl.createBarOrderHandler);
 router.put('/orders/:id', orderRoles, ctrl.updateBarOrderHandler);

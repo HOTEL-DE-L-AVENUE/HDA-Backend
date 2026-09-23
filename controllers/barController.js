@@ -4,7 +4,7 @@ const { BarCashiers, openCashierSession, closeCashierSession, getCurrentSession 
 const { BarSessions, sessionStats } = require('../models/barSession.model');
 const barProductModel = require('../models/barProduct.model');
 const { addTransaction } = require('../models/barTransaction.model');
-const { listBarOrders, createBarOrder, updateBarOrder, deleteBarOrder, updateBarOrderStatus, closeAllBarOrders } = require('../models/barOrder.model');
+const { listBarOrders, listBarHistory, createBarOrder, updateBarOrder, deleteBarOrder, updateBarOrderStatus, closeAllBarOrders } = require('../models/barOrder.model');
 const { createCrudController } = require('./controllerFactory');
 const ApiError = require('../utils/ApiError');
 const { ok, created } = require('../utils/apiResponse');
@@ -146,7 +146,8 @@ async function listTransactionsHandler(req, res) {
   const [rows] = await pool.query(
     `SELECT t.*, bp.nom, bp.prix, bp.categorie FROM bar_transactions t
      JOIN bar_products bp ON bp.id = t.product_id
-     WHERE t.statut = 'PAYEE'
+     JOIN bar_orders bo ON bo.id = t.order_id
+     WHERE t.statut = 'PAYEE' AND bo.statut <> 'CLOTUREE'
      ORDER BY t.created_at DESC LIMIT 50`
   );
   return ok(res, rows);
@@ -155,6 +156,10 @@ async function listTransactionsHandler(req, res) {
 async function listBarOrdersHandler(req, res) {
   const orders = await listBarOrders({ createdBy: req.user?.role === 'hotesse' ? req.user.id_admin : undefined });
   return ok(res, orders);
+}
+
+async function listBarHistoryHandler(req, res) {
+  return ok(res, await listBarHistory());
 }
 
 async function createBarOrderHandler(req, res) {
@@ -233,5 +238,5 @@ module.exports = {
   currentSessionHandler, getBarStockHandler,
   addBarStockHandler, updateBarStockHandler, deleteBarStockHandler,
   addTransactionHandler, latestTransactionsByProductHandler, listTransactionsHandler,
-  listBarOrdersHandler, createBarOrderHandler, updateBarOrderHandler, deleteBarOrderHandler, updateBarOrderStatusHandler, closeAllBarOrdersHandler,
+  listBarOrdersHandler, listBarHistoryHandler, createBarOrderHandler, updateBarOrderHandler, deleteBarOrderHandler, updateBarOrderStatusHandler, closeAllBarOrdersHandler,
 };

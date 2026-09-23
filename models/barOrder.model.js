@@ -59,13 +59,17 @@ async function ensureBarOrderTables() {
     await pool.query('ALTER TABLE bar_orders ADD COLUMN created_by BIGINT UNSIGNED DEFAULT NULL AFTER montant_total');
     await pool.query('ALTER TABLE bar_orders ADD KEY idx_bar_orders_created_by (created_by)');
   }
+  if (!existing.has('cloture_at')) {
+    await pool.query('ALTER TABLE bar_orders ADD COLUMN cloture_at DATETIME DEFAULT NULL AFTER created_at');
+    await pool.query('ALTER TABLE bar_orders ADD KEY idx_bar_orders_cloture_at (cloture_at)');
+  }
 }
 
 async function listBarOrders({ createdBy } = {}) {
   await ensureBarOrderTables();
   const hasCreatorFilter = createdBy !== undefined && createdBy !== null;
   const [orders] = await pool.query(
-    `SELECT * FROM bar_orders ${hasCreatorFilter ? 'WHERE created_by = ?' : ''} ORDER BY created_at DESC`,
+    `SELECT * FROM bar_orders WHERE statut <> 'CLOTUREE'${hasCreatorFilter ? ' AND created_by = ?' : ''} ORDER BY created_at DESC`,
     hasCreatorFilter ? [createdBy] : []
   );
   const orderIds = orders.map((order) => order.id);
@@ -98,6 +102,29 @@ async function listBarOrders({ createdBy } = {}) {
       quantite: Number(item.quantite || 1),
       prix: Number(item.prix || 0),
     })),
+  }));
+}
+
+async function listBarHistory() {
+  await ensureBarOrderTables();
+  const [orders] = await pool.query("SELECT * FROM bar_orders WHERE statut = 'CLOTUREE' ORDER BY cloture_at DESC, created_at DESC");
+  const orderIds = orders.map((order) => order.id);
+  if (!orderIds.length) return [];
+  const [items] = await pool.query('SELECT * FROM bar_order_items WHERE order_id IN (?) ORDER BY id ASC', [orderIds]);
+  const grouped = {};
+  for (const item of items) (grouped[item.order_id] ||= []).push(item);
+  return orders.map((order) => ({
+    id: order.id,
+    client: order.client_name,
+    table: Number(order.table_id),
+    nombre_personnes: Number(order.nombre_personnes || 1),
+    moyen_paiement: order.moyen_paiement || 'ESPECES',
+    observation: order.observation || '',
+    statut: order.statut,
+    total: Number(order.montant_total || 0),
+    created_at: order.created_at,
+    cloture_at: order.cloture_at,
+    items: (grouped[order.id] || []).map((item) => ({ nom: item.nom, quantite: Number(item.quantite || 1), prix: Number(item.prix || 0) })),
   }));
 }
 
@@ -458,20 +485,18 @@ async function closeAllBarOrders(orderIds = []) {
 
   return withTransaction(async (conn) => {
     const ids = [...new Set(orderIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))];
-    if (ids.length > 0) {
-      await conn.query('DELETE FROM bar_order_items WHERE order_id IN (?)', [ids]);
-      await conn.query('DELETE FROM bar_orders WHERE id IN (?)', [ids]);
-    } else {
-      await conn.query('DELETE FROM bar_order_items');
-      await conn.query('DELETE FROM bar_orders');
+    const targetIds = ids.length > 0
+      ? ids
+      : (await conn.query("SELECT id FROM bar_orders WHERE statut <> 'CLOTUREE'"))[0].map((row) => row.id);
+    if (targetIds.length > 0) {
+      await conn.query("UPDATE bar_orders SET statut = 'CLOTUREE', cloture_at = NOW() WHERE id IN (?) AND statut <> 'CLOTUREE'", [targetIds]);
     }
-    await conn.query('DELETE FROM bar_transactions');
-
-    return { deleted_orders: ids.length, cleared_transactions: true };
+    return { closed_orders: targetIds.length, archived: true };
   });
 }
 module.exports = {
   listBarOrders,
+  listBarHistory,
   createBarOrder,
   updateBarOrder,
   deleteBarOrder,
