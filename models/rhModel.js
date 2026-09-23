@@ -1,9 +1,9 @@
 const { pool, withTransaction } = require('../config/db');
 const { createCrudModel } = require('./crudFactory');
-const { workingDays, monthBounds, calculateNet } = require('../utils/hr');
+const { workingDays, monthBounds, calculateNet, statutoryContributions, deductionTotal, DEDUCTION_FREQUENCIES, DAILY_RATE_CONTRACT, IN_WORKFORCE_SQL, DEPARTURE_STATUSES } = require('../utils/hr');
 
-const employeeFields = ['user_id', 'matricule', 'first_name', 'last_name', 'photo_url', 'birth_date', 'phone', 'address', 'email', 'identification_number', 'department', 'position', 'joined_at', 'contract_type', 'contract_end_date', 'salary', 'status', 'departure_date', 'departure_reason'];
-const employees = createCrudModel({ table: 'rh_employees', fields: employeeFields, sortable: ['id', 'matricule', 'first_name', 'last_name', 'department', 'position', 'joined_at', 'salary', 'status', 'created_at'] });
+const employeeFields = ['user_id', 'matricule', 'first_name', 'last_name', 'photo_url', 'birth_date', 'phone', 'address', 'email', 'identification_number', 'department', 'position', 'joined_at', 'contract_type', 'contract_end_date', 'salary', 'prime', 'pourboire', 'cnaps', 'ostie', 'irsa', 'status', 'departure_date', 'departure_reason'];
+const employees = createCrudModel({ table: 'rh_employees', fields: employeeFields, sortable: ['id', 'matricule', 'first_name', 'last_name', 'department', 'position', 'joined_at', 'contract_type', 'salary', 'status', 'created_at'] });
 const evaluations = createCrudModel({ table: 'rh_evaluations', fields: ['employee_id', 'period', 'reviewer_id', 'score', 'comment', 'evaluation_date', 'status'], sortable: ['id', 'employee_id', 'period', 'score', 'evaluation_date', 'status', 'created_at'] });
 
 // --- Lien avec les comptes utilisateurs (gestion d'accès) ---------------------
@@ -61,25 +61,48 @@ async function syncCurrentLeaveStatus(connection = pool) {
 
 function paginationMeta(page, limit, total) { return { page, limit, total: Number(total), totalPages: Math.ceil(Number(total) / limit) }; }
 
-async function listEmployees({ search, department, status, page = 1, limit = 20, offset = 0, orderBy = '`last_name` ASC, `first_name` ASC' } = {}) {
+// Jours de présence (PRESENT ou RETARD) d'un employé sur le mois courant. Le compteur
+// est recalculé à partir des pointages du mois : il repart donc de 0 chaque 1er du mois
+// sans tâche planifiée ni remise à zéro manuelle.
+const PRESENCE_DAYS_THIS_MONTH_SQL = (alias) => `(SELECT COUNT(*) FROM rh_attendance a WHERE a.employee_id = ${alias}.id AND a.status IN ('PRESENT', 'RETARD') AND a.attendance_date BETWEEN DATE_FORMAT(CURDATE(), '%Y-%m-01') AND LAST_DAY(CURDATE()))`;
+
+async function countPresenceDays(conn, employeeId, start, end) {
+  const [[row]] = await conn.query(`SELECT COUNT(*) total FROM rh_attendance WHERE employee_id=? AND status IN ('PRESENT', 'RETARD') AND attendance_date BETWEEN ? AND ?`, [employeeId, start, end]);
+  return Number(row.total || 0);
+}
+
+async function listEmployees({ search, department, status, contractType, page = 1, limit = 20, offset = 0, orderBy = '`last_name` ASC, `first_name` ASC' } = {}) {
   await syncCurrentLeaveStatus();
   const c = []; const values = [];
   if (search) { c.push('(first_name LIKE ? OR last_name LIKE ? OR position LIKE ? OR matricule LIKE ?)'); const term = `%${search}%`; values.push(term, term, term, term); }
   if (department) { c.push('department = ?'); values.push(department); }
   if (status) { c.push('status = ?'); values.push(status); }
+  if (contractType) { c.push('contract_type = ?'); values.push(contractType); }
   const where = c.length ? `WHERE ${c.join(' AND ')}` : '';
-  const [[count]] = await pool.query(`SELECT COUNT(*) total FROM rh_employees ${where}`, values);
-  const [rows] = await pool.query(`SELECT * FROM rh_employees ${where} ORDER BY ${orderBy} LIMIT ? OFFSET ?`, [...values, limit, offset]);
-  return { rows, meta: paginationMeta(page, limit, count.total) };
+  const [[count]] = await pool.query(`SELECT COUNT(*) total FROM rh_employees e ${where}`, values);
+  const [rows] = await pool.query(`SELECT e.*, ${PRESENCE_DAYS_THIS_MONTH_SQL('e')} presence_days FROM rh_employees e ${where} ORDER BY ${orderBy} LIMIT ? OFFSET ?`, [...values, limit, offset]);
+  // Compteurs d'effectif sur tout le registre, indépendamment des filtres affichés.
+  const [statusRows] = await pool.query('SELECT status, COUNT(*) total FROM rh_employees GROUP BY status');
+  const statusCounts = Object.fromEntries(statusRows.map((r) => [r.status, Number(r.total)]));
+  const grandTotal = statusRows.reduce((sum, r) => sum + Number(r.total), 0);
+  return { rows, meta: { ...paginationMeta(page, limit, count.total), statusCounts, grandTotal } };
+}
+
+async function findEmployeeWithPresence(id) {
+  const [[row]] = await pool.query(`SELECT e.*, ${PRESENCE_DAYS_THIS_MONTH_SQL('e')} presence_days FROM rh_employees e WHERE e.id = ?`, [id]);
+  return row || null;
 }
 
 async function dashboard() {
   await syncCurrentLeaveStatus();
-  const [[summary]] = await pool.query(`SELECT COUNT(*) total, SUM(status = 'ACTIF') active, SUM(status = 'EN_CONGE') on_leave, SUM(status = 'SUSPENDU') suspended, SUM(status = 'SORTI') departed, COALESCE(SUM(CASE WHEN status <> 'SORTI' THEN salary ELSE 0 END), 0) payroll_total FROM rh_employees`);
+  const departed = DEPARTURE_STATUSES.map((s) => `'${s}'`).join(', ');
+  // Masse salariale estimée : un prestataire compte pour taux journalier × jours de présence du mois.
+  const [[summary]] = await pool.query(`SELECT COUNT(*) total, SUM(status = 'ACTIF') active, SUM(status = 'EN_CONGE') on_leave, SUM(status = 'SUSPENDU') suspended, SUM(status IN (${departed})) departed,
+    COALESCE(SUM(CASE WHEN ${IN_WORKFORCE_SQL('e')} THEN (CASE WHEN contract_type = ? THEN salary * ${PRESENCE_DAYS_THIS_MONTH_SQL('e')} ELSE salary END) + prime + pourboire ELSE 0 END), 0) payroll_total FROM rh_employees e`, [DAILY_RATE_CONTRACT]);
   const [[pendingLeave]] = await pool.query(`SELECT COUNT(*) total FROM rh_leave_requests WHERE status = 'EN_ATTENTE'`);
   const [[absent]] = await pool.query(`SELECT COUNT(*) total FROM rh_attendance WHERE attendance_date = CURDATE() AND status = 'ABSENT'`);
-  const [departments] = await pool.query(`SELECT department, COUNT(*) total FROM rh_employees WHERE status <> 'SORTI' GROUP BY department ORDER BY total DESC, department ASC`);
-  const [expiringContracts] = await pool.query(`SELECT id, matricule, first_name, last_name, contract_end_date FROM rh_employees WHERE status <> 'SORTI' AND contract_end_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 60 DAY) ORDER BY contract_end_date ASC`);
+  const [departments] = await pool.query(`SELECT department, COUNT(*) total FROM rh_employees WHERE ${IN_WORKFORCE_SQL()} GROUP BY department ORDER BY total DESC, department ASC`);
+  const [expiringContracts] = await pool.query(`SELECT id, matricule, first_name, last_name, contract_end_date FROM rh_employees WHERE ${IN_WORKFORCE_SQL()} AND contract_end_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 60 DAY) ORDER BY contract_end_date ASC`);
   return { total: Number(summary.total || 0), active: Number(summary.active || 0), absent: Number(absent.total || 0), onLeave: Number(summary.on_leave || 0), suspended: Number(summary.suspended || 0), departed: Number(summary.departed || 0), payrollTotal: Number(summary.payroll_total || 0), pendingLeave: Number(pendingLeave.total || 0), departments, expiringContracts };
 }
 
@@ -98,7 +121,7 @@ async function createLeaveRequest(data) {
   if (!days) throw new Error('Un congé doit contenir au moins un jour ouvré');
   return withTransaction(async (conn) => {
     const [[employee]] = await conn.query('SELECT id, status FROM rh_employees WHERE id = ? FOR UPDATE', [data.employee_id]);
-    if (!employee || employee.status === 'SORTI') return null;
+    if (!employee || DEPARTURE_STATUSES.includes(employee.status)) return null;
     const [[overlap]] = await conn.query(`SELECT id FROM rh_leave_requests WHERE employee_id=? AND status='APPROUVE' AND start_date <= ? AND end_date >= ? LIMIT 1`, [data.employee_id, data.end_date, data.start_date]);
     if (overlap) { const err = new Error('OVERLAP'); throw err; }
     const [result] = await conn.query(`INSERT INTO rh_leave_requests (employee_id, leave_type, start_date, end_date, days, reason, status) VALUES (?, ?, ?, ?, ?, ?, 'EN_ATTENTE')`, [data.employee_id, data.leave_type, data.start_date, data.end_date, days, data.reason || null]);
@@ -134,10 +157,10 @@ const NOT_ON_APPROVED_LEAVE = `NOT EXISTS (SELECT 1 FROM rh_leave_requests l WHE
 async function listAttendance({ date, page = 1, limit = 20, offset = 0 } = {}) {
   await syncCurrentLeaveStatus();
   const attendanceDate = date || new Date().toISOString().slice(0, 10);
-  const [[count]] = await pool.query(`SELECT COUNT(*) total FROM rh_employees e WHERE e.status <> 'SORTI' AND ${NOT_ON_APPROVED_LEAVE}`, [attendanceDate]);
+  const [[count]] = await pool.query(`SELECT COUNT(*) total FROM rh_employees e WHERE ${IN_WORKFORCE_SQL('e')} AND ${NOT_ON_APPROVED_LEAVE}`, [attendanceDate]);
   const [rows] = await pool.query(`SELECT e.id employee_id, e.matricule, e.first_name, e.last_name, e.department, a.attendance_date, a.check_in, a.check_out,
     CASE WHEN a.id IS NOT NULL THEN a.status WHEN ? < CURDATE() THEN 'ABSENT' ELSE 'NON_POINTE' END attendance_status, a.notes
-    FROM rh_employees e LEFT JOIN rh_attendance a ON a.employee_id=e.id AND a.attendance_date=? WHERE e.status <> 'SORTI' AND ${NOT_ON_APPROVED_LEAVE} ORDER BY e.last_name, e.first_name LIMIT ? OFFSET ?`, [attendanceDate, attendanceDate, attendanceDate, limit, offset]);
+    FROM rh_employees e LEFT JOIN rh_attendance a ON a.employee_id=e.id AND a.attendance_date=? WHERE ${IN_WORKFORCE_SQL('e')} AND ${NOT_ON_APPROVED_LEAVE} ORDER BY e.last_name, e.first_name LIMIT ? OFFSET ?`, [attendanceDate, attendanceDate, attendanceDate, limit, offset]);
   return { rows, meta: paginationMeta(page, limit, count.total) };
 }
 
@@ -178,22 +201,43 @@ async function payrollAdjustments(conn, employeeId, start, end, baseSalary) {
   return Math.round((Number(baseSalary) / businessDays) * Number(days.total || 0) * 100) / 100;
 }
 
+// Calcule (ou recalcule) la ligne de paie brouillon d'un employé pour un mois.
+// - Prestataire : base = taux journalier × jours de présence du mois, pas de retenue d'absence.
+// - Autres contrats : base = salaire mensuel, moins absences et congés sans solde.
+// - La prime et le pourboire de la fiche alimentent la ligne à sa création. Sur une ligne
+//   existante, les montants ajustés à la main sont conservés, sauf si syncPrime /
+//   syncPourboire est demandé (la valeur de la fiche vient de changer).
+// - La retenue saisie (mensuelle ou hebdomadaire × semaines du mois) s'ajoute aux absences.
+// - CNAPS / OSTIE / IRSA sont figées sur la ligne à partir de la fiche.
+async function upsertDraftPayrollLine(conn, employee, bounds, { onlyExisting = false, syncPrime = false, syncPourboire = false } = {}) {
+  const [[existing]] = await conn.query('SELECT * FROM rh_payroll WHERE employee_id=? AND period_month=? FOR UPDATE', [employee.id, bounds.period]);
+  if (existing && existing.status !== 'BROUILLON') return null;
+  if (!existing && onlyExisting) return null;
+  const isDailyRate = employee.contract_type === DAILY_RATE_CONTRACT;
+  const presenceDays = isDailyRate ? await countPresenceDays(conn, employee.id, bounds.start, bounds.end) : null;
+  const baseSalary = isDailyRate ? Math.round(Number(employee.salary) * presenceDays * 100) / 100 : Number(employee.salary);
+  const absenceDeduction = isDailyRate ? 0 : await payrollAdjustments(conn, employee.id, bounds.start, bounds.end, employee.salary);
+  const contributions = statutoryContributions(employee);
+  // Keep HR-entered deductions separate from computed unpaid-leave/absence
+  // deductions so running “generate” twice is idempotent.
+  const manualDeductions = existing ? deductionTotal(existing.deduction_amount, existing.deduction_frequency, bounds.period) : 0;
+  const bonuses = existing && !syncPrime ? Number(existing.bonuses || 0) : Number(employee.prime || 0);
+  const pourboire = existing && !syncPourboire ? Number(existing.pourboire || 0) : Number(employee.pourboire || 0);
+  const values = { ...(existing || { overtime_amount: 0, allowances: 0, advances: 0 }), base_salary: baseSalary, bonuses, pourboire, absence_deductions: absenceDeduction, deductions: manualDeductions + absenceDeduction, ...contributions, presence_days: presenceDays };
+  values.net_amount = calculateNet(values);
+  if (existing) {
+    await conn.query('UPDATE rh_payroll SET base_salary=?, bonuses=?, pourboire=?, deductions=?, absence_deductions=?, cnaps=?, ostie=?, irsa=?, presence_days=?, net_amount=? WHERE id=?', [values.base_salary, values.bonuses, values.pourboire, values.deductions, values.absence_deductions, values.cnaps, values.ostie, values.irsa, values.presence_days, values.net_amount, existing.id]);
+  } else {
+    await conn.query('INSERT INTO rh_payroll (employee_id, period_month, base_salary, bonuses, pourboire, deductions, absence_deductions, cnaps, ostie, irsa, presence_days, net_amount, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "BROUILLON")', [employee.id, bounds.period, values.base_salary, values.bonuses, values.pourboire, values.deductions, values.absence_deductions, values.cnaps, values.ostie, values.irsa, values.presence_days, values.net_amount]);
+  }
+  return values;
+}
+
 async function generatePayroll(period) {
   const bounds = monthBounds(period);
   await withTransaction(async (conn) => {
-    const [staff] = await conn.query(`SELECT id, salary FROM rh_employees WHERE status <> 'SORTI'`);
-    for (const employee of staff) {
-      const deduction = await payrollAdjustments(conn, employee.id, bounds.start, bounds.end, employee.salary);
-      const [[existing]] = await conn.query('SELECT * FROM rh_payroll WHERE employee_id=? AND period_month=? FOR UPDATE', [employee.id, bounds.period]);
-      if (existing && existing.status !== 'BROUILLON') continue;
-      // Keep HR-entered deductions separate from computed unpaid-leave/absence
-      // deductions so running “generate” twice is idempotent.
-      const manualDeductions = existing ? Math.max(0, Number(existing.deductions || 0) - Number(existing.absence_deductions || 0)) : 0;
-      const values = existing ? { ...existing, base_salary: employee.salary, absence_deductions: deduction, deductions: manualDeductions + deduction } : { base_salary: employee.salary, overtime_amount: 0, bonuses: 0, allowances: 0, advances: 0, absence_deductions: deduction, deductions: deduction };
-      const net = calculateNet(values);
-      if (existing) await conn.query('UPDATE rh_payroll SET base_salary=?, deductions=?, absence_deductions=?, net_amount=? WHERE id=?', [values.base_salary, values.deductions, values.absence_deductions, net, existing.id]);
-      else await conn.query('INSERT INTO rh_payroll (employee_id, period_month, base_salary, deductions, absence_deductions, net_amount, status) VALUES (?, ?, ?, ?, ?, ?, "BROUILLON")', [employee.id, bounds.period, values.base_salary, values.deductions, values.absence_deductions, net]);
-    }
+    const [staff] = await conn.query(`SELECT id, salary, prime, pourboire, irsa, contract_type FROM rh_employees WHERE ${IN_WORKFORCE_SQL()}`);
+    for (const employee of staff) await upsertDraftPayrollLine(conn, employee, bounds);
   });
   // Relu hors transaction (connexion séparée du pool) : le commit ci-dessus doit
   // être visible, sinon cette lecture retombe sur l'état d'avant génération.
@@ -211,30 +255,39 @@ async function updatePayroll(id, data) {
   const [[row]] = await pool.query('SELECT * FROM rh_payroll WHERE id=?', [id]);
   if (!row) return null;
   if (row.status !== 'BROUILLON') { const err = new Error('PAYROLL_LOCKED'); throw err; }
-  const allowed = ['overtime_amount', 'bonuses', 'allowances', 'advances', 'deductions'];
+  const allowed = ['overtime_amount', 'bonuses', 'pourboire', 'allowances', 'advances', 'deduction_amount'];
   const values = { ...row };
   for (const key of allowed) {
     if (data[key] === undefined) continue;
     if (!Number.isFinite(Number(data[key])) || Number(data[key]) < 0) { const err = new Error('INVALID_PAYROLL_AMOUNT'); throw err; }
     values[key] = Number(data[key]);
   }
+  if (data.deduction_frequency !== undefined) {
+    if (!DEDUCTION_FREQUENCIES.includes(data.deduction_frequency)) { const err = new Error('INVALID_DEDUCTION_FREQUENCY'); throw err; }
+    values.deduction_frequency = data.deduction_frequency;
+  }
+  if (data.deduction_reason !== undefined) values.deduction_reason = String(data.deduction_reason || '').trim().slice(0, 255) || null;
+  // Total déduit = retenue saisie (× semaines si hebdomadaire) + absences calculées.
+  values.deductions = deductionTotal(values.deduction_amount, values.deduction_frequency, row.period_month) + Number(row.absence_deductions || 0);
   values.net_amount = calculateNet(values);
-  await pool.query(`UPDATE rh_payroll SET overtime_amount=?, bonuses=?, allowances=?, advances=?, deductions=?, net_amount=? WHERE id=?`, [values.overtime_amount, values.bonuses, values.allowances, values.advances, values.deductions, values.net_amount, id]);
+  await pool.query(`UPDATE rh_payroll SET overtime_amount=?, bonuses=?, pourboire=?, allowances=?, advances=?, deduction_amount=?, deduction_frequency=?, deduction_reason=?, deductions=?, net_amount=? WHERE id=?`, [values.overtime_amount, values.bonuses, values.pourboire, values.allowances, values.advances, values.deduction_amount, values.deduction_frequency, values.deduction_reason, values.deductions, values.net_amount, id]);
   return (await pool.query('SELECT * FROM rh_payroll WHERE id=?', [id]))[0][0];
 }
 
-async function syncEmployeePayrollSnapshot(employeeId, employee) {
-  const [rows] = await pool.query('SELECT * FROM rh_payroll WHERE employee_id=? AND status = "BROUILLON" ORDER BY period_month DESC', [employeeId]);
-  if (!rows.length) return [];
-  const payloads = [];
-  for (const row of rows) {
-    const baseSalary = Number(employee?.salary ?? row.base_salary ?? 0);
-    const next = { ...row, base_salary: baseSalary };
-    const net = calculateNet(next);
-    await pool.query('UPDATE rh_payroll SET base_salary=?, net_amount=? WHERE id=?', [baseSalary, net, row.id]);
-    payloads.push({ ...row, base_salary: baseSalary, net_amount: net });
-  }
-  return payloads;
+// Après modification d'une fiche, recalcule ses lignes de paie encore en brouillon
+// (salaire, taux journalier, contrat, cotisations, prime, pourboire).
+async function syncEmployeePayrollSnapshot(employee, previous) {
+  const syncPrime = Number(previous?.prime || 0) !== Number(employee.prime || 0);
+  const syncPourboire = Number(previous?.pourboire || 0) !== Number(employee.pourboire || 0);
+  return withTransaction(async (conn) => {
+    const [rows] = await conn.query('SELECT period_month FROM rh_payroll WHERE employee_id=? AND status = "BROUILLON"', [employee.id]);
+    const payloads = [];
+    for (const row of rows) {
+      const line = await upsertDraftPayrollLine(conn, employee, monthBounds(row.period_month), { onlyExisting: true, syncPrime, syncPourboire });
+      if (line) payloads.push(line);
+    }
+    return payloads;
+  });
 }
 
 async function transitionPayroll(id, status) {
@@ -254,4 +307,71 @@ async function deletePayroll(id) {
   return row;
 }
 
-module.exports = { employees, evaluations, listEmployees, dashboard, listLeaveRequests, createLeaveRequest, updateLeaveStatus, listAttendance, checkIn, checkOut, listMyAttendance, generatePayroll, listPayroll, updatePayroll, syncEmployeePayrollSnapshot, transitionPayroll, deletePayroll, monthBounds, findEmployeeByUserId, createOrLinkEmployeeFromUser };
+// --- Pièces jointes du dossier employé ------------------------------------------
+
+async function listDocuments(employeeId) {
+  const [rows] = await pool.query('SELECT id, employee_id, doc_type, original_name, mime_type, file_size, created_at FROM rh_employee_documents WHERE employee_id=? ORDER BY created_at DESC', [employeeId]);
+  return rows;
+}
+
+async function createDocument({ employeeId, docType, storedName, originalName, mimeType, fileSize, uploadedBy }) {
+  const [result] = await pool.query('INSERT INTO rh_employee_documents (employee_id, doc_type, stored_name, original_name, mime_type, file_size, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?)', [employeeId, docType, storedName, originalName, mimeType, fileSize, uploadedBy || null]);
+  const [[row]] = await pool.query('SELECT id, employee_id, doc_type, original_name, mime_type, file_size, created_at FROM rh_employee_documents WHERE id=?', [result.insertId]);
+  return row;
+}
+
+async function findDocument(employeeId, documentId) {
+  const [[row]] = await pool.query('SELECT * FROM rh_employee_documents WHERE id=? AND employee_id=?', [documentId, employeeId]);
+  return row || null;
+}
+
+async function deleteDocument(documentId) {
+  await pool.query('DELETE FROM rh_employee_documents WHERE id=?', [documentId]);
+}
+
+// --- Évaluation : évaluations filtrées par date + budget salarial par département ---
+
+async function listEvaluations({ from, to, employeeId, status, page = 1, limit = 20, offset = 0 } = {}) {
+  const c = []; const values = [];
+  if (from) { c.push('v.evaluation_date >= ?'); values.push(from); }
+  if (to) { c.push('v.evaluation_date <= ?'); values.push(to); }
+  if (employeeId) { c.push('v.employee_id = ?'); values.push(employeeId); }
+  if (status) { c.push('v.status = ?'); values.push(status); }
+  const where = c.length ? `WHERE ${c.join(' AND ')}` : '';
+  const [[count]] = await pool.query(`SELECT COUNT(*) total FROM rh_evaluations v ${where}`, values);
+  const [rows] = await pool.query(`SELECT v.*, e.first_name, e.last_name, e.matricule, e.department FROM rh_evaluations v JOIN rh_employees e ON e.id = v.employee_id ${where} ORDER BY v.evaluation_date DESC, v.id DESC LIMIT ? OFFSET ?`, [...values, limit, offset]);
+  return { rows, meta: paginationMeta(page, limit, count.total) };
+}
+
+// Le budget est mensuel : sur une plage de dates, il est multiplié par le nombre de mois
+// couverts. Le réalisé est la masse salariale brute (base + HS + primes + pourboires + indemnités)
+// des lignes de paie des mois couverts, rattachées au département actuel de l'employé.
+async function listDepartmentBudgets({ from, to, departments }) {
+  const start = monthBounds(from).start;
+  const end = monthBounds(to).end;
+  if (end < start) throw new Error('La date de fin doit être postérieure à la date de début');
+  const months = (Number(to.slice(0, 4)) - Number(from.slice(0, 4))) * 12 + (Number(to.slice(5, 7)) - Number(from.slice(5, 7))) + 1;
+  const [budgets] = await pool.query('SELECT department, monthly_budget FROM rh_department_budgets');
+  // Le bouton « Payer » n'existe plus : une paie validée est considérée comme payée.
+  const [actuals] = await pool.query(`SELECT e.department, SUM(p.base_salary + p.overtime_amount + p.bonuses + p.pourboire + p.allowances) gross, SUM(p.net_amount) net,
+    SUM(CASE WHEN p.status = 'BROUILLON' THEN p.net_amount ELSE 0 END) to_pay, SUM(CASE WHEN p.status IN ('VALIDE', 'PAYE') THEN p.net_amount ELSE 0 END) paid
+    FROM rh_payroll p JOIN rh_employees e ON e.id = p.employee_id WHERE p.period_month BETWEEN ? AND ? GROUP BY e.department`, [start, end]);
+  const [headcounts] = await pool.query(`SELECT department, COUNT(*) total FROM rh_employees WHERE ${IN_WORKFORCE_SQL()} GROUP BY department`);
+  const byDept = (rows, key) => Object.fromEntries(rows.map((r) => [r.department, r[key]]));
+  const budgetMap = byDept(budgets, 'monthly_budget'); const grossMap = byDept(actuals, 'gross'); const netMap = byDept(actuals, 'net'); const toPayMap = byDept(actuals, 'to_pay'); const paidMap = byDept(actuals, 'paid'); const headMap = byDept(headcounts, 'total');
+  const rows = departments.map((department) => {
+    const monthlyBudget = Number(budgetMap[department] || 0);
+    const budget = monthlyBudget * months;
+    const actual = Number(grossMap[department] || 0);
+    return { department, headcount: Number(headMap[department] || 0), monthly_budget: monthlyBudget, budget, actual, net: Number(netMap[department] || 0), to_pay: Number(toPayMap[department] || 0), paid: Number(paidMap[department] || 0), remaining: budget - actual, usage: budget > 0 ? Math.round((actual / budget) * 1000) / 10 : null };
+  });
+  return { rows, months, from: start, to: end };
+}
+
+async function setDepartmentBudget(department, monthlyBudget, userId) {
+  await pool.query('INSERT INTO rh_department_budgets (department, monthly_budget, updated_by) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE monthly_budget = VALUES(monthly_budget), updated_by = VALUES(updated_by)', [department, monthlyBudget, userId || null]);
+  const [[row]] = await pool.query('SELECT department, monthly_budget FROM rh_department_budgets WHERE department=?', [department]);
+  return { department: row.department, monthly_budget: Number(row.monthly_budget) };
+}
+
+module.exports = { listDocuments, createDocument, findDocument, deleteDocument, listEvaluations, listDepartmentBudgets, setDepartmentBudget, findEmployeeWithPresence, employees, evaluations, listEmployees, dashboard, listLeaveRequests, createLeaveRequest, updateLeaveStatus, listAttendance, checkIn, checkOut, listMyAttendance, generatePayroll, listPayroll, updatePayroll, syncEmployeePayrollSnapshot, transitionPayroll, deletePayroll, monthBounds, findEmployeeByUserId, createOrLinkEmployeeFromUser };
