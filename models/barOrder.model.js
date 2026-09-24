@@ -63,6 +63,22 @@ async function ensureBarOrderTables() {
     await pool.query('ALTER TABLE bar_orders ADD COLUMN cloture_at DATETIME DEFAULT NULL AFTER created_at');
     await pool.query('ALTER TABLE bar_orders ADD KEY idx_bar_orders_cloture_at (cloture_at)');
   }
+  if (!existing.has('hotel_reservation_id')) {
+    await pool.query('ALTER TABLE bar_orders ADD COLUMN hotel_reservation_id BIGINT UNSIGNED NULL AFTER observation');
+  }
+  if (!existing.has('room_id')) {
+    await pool.query('ALTER TABLE bar_orders ADD COLUMN room_id BIGINT UNSIGNED NULL AFTER hotel_reservation_id');
+  }
+  if (!existing.has('room_guest_name')) {
+    await pool.query('ALTER TABLE bar_orders ADD COLUMN room_guest_name VARCHAR(255) NULL AFTER room_id');
+  }
+  if (!existing.has('room_account_paid')) {
+    await pool.query('ALTER TABLE bar_orders ADD COLUMN room_account_paid BOOLEAN NOT NULL DEFAULT FALSE AFTER room_guest_name');
+  }
+  const [indexes] = await pool.query('SHOW INDEX FROM bar_orders WHERE Key_name = ?', ['idx_bar_orders_hotel_room']);
+  if (!indexes.length) {
+    await pool.query('ALTER TABLE bar_orders ADD INDEX idx_bar_orders_hotel_room (hotel_reservation_id, room_id, room_account_paid)');
+  }
 }
 
 async function listBarOrders({ createdBy } = {}) {
@@ -97,6 +113,10 @@ async function listBarOrders({ createdBy } = {}) {
     statut: order.statut,
     total: Number(order.montant_total || 0),
     created_at: order.created_at,
+    hotel_reservation_id: order.hotel_reservation_id ?? null,
+    room_id: order.room_id ?? null,
+    room_guest_name: order.room_guest_name || null,
+    room_account_paid: Boolean(order.room_account_paid),
     items: (grouped[order.id] || []).map((item) => ({
       nom: item.nom,
       quantite: Number(item.quantite || 1),
@@ -124,11 +144,15 @@ async function listBarHistory() {
     total: Number(order.montant_total || 0),
     created_at: order.created_at,
     cloture_at: order.cloture_at,
+    hotel_reservation_id: order.hotel_reservation_id ?? null,
+    room_id: order.room_id ?? null,
+    room_guest_name: order.room_guest_name || null,
+    room_account_paid: Boolean(order.room_account_paid),
     items: (grouped[order.id] || []).map((item) => ({ nom: item.nom, quantite: Number(item.quantite || 1), prix: Number(item.prix || 0) })),
   }));
 }
 
-async function createBarOrder({ clientName, tableId, nombrePersonnes = 1, moyenPaiement = 'ESPECES', observation = '', items, createdBy = null }) {
+async function createBarOrder({ clientName, tableId, nombrePersonnes = 1, moyenPaiement = 'ESPECES', observation = '', items, createdBy = null, hotelReservationId = null, roomId = null, roomGuestName = null, roomAccountPaid = false }) {
   await ensureBarOrderTables();
   await ensureBarTransactionsSchema();
 
@@ -163,8 +187,8 @@ async function createBarOrder({ clientName, tableId, nombrePersonnes = 1, moyenP
     const total = (items || []).reduce((sum, item) => sum + Number(item.quantite || 1) * Number(item.prix || 0), 0);
 
     const [result] = await conn.query(
-      'INSERT INTO bar_orders (client_name, table_id, nombre_personnes, moyen_paiement, observation, statut, montant_total, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())',
-      [clientName || null, tableId || null, Number(nombrePersonnes) || 1, moyenPaiement || 'ESPECES', observation || null, 'EN_ATTENTE', total, createdBy]
+      'INSERT INTO bar_orders (client_name, table_id, nombre_personnes, moyen_paiement, observation, hotel_reservation_id, room_id, room_guest_name, room_account_paid, statut, montant_total, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())',
+      [clientName || null, tableId || null, Number(nombrePersonnes) || 1, moyenPaiement || 'ESPECES', observation || null, hotelReservationId ?? null, roomId ?? null, roomGuestName || null, roomAccountPaid ? 1 : 0, 'EN_ATTENTE', total, createdBy]
     );
 
     const orderId = result.insertId;
@@ -230,7 +254,7 @@ async function createBarOrder({ clientName, tableId, nombrePersonnes = 1, moyenP
   });
 }
 
-async function updateBarOrder(id, { clientName, tableId, nombrePersonnes = 1, moyenPaiement = 'ESPECES', observation = '', items, createdBy }) {
+async function updateBarOrder(id, { clientName, tableId, nombrePersonnes = 1, moyenPaiement = 'ESPECES', observation = '', items, createdBy, hotelReservationId = null, roomId = null, roomGuestName = null, roomAccountPaid = false }) {
   await ensureBarOrderTables();
   await ensureBarTransactionsSchema();
 
@@ -281,9 +305,13 @@ async function updateBarOrder(id, { clientName, tableId, nombrePersonnes = 1, mo
       const guestValue = Number(nombrePersonnes || currentOrder.nombre_personnes || 1);
       const paymentValue = moyenPaiement || currentOrder.moyen_paiement || 'ESPECES';
       const observationValue = observation !== undefined ? (observation || null) : currentOrder.observation || null;
+      const hotelReservationValue = hotelReservationId !== null ? (hotelReservationId ?? null) : currentOrder.hotel_reservation_id ?? null;
+      const roomIdValue = roomId !== null ? (roomId ?? null) : currentOrder.room_id ?? null;
+      const roomGuestNameValue = roomGuestName !== null ? (roomGuestName || null) : currentOrder.room_guest_name ?? null;
+      const roomAccountPaidValue = roomAccountPaid !== false ? (roomAccountPaid ? 1 : 0) : (currentOrder.room_account_paid ? 1 : 0);
       await conn.query(
-        'UPDATE bar_orders SET client_name = ?, table_id = ?, nombre_personnes = ?, moyen_paiement = ?, observation = ? WHERE id = ?',
-        [clientValue, tableValue, guestValue, paymentValue, observationValue, id]
+        'UPDATE bar_orders SET client_name = ?, table_id = ?, nombre_personnes = ?, moyen_paiement = ?, observation = ?, hotel_reservation_id = ?, room_id = ?, room_guest_name = ?, room_account_paid = ? WHERE id = ?',
+        [clientValue, tableValue, guestValue, paymentValue, observationValue, hotelReservationValue, roomIdValue, roomGuestNameValue, roomAccountPaidValue, id]
       );
       return {
         id: Number(id),
