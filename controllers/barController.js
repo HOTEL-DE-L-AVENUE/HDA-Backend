@@ -1,15 +1,22 @@
 // controllers/barController.js
-const { BarTables, tablesStats } = require('../models/barTables.model');
+const { BarTables, tablesStats, ensureDefaultBarTables } = require('../models/barTables.model');
 const { BarCashiers, openCashierSession, closeCashierSession, getCurrentSession } = require('../models/barCashier.model');
 const { BarSessions, sessionStats } = require('../models/barSession.model');
 const barProductModel = require('../models/barProduct.model');
 const { addTransaction } = require('../models/barTransaction.model');
+const { getBarReport, saveBarReport } = require('../models/barReport.model');
 const { listBarOrders, listBarHistory, createBarOrder, updateBarOrder, deleteBarOrder, updateBarOrderStatus, closeAllBarOrders } = require('../models/barOrder.model');
 const { createCrudController } = require('./controllerFactory');
 const ApiError = require('../utils/ApiError');
 const { ok, created } = require('../utils/apiResponse');
 
-const tablesCrud = createCrudController(BarTables, { filterable: ['statut'] });
+const tablesCrud = {
+  ...createCrudController(BarTables, { filterable: ['statut'] }),
+  list: async (req, res) => {
+    await ensureDefaultBarTables();
+    return createCrudController(BarTables, { filterable: ['statut'] }).list(req, res);
+  },
+};
 const cashiersCrud = createCrudController(BarCashiers, { filterable: ['statut'] });
 const sessionsCrud = createCrudController(BarSessions, { filterable: ['cashier_id', 'user_id'] });
 
@@ -162,59 +169,97 @@ async function listBarHistoryHandler(req, res) {
   return ok(res, await listBarHistory());
 }
 
-async function createBarOrderHandler(req, res) {
-  const { client, table, nombre_personnes, moyen_paiement, observation, items, hotel_reservation_id, room_id, room_guest_name, room_account_paid } = req.body || {};
-  if (table === undefined || !Array.isArray(items) || items.length === 0) {
+async function getBarReportHandler(req, res) {
+  return ok(res, await getBarReport(req.params.date));
+}
+
+async function saveBarReportHandler(req, res) {
+  const { reportDate, personnel, manual, metrics } = req.body || {};
+  const report = await saveBarReport({
+    reportDate,
+    personnel,
+    manual,
+    metrics,
+    createdBy: req.user?.id_admin ?? null,
+  });
+  return ok(res, report);
+}
+
+function normalizeBarOrderRequest(body = {}) {
+  const { client, table, nombre_personnes, moyen_paiement, observation, items, hotel_reservation_id, room_id, room_guest_name, room_account_paid } = body;
+  const safeTableValue = Number(table);
+  const safeGuestCount = Number(nombre_personnes || 1);
+  const safePayment = String(moyen_paiement || 'ESPECES').trim().toUpperCase();
+  const safeItems = Array.isArray(items)
+    ? items.map((item) => ({
+        ...item,
+        product_id: Number(item?.product_id ?? item?.id ?? 0),
+        quantite: Number(item?.quantite ?? 1),
+        prix: Number(item?.prix ?? item?.prix_unitaire ?? 0),
+        prix_unitaire: Number(item?.prix_unitaire ?? item?.prix ?? 0),
+      }))
+    : [];
+
+  if (table === undefined || !Array.isArray(items) || safeItems.length === 0) {
     throw ApiError.badRequest('table et items sont requis');
   }
-
-  const guestCount = Number(nombre_personnes || 1);
-  if (!Number.isInteger(guestCount) || guestCount < 1) {
+  if (!Number.isInteger(safeTableValue) || safeTableValue < 0) {
+    throw ApiError.badRequest('table doit être un entier valide');
+  }
+  if (!Number.isInteger(safeGuestCount) || safeGuestCount < 1) {
     throw ApiError.badRequest('nombre_personnes doit être un entier positif');
   }
-  const allowedPayments = ['ESPECES', 'CREDIT', 'TPE', 'ORANGE_MONEY', 'MVOLA', 'GRATUIT'];
-  if (moyen_paiement && !allowedPayments.includes(moyen_paiement)) {
+  if (safePayment && !['ESPECES', 'CREDIT', 'TPE', 'ORANGE_MONEY', 'MVOLA', 'GRATUIT'].includes(safePayment)) {
     throw ApiError.badRequest('Mode de paiement invalide');
   }
-  const order = await createBarOrder({
-    clientName: client || 'Client anonyme',
-    tableId: table,
-    nombrePersonnes: guestCount,
-    moyenPaiement: moyen_paiement,
+
+  return {
+    client: typeof client === 'string' ? client : 'Client anonyme',
+    table: safeTableValue,
+    nombre_personnes: safeGuestCount,
+    moyen_paiement: safePayment,
     observation: typeof observation === 'string' ? observation.trim() : '',
-    items,
+    items: safeItems,
+    hotel_reservation_id: hotel_reservation_id ?? null,
+    room_id: room_id ?? null,
+    room_guest_name: room_guest_name ?? null,
+    room_account_paid: Boolean(room_account_paid),
+  };
+}
+
+async function createBarOrderHandler(req, res) {
+  await ensureDefaultBarTables();
+  const normalized = normalizeBarOrderRequest(req.body || {});
+  const order = await createBarOrder({
+    clientName: normalized.client,
+    tableId: normalized.table,
+    nombrePersonnes: normalized.nombre_personnes,
+    moyenPaiement: normalized.moyen_paiement,
+    observation: normalized.observation,
+    items: normalized.items,
     createdBy: req.user?.id_admin,
-    hotelReservationId: hotel_reservation_id ?? null,
-    roomId: room_id ?? null,
-    roomGuestName: room_guest_name ?? null,
-    roomAccountPaid: Boolean(room_account_paid),
+    hotelReservationId: normalized.hotel_reservation_id,
+    roomId: normalized.room_id,
+    roomGuestName: normalized.room_guest_name,
+    roomAccountPaid: normalized.room_account_paid,
   });
   return created(res, order);
 }
 
 async function updateBarOrderHandler(req, res) {
-  const { client, table, nombre_personnes, moyen_paiement, observation, items, hotel_reservation_id, room_id, room_guest_name, room_account_paid } = req.body || {};
-  if (table === undefined || !Array.isArray(items) || items.length === 0) {
-    throw ApiError.badRequest('table et items sont requis pour modifier la commande');
-  }
-
-  const guestCount = Number(nombre_personnes || 1);
-  if (!Number.isInteger(guestCount) || guestCount < 1) {
-    throw ApiError.badRequest('nombre_personnes doit être un entier positif');
-  }
-
+  const normalized = normalizeBarOrderRequest(req.body || {});
   const order = await updateBarOrder(req.params.id, {
-    clientName: client,
-    tableId: table,
-    nombrePersonnes: guestCount,
-    moyenPaiement: moyen_paiement,
-    observation: typeof observation === 'string' ? observation.trim() : '',
-    items,
+    clientName: normalized.client,
+    tableId: normalized.table,
+    nombrePersonnes: normalized.nombre_personnes,
+    moyenPaiement: normalized.moyen_paiement,
+    observation: normalized.observation,
+    items: normalized.items,
     createdBy: req.user?.role === 'hotesse' ? req.user.id_admin : undefined,
-    hotelReservationId: hotel_reservation_id ?? null,
-    roomId: room_id ?? null,
-    roomGuestName: room_guest_name ?? null,
-    roomAccountPaid: Boolean(room_account_paid),
+    hotelReservationId: normalized.hotel_reservation_id,
+    roomId: normalized.room_id,
+    roomGuestName: normalized.room_guest_name,
+    roomAccountPaid: normalized.room_account_paid,
   });
 
   if (!order) throw ApiError.notFound(`Commande #${req.params.id} introuvable`);
@@ -254,5 +299,6 @@ module.exports = {
   currentSessionHandler, getBarStockHandler,
   addBarStockHandler, updateBarStockHandler, deleteBarStockHandler,
   addTransactionHandler, latestTransactionsByProductHandler, listTransactionsHandler,
-  listBarOrdersHandler, listBarHistoryHandler, createBarOrderHandler, updateBarOrderHandler, deleteBarOrderHandler, updateBarOrderStatusHandler, closeAllBarOrdersHandler,
+  listBarOrdersHandler, listBarHistoryHandler, getBarReportHandler, saveBarReportHandler, createBarOrderHandler, updateBarOrderHandler, deleteBarOrderHandler, updateBarOrderStatusHandler, closeAllBarOrdersHandler,
+  normalizeBarOrderRequest,
 };
