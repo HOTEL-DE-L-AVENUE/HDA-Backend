@@ -163,7 +163,7 @@ async function listBarHistoryHandler(req, res) {
 }
 
 async function createBarOrderHandler(req, res) {
-  const { client, table, nombre_personnes, moyen_paiement, observation, items } = req.body || {};
+  const { client, table, nombre_personnes, moyen_paiement, observation, items, hotel_reservation_id, room_id, room_guest_name, room_account_paid } = req.body || {};
   if (table === undefined || !Array.isArray(items) || items.length === 0) {
     throw ApiError.badRequest('table et items sont requis');
   }
@@ -176,12 +176,24 @@ async function createBarOrderHandler(req, res) {
   if (moyen_paiement && !allowedPayments.includes(moyen_paiement)) {
     throw ApiError.badRequest('Mode de paiement invalide');
   }
-  const order = await createBarOrder({ clientName: client || 'Client anonyme', tableId: table, nombrePersonnes: guestCount, moyenPaiement: moyen_paiement, observation: typeof observation === 'string' ? observation.trim() : '', items, createdBy: req.user?.id_admin });
+  const order = await createBarOrder({
+    clientName: client || 'Client anonyme',
+    tableId: table,
+    nombrePersonnes: guestCount,
+    moyenPaiement: moyen_paiement,
+    observation: typeof observation === 'string' ? observation.trim() : '',
+    items,
+    createdBy: req.user?.id_admin,
+    hotelReservationId: hotel_reservation_id ?? null,
+    roomId: room_id ?? null,
+    roomGuestName: room_guest_name ?? null,
+    roomAccountPaid: Boolean(room_account_paid),
+  });
   return created(res, order);
 }
 
 async function updateBarOrderHandler(req, res) {
-  const { client, table, nombre_personnes, moyen_paiement, observation, items } = req.body || {};
+  const { client, table, nombre_personnes, moyen_paiement, observation, items, hotel_reservation_id, room_id, room_guest_name, room_account_paid } = req.body || {};
   if (table === undefined || !Array.isArray(items) || items.length === 0) {
     throw ApiError.badRequest('table et items sont requis pour modifier la commande');
   }
@@ -199,6 +211,10 @@ async function updateBarOrderHandler(req, res) {
     observation: typeof observation === 'string' ? observation.trim() : '',
     items,
     createdBy: req.user?.role === 'hotesse' ? req.user.id_admin : undefined,
+    hotelReservationId: hotel_reservation_id ?? null,
+    roomId: room_id ?? null,
+    roomGuestName: room_guest_name ?? null,
+    roomAccountPaid: Boolean(room_account_paid),
   });
 
   if (!order) throw ApiError.notFound(`Commande #${req.params.id} introuvable`);
