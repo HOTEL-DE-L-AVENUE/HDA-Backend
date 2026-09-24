@@ -6,6 +6,8 @@ const stockCtrl = require('../controllers/stockController');
 const { requireAuth, requireRole } = require('../middlewares/auth');
 
 const router = express.Router();
+router.get('/reports/:date', requireAuth, ctrl.getRestaurantReportHandler);
+router.post('/reports', requireAuth, requireRole('admin', 'manager', 'caisse', 'caissier'), ctrl.saveRestaurantReportHandler);
 router.delete('/orders/:id', requireAuth, requireRole('admin'), ctrl.ordersCrud.remove);
 
 // Stock restaurant - same data as stock module, with labels needed for the interface.

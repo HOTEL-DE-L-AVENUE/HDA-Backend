@@ -86,9 +86,17 @@ const Orders = createCrudModel({
 });
 
 const ordersFindAll = Orders.findAll;
+const ordersCount = Orders.count;
 const ordersFindById = Orders.findById;
 const ordersCreate = Orders.create;
 const ordersUpdate = Orders.update;
+
+function restaurantOrderScope(whereSql = '') {
+  const trimmed = String(whereSql || '').trim();
+  if (!trimmed) return "WHERE source_module = 'RESTAURANT'";
+  if (trimmed.toUpperCase().startsWith('WHERE')) return `${trimmed} AND source_module = 'RESTAURANT'`;
+  return `source_module = 'RESTAURANT' AND (${trimmed})`;
+}
 
 const OrderItems = createCrudModel({
   table: 'order_items', pk: 'id',
@@ -183,12 +191,17 @@ async function orderWithItems(orderId) {
      WHERE oi.order_id = ?`,
     [orderId]
   );
-  return { ...orderRows[0], items };
+  const [payments] = await pool.query(
+    'SELECT moyen_paiement FROM payments WHERE order_id = ? ORDER BY date_paiement DESC, id DESC LIMIT 1',
+    [orderId]
+  );
+  return { ...orderRows[0], moyen_paiement: payments[0]?.moyen_paiement || null, items };
 }
 
 Orders.findAll = async function(options) {
   await ensureRestaurantSchema();
   const opts = options ? { ...options } : {};
+  opts.whereSql = restaurantOrderScope(opts.whereSql);
   if (!opts.include_closed) {
     if (!opts.whereSql) {
       opts.whereSql = 'WHERE (cloturee = 0 OR cloturee IS NULL)';
@@ -203,6 +216,12 @@ Orders.findAll = async function(options) {
   }
   const rows = await ordersFindAll.call(this, opts);
   return Promise.all(rows.map((row) => orderWithItems(row.id)));
+};
+
+Orders.count = async function(options) {
+  const opts = options ? { ...options } : {};
+  opts.whereSql = restaurantOrderScope(opts.whereSql);
+  return ordersCount.call(this, opts);
 };
 
 Orders.findById = orderWithItems;
