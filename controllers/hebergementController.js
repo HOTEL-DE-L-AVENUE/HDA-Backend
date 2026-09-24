@@ -117,12 +117,16 @@ async function createReservationHandler(req, res) {
   const nights = Math.ceil((new Date(date_depart) - new Date(date_arrivee)) / 86400000);
   if (!room || nights <= 0) throw ApiError.badRequest('Dates ou chambre invalides');
   
-  let gross = Number(room.prix_nuit || 0) * nights;
+  let gross = 0;
   
-  // For Booking.com, convert EUR to Ariary using exchange rate
+  // For Booking.com, manual_price is per night in EUR, so: per_night_price × nights × exchange_rate
   if (type_reservation === 'BOOKING' && manual_price > 0) {
     const rate = Number(exchange_rate) || 39.76;
-    gross = Number(manual_price) * rate;
+    const totalEur = Number(manual_price) * nights;
+    gross = totalEur * rate;
+  } else {
+    // For On-site, use room's normal price
+    gross = Number(room.prix_nuit || 0) * nights;
   }
   
   // Add laundry price if included
