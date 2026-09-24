@@ -7,6 +7,24 @@ const BarTables = createCrudModel({
   sortable: ['id', 'numero', 'statut'],
 });
 
+async function ensureDefaultBarTables() {
+  const { pool } = require('../config/db');
+  const defaultTables = Array.from({ length: 16 }, (_, index) => [
+    `T${index + 1}`,
+    index % 2 === 0 ? 4 : 2,
+    'LIBRE',
+  ]);
+
+  for (const [numero, capacite, statut] of defaultTables) {
+    await pool.query(
+      `INSERT INTO bar_tables (numero, capacite, statut)
+       SELECT ?, ?, ?
+       WHERE NOT EXISTS (SELECT 1 FROM bar_tables WHERE numero = ? LIMIT 1)`,
+      [numero, capacite, statut, numero]
+    );
+  }
+}
+
 async function tablesStats() {
   const [rows] = await require('../config/db').pool.query(`
     SELECT 
@@ -21,4 +39,4 @@ async function tablesStats() {
   return rows[0];
 }
 
-module.exports = { BarTables, tablesStats };
+module.exports = { BarTables, tablesStats, ensureDefaultBarTables };
