@@ -6,6 +6,7 @@ const { ok, created, noContent } = require('../utils/apiResponse');
 const { pool, withTransaction } = require('../config/db');
 const stock = require('../models/stockModel');
 const PDFDocument = require('pdfkit');
+const { getRestaurantReport, saveRestaurantReport } = require('../models/restaurantReport.model');
 
 // Simple HTML escaper for values interpolated into the invoice template
 function escapeHtml(input) {
@@ -20,6 +21,21 @@ function escapeHtml(input) {
 
 const tablesCrud = createCrudController(resto.TablesRestaurant, { filterable: ['statut'] });
 const ordersCrud = createCrudController(resto.Orders, { filterable: ['client_id', 'statut', 'source_module'] });
+
+async function getRestaurantReportHandler(req, res) {
+  return ok(res, await getRestaurantReport(req.params.date));
+}
+
+async function saveRestaurantReportHandler(req, res) {
+  const { reportDate, personnel, manual, metrics } = req.body || {};
+  return ok(res, await saveRestaurantReport({
+    reportDate,
+    personnel,
+    manual,
+    metrics,
+    createdBy: req.user?.id_admin ?? null,
+  }));
+}
 const orderItemsCrud = createCrudController(resto.OrderItems, { filterable: ['order_id', 'product_id'] });
 // Recipes removed: feature deprecated
 const cashiersCrud = createCrudController(resto.RestaurantCashiers, { filterable: ['statut'] });
@@ -773,6 +789,7 @@ const listRestaurantPurchasesHandler = getRestaurantPurchasesHandler;
 const restaurantPurchaseDetailHandler = getRestaurantPurchaseByIdHandler;
 
 module.exports = {
+  getRestaurantReportHandler, saveRestaurantReportHandler,
   tablesCrud, ordersCrud, orderItemsCrud, cashiersCrud, sessionsCrud, productsCrud,
   createOrderHandler, updateOrderHandler, orderDetailHandler, orderInvoiceHandler, ordersInProgressHandler,
   orderInvoicePdfHandler, closeAllRestaurantOrdersHandler,
