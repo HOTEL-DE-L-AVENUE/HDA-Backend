@@ -70,14 +70,11 @@ const TablesRestaurant = createCrudModel({
 
 const tablesRestaurantFindAll = TablesRestaurant.findAll;
 TablesRestaurant.findAll = async function(options) {
-  const [existingTables] = await pool.query('SELECT id FROM tables_restaurant LIMIT 1');
-  if (existingTables.length === 0) {
-    const tableRows = Array.from({ length: 16 }, (_, index) => [index + 1, String(index + 1), 4, 'LIBRE']);
-    await pool.query(
-      'INSERT INTO tables_restaurant (id, numero, capacite, statut) VALUES ? ON DUPLICATE KEY UPDATE id = id',
-      [tableRows]
-    );
-  }
+  const tableRows = Array.from({ length: 16 }, (_, index) => [index + 1, String(index + 1), 4, 'LIBRE']);
+  await pool.query(
+    'INSERT INTO tables_restaurant (id, numero, capacite, statut) VALUES ? ON DUPLICATE KEY UPDATE id = id',
+    [tableRows]
+  );
   return tablesRestaurantFindAll.call(this, options);
 };
 
