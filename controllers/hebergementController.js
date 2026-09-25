@@ -50,12 +50,41 @@ const roomMinibarCrud = createCrudController(heb.RoomMinibar, { filterable: ['ro
 const roomStatusHistoryCrud = createCrudController(heb.RoomStatusHistory, { filterable: ['room_id'] });
 const reservationsCrud = createCrudController(heb.Reservations, { filterable: ['client_id', 'room_id', 'statut'] });
 
+// Transferts / excursions saisis manuellement : nettoie la liste reçue (tableau ou
+// chaîne JSON) et calcule leur total. Retourne { json: null, total: 0 } si vide.
+const EXTRA_SERVICE_TYPES = ['TRANSFERT', 'EXCURSION'];
+function normalizeServicesExtras(raw) {
+  let list = raw;
+  if (typeof list === 'string') {
+    try { list = JSON.parse(list || '[]'); } catch { list = []; }
+  }
+  if (!Array.isArray(list)) list = [];
+  const items = list
+    .map((item) => ({
+      type: EXTRA_SERVICE_TYPES.includes(String(item?.type || '').toUpperCase()) ? String(item.type).toUpperCase() : 'TRANSFERT',
+      description: String(item?.description || '').trim().slice(0, 255),
+      date: item?.date ? String(item.date).slice(0, 10) : '',
+      heure: item?.heure ? String(item.heure).slice(0, 5) : '',
+      personnes: Math.max(0, Math.floor(Number(item?.personnes) || 0)),
+      prix: Math.max(0, Number(item?.prix) || 0),
+    }))
+    .filter((item) => item.description || item.prix > 0);
+  const total = items.reduce((sum, item) => sum + item.prix, 0);
+  return { json: items.length ? JSON.stringify(items) : null, total };
+}
+
 // Custom update handler to track user modifications
 const reservationsCrudUpdate = reservationsCrud.update;
 reservationsCrud.update = async function(req, res) {
   const id = req.params.id || req.params.reservationId;
   const modifiedBy = req.user?.id_admin || req.user?.id;
-  const row = await heb.Reservations.update(id, req.body, modifiedBy);
+  const body = { ...req.body };
+  if (Object.prototype.hasOwnProperty.call(body, 'services_extras')) {
+    const extras = normalizeServicesExtras(body.services_extras);
+    body.services_extras = extras.json;
+    body.services_extras_total = extras.total;
+  }
+  const row = await heb.Reservations.update(id, body, modifiedBy);
   return ok(res, row);
 };
 const reservationGuestsCrud = createCrudController(heb.ReservationGuests, { filterable: ['reservation_id'] });
@@ -111,7 +140,7 @@ async function availableRoomsHandler(req, res) {
 }
 
 async function createReservationHandler(req, res) {
-  const { client_id, room_id, date_arrivee, date_depart, pdj_inclus = false, remise_pourcentage = 0, guests, statut, type_reservation = 'BOOKING', laundry_included = false, laundry_price = 0, manual_price = 0, exchange_rate = 39.76 } = req.body;
+  const { client_id, room_id, date_arrivee, date_depart, pdj_inclus = false, remise_pourcentage = 0, guests, statut, type_reservation = 'BOOKING', laundry_included = false, laundry_price = 0, manual_price = 0, exchange_rate = 39.76, services_extras } = req.body;
   if (!client_id || !room_id || !date_arrivee || !date_depart) {
     throw ApiError.badRequest('client_id, room_id, date_arrivee, date_depart sont requis');
   }
@@ -144,6 +173,8 @@ async function createReservationHandler(req, res) {
   }
   
   const discountAmount = Math.round(gross * discount / 100);
+  // Transferts et excursions : ajoutés au total, hors remise.
+  const extras = normalizeServicesExtras(services_extras);
 
   const reservation = await heb.createReservationWithGuests({
     clientId: client_id,
@@ -151,7 +182,9 @@ async function createReservationHandler(req, res) {
     dateArrivee: date_arrivee,
     dateDepart: date_depart,
     pdjInclus: Boolean(pdj_inclus),
-    montantTotal: gross - discountAmount,
+    montantTotal: gross - discountAmount + extras.total,
+    servicesExtras: extras.json,
+    servicesExtrasTotal: extras.total,
     montantBrut: gross,
     remisePourcentage: discount,
     montantRemise: discountAmount,
@@ -165,6 +198,12 @@ async function createReservationHandler(req, res) {
   });
   const reservationWithDetails = await heb.Reservations.findById(reservation.id);
   return created(res, reservationWithDetails);
+}
+
+// GET /api/hebergement/reservations/:id/payments — historique des encaissements
+async function reservationPaymentsHandler(req, res) {
+  const rows = await heb.listReservationPayments(req.params.id);
+  return ok(res, rows);
 }
 
 async function validateReservationDiscountHandler(req, res) {
@@ -576,7 +615,7 @@ module.exports = {
   roomTypesCrud, roomsCrud, equipmentsCrud, roomEquipmentsCrud, roomMaintenanceCrud, maintenanceWorkersCrud,
   roomMinibarCrud, roomStatusHistoryCrud, reservationsCrud, reservationGuestsCrud,
   staysCrud, housekeepingCrud, lostAndFoundCrud, minibarConsumptionsCrud,
-  availabilityHandler, availableRoomsHandler, updateRoomHandler, updateRoomTypeHandler, createReservationHandler, validateReservationDiscountHandler, createMaintenanceHandler, checkInHandler, checkOutHandler,
+  availabilityHandler, availableRoomsHandler, updateRoomHandler, updateRoomTypeHandler, createReservationHandler, validateReservationDiscountHandler, reservationPaymentsHandler, createMaintenanceHandler, checkInHandler, checkOutHandler,
   updateMaintenanceStatusHandler, maintenanceStatsHandler, reservationStatsHandler,
   updateRoomStatusHandler, equipmentByCodeHandler, equipmentCategoriesHandler, createEquipmentHandler,
   equipmentStatsHandler, updateRoomEquipmentStatusHandler,
