@@ -5,12 +5,14 @@ const ApiError = require('../utils/ApiError');
 const { ok, created, noContent } = require('../utils/apiResponse');
 const { getPagination, getSort } = require('../utils/queryHelpers');
 const { EMPLOYMENT_STATUSES, DEPARTURE_STATUSES, CONTRACT_TYPES, DAILY_RATE_CONTRACT, DOCUMENT_TYPES, LEAVE_TYPES, LEAVE_STATUSES, PAYROLL_STATUSES, DEPARTMENTS, statutoryContributions, weeksInMonth, formatAmount, amountInWords } = require('../utils/hr');
-const { RH_DOCUMENTS_DIR } = require('../middlewares/upload');
+const crypto = require('crypto');
+const { RH_DOCUMENTS_DIR, RH_ATTENDANCE_PHOTOS_DIR } = require('../middlewares/upload');
+const { isDescriptor, findBestMatch, MIN_ENROLL_SAMPLES, MAX_ENROLL_SAMPLES } = require('../utils/face');
 const model = require('../models/rhModel');
 const { logAction } = require('../models/adminModel');
 
 const numericFields = ['salary', 'prime', 'pourboire', 'irsa', 'dependents'];
-const renderEmployee = (row) => ({ ...row, salary: Number(row.salary || 0), prime: Number(row.prime || 0), pourboire: Number(row.pourboire || 0), dependents: Number(row.dependents || 0), cnaps: Number(row.cnaps || 0), ostie: Number(row.ostie || 0), irsa: Number(row.irsa || 0), ...(row.presence_days !== undefined ? { presence_days: Number(row.presence_days || 0) } : {}), status: String(row.status || '').toUpperCase() });
+const renderEmployee = (row) => ({ ...row, salary: Number(row.salary || 0), prime: Number(row.prime || 0), pourboire: Number(row.pourboire || 0), dependents: Number(row.dependents || 0), cnaps: Number(row.cnaps || 0), ostie: Number(row.ostie || 0), irsa: Number(row.irsa || 0), ...(row.presence_days !== undefined ? { presence_days: Number(row.presence_days || 0) } : {}), ...(row.face_samples !== undefined ? { face_samples: Number(row.face_samples || 0) } : {}), status: String(row.status || '').toUpperCase() });
 const audit = (req, action, entite, entiteId, payload) => logAction({ userId: req.user?.id_admin, action, entite, entiteId, payload }).catch((err) => console.error('Audit RH impossible:', err.message));
 function normalized(body) {
   const out = { ...(body || {}) };
@@ -274,10 +276,92 @@ async function deleteEmployee(req, res) {
   const result = await model.deleteEmployee(req.params.id);
   if (!result) throw ApiError.notFound('Employé introuvable');
   await Promise.all(result.storedNames.map((name) => removeFile(documentPath(name))));
+  await Promise.all((result.attendancePhotos || []).map((name) => removeFile(attendancePhotoPath(name))));
   const { employee } = result;
   await audit(req, 'DELETE_HR_EMPLOYEE', 'rh_employees', employee.id, { matricule: employee.matricule, name: `${employee.first_name} ${employee.last_name}` });
   return noContent(res);
 }
+// --- Pointage par reconnaissance faciale (admin) ---------------------------------
+// Le navigateur calcule la signature du visage (128 nombres) ; la comparaison avec les
+// employés enrôlés se fait ici. Premier passage du jour = entrée, suivant = sortie.
+
+const PUNCH_COOLDOWN_SECONDS = 120; // un 2e passage juste après l'entrée n'est pas une sortie
+const MAX_PHOTO_BYTES = 1.5 * 1024 * 1024;
+const attendancePhotoPath = (storedName) => path.join(RH_ATTENDANCE_PHOTOS_DIR, path.basename(storedName));
+
+async function savePunchPhoto(dataUrl) {
+  const match = /^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl || ''));
+  if (!match) throw ApiError.badRequest('Photo de pointage manquante ou invalide (JPEG attendu)');
+  const buffer = Buffer.from(match[1], 'base64');
+  if (buffer.length > MAX_PHOTO_BYTES || buffer[0] !== 0xff || buffer[1] !== 0xd8) throw ApiError.badRequest('Photo de pointage invalide');
+  const name = `${Date.now()}-${crypto.randomBytes(10).toString('hex')}.jpg`;
+  await fs.promises.writeFile(attendancePhotoPath(name), buffer);
+  return name;
+}
+
+async function faceEnroll(req, res) {
+  const employee = await model.employees.findById(req.params.id);
+  if (!employee) throw ApiError.notFound('Employé introuvable');
+  const { descriptors, consent } = req.body || {};
+  if (consent !== true) throw ApiError.badRequest('L’accord de l’employé est obligatoire pour enregistrer son visage');
+  if (!Array.isArray(descriptors) || descriptors.length < MIN_ENROLL_SAMPLES || descriptors.length > MAX_ENROLL_SAMPLES || !descriptors.every(isDescriptor)) throw ApiError.badRequest(`Entre ${MIN_ENROLL_SAMPLES} et ${MAX_ENROLL_SAMPLES} captures du visage sont nécessaires`);
+  // Refuse un visage déjà reconnu comme un autre employé (erreur de personne devant la caméra).
+  const others = (await model.listFaceSamples()).filter((s) => String(s.employee_id) !== String(employee.id));
+  for (const descriptor of descriptors) {
+    const clash = findBestMatch(descriptor, others);
+    if (clash.employeeId) {
+      const other = await model.employees.findById(clash.employeeId);
+      throw ApiError.conflict(`Ce visage ressemble à celui de ${other.first_name} ${other.last_name}, déjà enregistré. Vérifiez que c’est bien ${employee.first_name} ${employee.last_name} devant la caméra.`);
+    }
+  }
+  const count = await model.replaceFaceDescriptors(employee.id, descriptors, req.user?.id_admin);
+  await audit(req, 'ENROLL_HR_FACE', 'rh_employees', employee.id, { samples: count });
+  return ok(res, { employee_id: employee.id, face_samples: count });
+}
+
+async function faceDelete(req, res) {
+  if (!await model.employees.findById(req.params.id)) throw ApiError.notFound('Employé introuvable');
+  await model.deleteFaceDescriptors(req.params.id);
+  await audit(req, 'DELETE_HR_FACE', 'rh_employees', Number(req.params.id), {});
+  return noContent(res);
+}
+
+async function facePunch(req, res) {
+  const { descriptor, photo } = req.body || {};
+  if (!isDescriptor(descriptor)) throw ApiError.badRequest('Signature du visage invalide');
+  const match = findBestMatch(descriptor, await model.listFaceSamples());
+  // Visage non reconnu : réponse normale (pas une erreur) pour que la borne continue.
+  if (!match.employeeId) return ok(res, { action: match.reason });
+  const employee = await model.employees.findById(match.employeeId);
+  const who = { id: employee.id, first_name: employee.first_name, last_name: employee.last_name, matricule: employee.matricule };
+  const today = await model.todayAttendance(employee.id);
+  if (today?.check_out) return ok(res, { action: 'ALREADY_DONE', employee: who, attendance: today });
+  if (today?.check_in && Number(today.seconds_since_check_in) < PUNCH_COOLDOWN_SECONDS) return ok(res, { action: 'TOO_SOON', employee: who, attendance: today });
+  const photoName = await savePunchPhoto(photo);
+  try {
+    const isCheckOut = !!today?.check_in;
+    const row = isCheckOut
+      ? await model.checkOut(employee.id, null, { method: 'VISAGE', photo: photoName })
+      : await model.checkIn(employee.id, null, { method: 'VISAGE', photo: photoName });
+    if (!row) throw ApiError.conflict(`${employee.first_name} ${employee.last_name} n’est pas actif aujourd’hui (congé, suspension ou sortie)`);
+    await audit(req, isCheckOut ? 'HR_CHECK_OUT_FACE' : 'HR_CHECK_IN_FACE', 'rh_attendance', row.id, { employee_id: employee.id, distance: match.distance });
+    return ok(res, { action: isCheckOut ? 'CHECK_OUT' : 'CHECK_IN', employee: who, attendance: row });
+  } catch (err) {
+    await removeFile(attendancePhotoPath(photoName));
+    businessError(err);
+  }
+}
+
+async function attendancePhoto(req, res) {
+  const name = await model.findAttendancePhoto(req.params.id, req.params.kind);
+  if (!name) throw ApiError.notFound('Aucune photo pour ce pointage');
+  const filePath = attendancePhotoPath(name);
+  if (!fs.existsSync(filePath)) throw ApiError.notFound('Photo introuvable sur le serveur');
+  res.setHeader('Content-Type', 'image/jpeg');
+  res.setHeader('Cache-Control', 'no-store');
+  return res.sendFile(filePath);
+}
+
 async function evaluationCreate(req, res) { const body = { ...(req.body || {}), reviewer_id: req.user?.id_admin }; if (!body.employee_id || !body.period || !body.evaluation_date) throw ApiError.badRequest('employee_id, period et evaluation_date sont obligatoires'); const row = await model.evaluations.create(body); await audit(req, 'CREATE_HR_EVALUATION', 'rh_evaluations', row.id, { employee_id: row.employee_id }); return created(res, row); }
 
 // --- Espace personnel : tout utilisateur connecté, limité à SA propre fiche -----
@@ -307,22 +391,7 @@ async function myAttendanceList(req, res) {
   const result = await model.listMyAttendance(employee.id, p);
   return ok(res, result.rows, result.meta);
 }
-async function myCheckIn(req, res) {
-  const employee = await myEmployee(req);
-  try {
-    const row = await model.checkIn(employee.id, req.body?.notes);
-    if (!row) throw ApiError.notFound('Votre fiche employé est introuvable ou inactive');
-    await audit(req, 'HR_CHECK_IN_SELF', 'rh_attendance', row.id, { employee_id: row.employee_id });
-    return created(res, row);
-  } catch (err) { businessError(err); }
-}
-async function myCheckOut(req, res) {
-  const employee = await myEmployee(req);
-  try {
-    const row = await model.checkOut(employee.id, req.body?.notes);
-    await audit(req, 'HR_CHECK_OUT_SELF', 'rh_attendance', row.id, { employee_id: row.employee_id });
-    return ok(res, row);
-  } catch (err) { businessError(err); }
-}
+// Pas de pointage libre-service : seul l'admin enregistre les présences
+// (reconnaissance faciale ou boutons Entrée / Sortie). L'employé consulte seulement son historique.
 
-module.exports = { evaluationList, budgetList, budgetUpdate, documentList, documentUpload, documentDownload, documentDelete, employeesList, getEmployee, createEmployee, updateEmployee, offboardEmployee, deleteEmployee, dashboard, leaveList, leaveCreate, leaveStatus, attendanceList, checkIn, checkOut, payrollList, payrollGenerate, payrollUpdate, payrollStatus, payrollDelete, payrollPayslip, evaluationsCrud, evaluationCreate, myProfile, myLeaveList, myLeaveCreate, myAttendanceList, myCheckIn, myCheckOut };
+module.exports = { faceEnroll, faceDelete, facePunch, attendancePhoto, evaluationList, budgetList, budgetUpdate, documentList, documentUpload, documentDownload, documentDelete, employeesList, getEmployee, createEmployee, updateEmployee, offboardEmployee, deleteEmployee, dashboard, leaveList, leaveCreate, leaveStatus, attendanceList, checkIn, checkOut, payrollList, payrollGenerate, payrollUpdate, payrollStatus, payrollDelete, payrollPayslip, evaluationsCrud, evaluationCreate, myProfile, myLeaveList, myLeaveCreate, myAttendanceList };

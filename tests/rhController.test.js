@@ -20,6 +20,17 @@ test('weekly deduction is multiplied by the number of Mondays in the month', () 
   assert.equal(deductionTotal(10000, 'MENSUEL', '2026-08-01'), 10000);
 });
 
+test('face matching accepts a close face, rejects strangers and look-alikes', () => {
+  const { findBestMatch, isDescriptor } = require('../utils/face');
+  const face = (v) => Array.from({ length: 128 }, (_, i) => (i === 0 ? v : 0));
+  const samples = [{ employee_id: 1, descriptor: face(0) }, { employee_id: 1, descriptor: face(0.1) }, { employee_id: 2, descriptor: face(1) }];
+  assert.deepEqual(findBestMatch(face(0.05), samples), { employeeId: 1, distance: 0.05 });
+  assert.deepEqual(findBestMatch(face(3), samples), { reason: 'UNKNOWN' });
+  assert.deepEqual(findBestMatch(face(0.5), [{ employee_id: 1, descriptor: face(0.1) }, { employee_id: 2, descriptor: face(0.88) }]), { reason: 'AMBIGUOUS' });
+  assert.equal(isDescriptor(face(0)), true);
+  assert.equal(isDescriptor([1, 2, 3]), false);
+});
+
 test('raw net exposes the shortfall that the floored net hides (Dubois, sept. 2026)', () => {
   const line = { base_salary: 0, overtime_amount: 36777, allowances: 44554, advances: 565665, deductions: 54546 };
   assert.equal(calculateRawNet(line), -538880);

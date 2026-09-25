@@ -18,9 +18,15 @@ function uploadDocument(req, res, next) {
 router.get('/me', requireAuth, ctrl.myProfile);
 router.get('/me/leave-requests', requireAuth, ctrl.myLeaveList);
 router.post('/me/leave-requests', requireAuth, ctrl.myLeaveCreate);
+// Consultation seulement : le pointage est réservé à l'admin (voir requireAdmin).
 router.get('/me/attendance', requireAuth, ctrl.myAttendanceList);
-router.post('/me/attendance/check-in', requireAuth, ctrl.myCheckIn);
-router.post('/me/attendance/check-out', requireAuth, ctrl.myCheckOut);
+
+// Présences : seul l'admin pointe (reconnaissance faciale ou boutons manuels) et gère
+// les visages enregistrés. Les autres profils RH peuvent seulement consulter.
+function requireAdmin(req, res, next) {
+  if (req.user?.role === 'admin') return next();
+  return next(ApiError.forbidden('Seul un administrateur peut enregistrer les présences'));
+}
 
 function requireHR(req, res, next) {
   let modules = req.user?.module;
@@ -33,7 +39,9 @@ router.use(requireAuth, requireHR);
 router.get('/dashboard', ctrl.dashboard);
 router.get('/employees', ctrl.employeesList); router.post('/employees', ctrl.createEmployee); router.get('/employees/:id', ctrl.getEmployee); router.put('/employees/:id', ctrl.updateEmployee); router.delete('/employees/:id', ctrl.deleteEmployee);router.post('/employees/:id/offboard', ctrl.offboardEmployee);
 router.get('/leave-requests', ctrl.leaveList); router.post('/leave-requests', ctrl.leaveCreate); router.patch('/leave-requests/:id/status', ctrl.leaveStatus);
-router.get('/attendance', ctrl.attendanceList); router.post('/attendance/check-in', ctrl.checkIn); router.post('/attendance/check-out', ctrl.checkOut);
+router.get('/attendance', ctrl.attendanceList); router.post('/attendance/check-in', requireAdmin, ctrl.checkIn); router.post('/attendance/check-out', requireAdmin, ctrl.checkOut);
+router.post('/attendance/face-punch', requireAdmin, ctrl.facePunch); router.get('/attendance/:id/photo/:kind(in|out)', ctrl.attendancePhoto);
+router.put('/employees/:id/face', requireAdmin, ctrl.faceEnroll); router.delete('/employees/:id/face', requireAdmin, ctrl.faceDelete);
 router.get('/payroll', ctrl.payrollList); router.post('/payroll/:period/generate', ctrl.payrollGenerate); router.patch('/payroll/:id', ctrl.payrollUpdate); router.patch('/payroll/:id/status', ctrl.payrollStatus); router.delete('/payroll/:id', ctrl.payrollDelete); router.get('/payroll/:period/payslip/:employeeId', ctrl.payrollPayslip);
 router.get('/employees/:id/documents', ctrl.documentList); router.post('/employees/:id/documents', uploadDocument, ctrl.documentUpload); router.get('/employees/:id/documents/:documentId', ctrl.documentDownload); router.delete('/employees/:id/documents/:documentId', ctrl.documentDelete);
 router.get('/budgets', ctrl.budgetList); router.put('/budgets/:department', ctrl.budgetUpdate);
