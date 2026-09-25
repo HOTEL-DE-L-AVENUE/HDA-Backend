@@ -1,6 +1,7 @@
 // middlewares/auth.js
 const jwt = require('jsonwebtoken');
 const ApiError = require('../utils/ApiError');
+const presence = require('../utils/presence');
 
 function requireAuth(req, res, next) {
   const header = req.headers.authorization || '';
@@ -10,6 +11,7 @@ function requireAuth(req, res, next) {
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
     req.user = payload; // { id_admin, role, email }
+    presence.touch(payload.id_admin);
     next();
   } catch (err) {
     throw ApiError.unauthorized('Token invalide ou expiré');
