@@ -194,6 +194,15 @@ async function documentDelete(req, res) {
   await audit(req, 'DELETE_HR_DOCUMENT', 'rh_employee_documents', row.id, { employee_id: row.employee_id, doc_type: row.doc_type });
   return noContent(res);
 }
+// DELETE /api/rh/employees/:id — suppression définitive (fiche, présences, congés, paie, évaluations, pièces jointes)
+async function deleteEmployee(req, res) {
+  const result = await model.deleteEmployee(req.params.id);
+  if (!result) throw ApiError.notFound('Employé introuvable');
+  await Promise.all(result.storedNames.map((name) => removeFile(documentPath(name))));
+  const { employee } = result;
+  await audit(req, 'DELETE_HR_EMPLOYEE', 'rh_employees', employee.id, { matricule: employee.matricule, name: `${employee.first_name} ${employee.last_name}` });
+  return noContent(res);
+}
 async function evaluationCreate(req, res) { const body = { ...(req.body || {}), reviewer_id: req.user?.id_admin }; if (!body.employee_id || !body.period || !body.evaluation_date) throw ApiError.badRequest('employee_id, period et evaluation_date sont obligatoires'); const row = await model.evaluations.create(body); await audit(req, 'CREATE_HR_EVALUATION', 'rh_evaluations', row.id, { employee_id: row.employee_id }); return created(res, row); }
 
 // --- Espace personnel : tout utilisateur connecté, limité à SA propre fiche -----
@@ -241,4 +250,4 @@ async function myCheckOut(req, res) {
   } catch (err) { businessError(err); }
 }
 
-module.exports = { evaluationList, budgetList, budgetUpdate, documentList, documentUpload, documentDownload, documentDelete, employeesList, getEmployee, createEmployee, updateEmployee, offboardEmployee, dashboard, leaveList, leaveCreate, leaveStatus, attendanceList, checkIn, checkOut, payrollList, payrollGenerate, payrollUpdate, payrollStatus, payrollDelete, payrollPayslip, evaluationsCrud, evaluationCreate, myProfile, myLeaveList, myLeaveCreate, myAttendanceList, myCheckIn, myCheckOut };
+module.exports = { evaluationList, budgetList, budgetUpdate, documentList, documentUpload, documentDownload, documentDelete, employeesList, getEmployee, createEmployee, updateEmployee, offboardEmployee, deleteEmployee, dashboard, leaveList, leaveCreate, leaveStatus, attendanceList, checkIn, checkOut, payrollList, payrollGenerate, payrollUpdate, payrollStatus, payrollDelete, payrollPayslip, evaluationsCrud, evaluationCreate, myProfile, myLeaveList, myLeaveCreate, myAttendanceList, myCheckIn, myCheckOut };
