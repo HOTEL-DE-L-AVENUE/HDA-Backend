@@ -1,8 +1,8 @@
 const { pool, withTransaction } = require('../config/db');
 const { createCrudModel } = require('./crudFactory');
-const { workingDays, monthBounds, calculateNet, statutoryContributions, deductionTotal, DEDUCTION_FREQUENCIES, DAILY_RATE_CONTRACT, IN_WORKFORCE_SQL, DEPARTURE_STATUSES } = require('../utils/hr');
+const { workingDays, monthBounds, calculateNet, calculateRawNet, statutoryContributions, deductionTotal, DEDUCTION_FREQUENCIES, DAILY_RATE_CONTRACT, IN_WORKFORCE_SQL, DEPARTURE_STATUSES } = require('../utils/hr');
 
-const employeeFields = ['user_id', 'matricule', 'first_name', 'last_name', 'photo_url', 'birth_date', 'phone', 'address', 'email', 'identification_number', 'department', 'position', 'joined_at', 'contract_type', 'contract_end_date', 'salary', 'prime', 'pourboire', 'cnaps', 'ostie', 'irsa', 'status', 'departure_date', 'departure_reason'];
+const employeeFields = ['user_id', 'matricule', 'first_name', 'last_name', 'photo_url', 'birth_date', 'phone', 'address', 'email', 'identification_number', 'department', 'position', 'joined_at', 'contract_type', 'contract_end_date', 'qualification', 'cnaps_number', 'dependents', 'salary', 'prime', 'pourboire', 'cnaps', 'ostie', 'irsa', 'status', 'departure_date', 'departure_reason'];
 const employees = createCrudModel({ table: 'rh_employees', fields: employeeFields, sortable: ['id', 'matricule', 'first_name', 'last_name', 'department', 'position', 'joined_at', 'contract_type', 'salary', 'status', 'created_at'] });
 const evaluations = createCrudModel({ table: 'rh_evaluations', fields: ['employee_id', 'period', 'reviewer_id', 'score', 'comment', 'evaluation_date', 'status'], sortable: ['id', 'employee_id', 'period', 'score', 'evaluation_date', 'status', 'created_at'] });
 
@@ -195,10 +195,26 @@ async function listMyAttendance(employeeId, { page = 1, limit = 31, offset = 0 }
   return { rows, meta: paginationMeta(page, limit, count.total) };
 }
 
-async function payrollAdjustments(conn, employeeId, start, end, baseSalary) {
+// Jours d'absence d'un mois : pointages ABSENT + jours ouvrés de congé sans solde approuvé.
+async function countAbsenceDays(conn, employeeId, start, end) {
   const [[days]] = await conn.query(`SELECT COUNT(*) total FROM (SELECT attendance_date d FROM rh_attendance WHERE employee_id=? AND attendance_date BETWEEN ? AND ? AND status='ABSENT' UNION SELECT d FROM (SELECT DATE_ADD(start_date, INTERVAL seq.n DAY) d FROM rh_leave_requests JOIN (SELECT 0 n UNION SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 4 UNION SELECT 5 UNION SELECT 6 UNION SELECT 7 UNION SELECT 8 UNION SELECT 9 UNION SELECT 10 UNION SELECT 11 UNION SELECT 12 UNION SELECT 13 UNION SELECT 14 UNION SELECT 15 UNION SELECT 16 UNION SELECT 17 UNION SELECT 18 UNION SELECT 19 UNION SELECT 20 UNION SELECT 21 UNION SELECT 22 UNION SELECT 23 UNION SELECT 24 UNION SELECT 25 UNION SELECT 26 UNION SELECT 27 UNION SELECT 28 UNION SELECT 29 UNION SELECT 30) seq WHERE leave_type='SANS_SOLDE' AND status='APPROUVE' AND DATE_ADD(start_date, INTERVAL seq.n DAY) <= end_date AND DATE_ADD(start_date, INTERVAL seq.n DAY) BETWEEN ? AND ? AND DAYOFWEEK(DATE_ADD(start_date, INTERVAL seq.n DAY)) NOT IN (1,7)) unpaid) missing`, [employeeId, start, end, start, end]);
+  return Number(days.total || 0);
+}
+
+async function payrollAdjustments(conn, employeeId, start, end, baseSalary) {
+  const absenceDays = await countAbsenceDays(conn, employeeId, start, end);
   const businessDays = workingDays(start, end) || 1;
-  return Math.round((Number(baseSalary) / businessDays) * Number(days.total || 0) * 100) / 100;
+  return Math.round((Number(baseSalary) / businessDays) * absenceDays * 100) / 100;
+}
+
+// Données du bulletin de paie : ligne de paie + fiche employé + jours d'absence du mois.
+async function findPayslip(period, employeeId) {
+  const bounds = monthBounds(period);
+  const [[line]] = await pool.query(`SELECT p.*, e.matricule, e.first_name, e.last_name, e.position, e.qualification, e.cnaps_number, e.dependents, e.address, e.contract_type
+    FROM rh_payroll p JOIN rh_employees e ON e.id = p.employee_id WHERE p.period_month = ? AND p.employee_id = ?`, [bounds.period, employeeId]);
+  if (!line) return null;
+  const absenceDays = line.contract_type === DAILY_RATE_CONTRACT ? 0 : await countAbsenceDays(pool, employeeId, bounds.start, bounds.end);
+  return { ...line, absence_days: absenceDays, bounds };
 }
 
 // Calcule (ou recalcule) la ligne de paie brouillon d'un employé pour un mois.
@@ -269,7 +285,11 @@ async function updatePayroll(id, data) {
   if (data.deduction_reason !== undefined) values.deduction_reason = String(data.deduction_reason || '').trim().slice(0, 255) || null;
   // Total déduit = retenue saisie (× semaines si hebdomadaire) + absences calculées.
   values.deductions = deductionTotal(values.deduction_amount, values.deduction_frequency, row.period_month) + Number(row.absence_deductions || 0);
-  values.net_amount = calculateNet(values);
+  // Refus plutôt que plancher à 0 : sinon le bulletin ne s'additionne plus et le
+  // dépassement (avance non récupérée) disparaît sans que personne ne le voie.
+  const rawNet = calculateRawNet(values);
+  if (rawNet < 0) { const err = new Error('NEGATIVE_NET'); err.shortfall = -rawNet; throw err; }
+  values.net_amount = rawNet;
   await pool.query(`UPDATE rh_payroll SET overtime_amount=?, bonuses=?, pourboire=?, allowances=?, advances=?, deduction_amount=?, deduction_frequency=?, deduction_reason=?, deductions=?, net_amount=? WHERE id=?`, [values.overtime_amount, values.bonuses, values.pourboire, values.allowances, values.advances, values.deduction_amount, values.deduction_frequency, values.deduction_reason, values.deductions, values.net_amount, id]);
   return (await pool.query('SELECT * FROM rh_payroll WHERE id=?', [id]))[0][0];
 }
@@ -295,6 +315,9 @@ async function transitionPayroll(id, status) {
   if (!row) return null;
   const valid = (row.status === 'BROUILLON' && status === 'VALIDE') || (row.status === 'VALIDE' && status === 'PAYE');
   if (!valid) { const err = new Error('INVALID_PAYROLL_TRANSITION'); throw err; }
+  // Lignes ajustées avant ce contrôle : on ne valide pas une paie dont le net serait négatif.
+  const rawNet = calculateRawNet(row);
+  if (status === 'VALIDE' && rawNet < 0) { const err = new Error('NEGATIVE_NET'); err.shortfall = -rawNet; throw err; }
   await pool.query('UPDATE rh_payroll SET status=?, paid_at=CASE WHEN ?="PAYE" THEN NOW() ELSE paid_at END WHERE id=?', [status, status, id]);
   return (await pool.query('SELECT * FROM rh_payroll WHERE id=?', [id]))[0][0];
 }
@@ -390,4 +413,4 @@ async function setDepartmentBudget(department, monthlyBudget, userId) {
   return { department: row.department, monthly_budget: Number(row.monthly_budget) };
 }
 
-module.exports = { listDocuments, createDocument, findDocument, deleteDocument, listEvaluations, listDepartmentBudgets, setDepartmentBudget, findEmployeeWithPresence, employees, evaluations, listEmployees, dashboard, listLeaveRequests, createLeaveRequest, updateLeaveStatus, listAttendance, checkIn, checkOut, listMyAttendance, generatePayroll, listPayroll, updatePayroll, syncEmployeePayrollSnapshot, transitionPayroll, deletePayroll, deleteEmployee, monthBounds, findEmployeeByUserId, createOrLinkEmployeeFromUser };
+module.exports = { findPayslip, listDocuments, createDocument, findDocument, deleteDocument, listEvaluations, listDepartmentBudgets, setDepartmentBudget, findEmployeeWithPresence, employees, evaluations, listEmployees, dashboard, listLeaveRequests, createLeaveRequest, updateLeaveStatus, listAttendance, checkIn, checkOut, listMyAttendance, generatePayroll, listPayroll, updatePayroll, syncEmployeePayrollSnapshot, transitionPayroll, deletePayroll, deleteEmployee, monthBounds, findEmployeeByUserId, createOrLinkEmployeeFromUser };
