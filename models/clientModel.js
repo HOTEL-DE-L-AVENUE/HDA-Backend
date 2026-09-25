@@ -38,6 +38,7 @@ const ClientKyc = createCrudModel({
     'date_delivrance_piece', 'date_expiration_piece', 'autorite_delivrance',
     'source_revenus', 'revenu_mensuel_estime', 'mode_paiement', 'banque',
     'doc_piece_identite', 'doc_justificatif_domicile', 'doc_photo_client', 'doc_autre',
+    'documents_identite_urls',
     'niveau_risque', 'commentaires_risque', 'declaration_client',
     'agent_verificateur', 'date_verification',
   ],
@@ -158,6 +159,7 @@ const KYC_UPSERT_FIELDS = [
   'date_delivrance_piece', 'date_expiration_piece', 'autorite_delivrance',
   'source_revenus', 'revenu_mensuel_estime', 'mode_paiement', 'banque',
   'doc_piece_identite', 'doc_justificatif_domicile', 'doc_photo_client', 'doc_autre',
+  'documents_identite_urls',
   'niveau_risque', 'commentaires_risque', 'declaration_client',
   'agent_verificateur', 'date_verification',
 ];
@@ -183,6 +185,14 @@ async function upsertKyc(clientId, data = {}) {
         payload[field] = (rawVal && String(rawVal).trim()) ? String(rawVal).trim() : null;
       } else if (KYC_NUM_FIELDS.includes(field)) {
         payload[field] = (rawVal !== null && rawVal !== '' && rawVal !== undefined && !isNaN(Number(rawVal))) ? Number(rawVal) : null;
+      } else if (field === 'documents_identite_urls') {
+        // Tableau d'URLs (/uploads/...) sérialisé en JSON ; accepte un tableau ou une chaîne JSON.
+        let list = rawVal;
+        if (typeof list === 'string') {
+          try { list = JSON.parse(list || '[]'); } catch { list = []; }
+        }
+        const urls = Array.isArray(list) ? list.filter((url) => typeof url === 'string' && url.trim()) : [];
+        payload[field] = urls.length ? JSON.stringify(urls) : null;
       } else if (field === 'niveau_risque') {
         payload[field] = (rawVal && ['FAIBLE', 'MOYEN', 'ELEVE'].includes(rawVal)) ? rawVal : null;
       } else {

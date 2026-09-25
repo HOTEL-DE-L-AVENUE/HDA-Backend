@@ -392,8 +392,9 @@ exports.playersCrud.create = async (req, res, next) => {
   const { identite_type: identityType, identite_numero: identityNumber, identite_nom_complet: identityName, identite_date_emission: identityDate, identite_verifiee: identityVerified, identite_fichiers_urls: identityFiles } = req.body;
   let identityFileList = [];
   try { identityFileList = Array.isArray(identityFiles) ? identityFiles : JSON.parse(identityFiles || '[]'); } catch { identityFileList = []; }
-  if (!identityType || !identityNumber || !identityName || !identityDate || identityFileList.length < 3 || !(identityVerified === true || identityVerified === 1 || identityVerified === '1' || identityVerified === 'true')) {
-    return next(ApiError.badRequest('Au moins trois fichiers d’identité sont obligatoires avant l’inscription du joueur'));
+  identityFileList = Array.isArray(identityFileList) ? identityFileList.filter((url) => typeof url === 'string' && url.trim()) : [];
+  if (!identityType || !identityNumber || !identityName || !identityDate || identityFileList.length < 1 || !(identityVerified === true || identityVerified === 1 || identityVerified === '1' || identityVerified === 'true')) {
+    return next(ApiError.badRequest('Au moins un fichier d’identité est obligatoire avant l’inscription du joueur'));
   }
   return playersCreate(req, res, next);
 };
