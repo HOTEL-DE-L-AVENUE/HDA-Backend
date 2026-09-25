@@ -1,6 +1,6 @@
 // routes/authRoutes.js
 const express = require('express');
-const { register, login, verifyAdminPassword, me, changePassword, refreshToken, logout, profile, getConnectionHistory } = require('../controllers/adminController');
+const { register, login, verifyAdminPassword, me, changePassword, refreshToken, logout, profile, getConnectionHistory, heartbeat } = require('../controllers/adminController');
 const { requireAuth } = require('../middlewares/auth');
 
 const router = express.Router();
@@ -14,5 +14,6 @@ router.get('/me', requireAuth, me);                               // GET  /api/a
 router.get('/profile', requireAuth, profile);                     // GET  /api/auth/profile
 router.post('/change-password', requireAuth, changePassword);      // POST /api/auth/change-password
 router.get('/connection-history', requireAuth, getConnectionHistory); // GET /api/auth/connection-history
+router.post('/heartbeat', requireAuth, heartbeat);                 // POST /api/auth/heartbeat (présence en ligne)
 
 module.exports = router;

@@ -8,7 +8,8 @@ const { renderUser, renderUserList } = require('../views/userView');
 const ApiError = require('../utils/ApiError');
 const { ok, created } = require('../utils/apiResponse');
 const { getPagination, getSort, buildWhere } = require('../utils/queryHelpers');
-const { withTransaction } = require('../config/db');
+const { pool, withTransaction } = require('../config/db');
+const presence = require('../utils/presence');
 
 const baseUsersCrud = createCrudController(Users, { filterable: ['role', 'statut'], view: renderUser });
 
@@ -113,6 +114,7 @@ async function login(req, res) {
   );
 
   await logAction({ userId: user.id_admin, action: 'LOGIN', entite: 'users', entiteId: user.id_admin });
+  presence.touch(user.id_admin);
   return ok(res, { success: true, message: 'Connexion réussie', token, refreshToken, user: renderUser(user) });
 }
 
@@ -174,6 +176,7 @@ async function logout(req, res) {
     try {
       const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
       await logAction({ userId: decoded.id_admin, action: 'LOGOUT', entite: 'users', entiteId: decoded.id_admin });
+      presence.forget(decoded.id_admin);
     } catch (error) {
       // Token invalid but still proceed with logout
     }
@@ -214,8 +217,34 @@ async function getConnectionHistory(req, res) {
   return ok(res, rows, { page, limit, total });
 }
 
+// --- Présence en ligne ---------------------------------------------------------
+
+// POST /api/auth/heartbeat — le simple passage par requireAuth met à jour la présence.
+async function heartbeat(req, res) {
+  return ok(res, { success: true });
+}
+
+// GET /api/admin/users-presence — statut en ligne + dernière connexion de chaque utilisateur
+async function listUsersPresence(req, res) {
+  const [rows] = await pool.query(
+    `SELECT user_id, MAX(created_at) AS last_login FROM audit_logs
+     WHERE action = 'LOGIN' AND user_id IS NOT NULL GROUP BY user_id`
+  );
+  const lastLoginByUser = new Map(rows.map((row) => [String(row.user_id), row.last_login]));
+  const presenceByUser = new Map(presence.listPresence().map((item) => [String(item.id_admin), item]));
+  const userIds = new Set([...lastLoginByUser.keys(), ...presenceByUser.keys()]);
+  const data = [...userIds].map((userId) => ({
+    id_admin: Number(userId),
+    online: Boolean(presenceByUser.get(userId)?.online),
+    last_seen: presenceByUser.get(userId)?.last_seen || null,
+    last_login: lastLoginByUser.get(userId) || null,
+  }));
+  return ok(res, data);
+}
+
 const notificationsCrud = createCrudController(Notifications, { filterable: ['statut'] });
 
 module.exports = {
   usersCrud, register, login, verifyAdminPassword, me, changePassword, refreshToken, logout, profile, listAuditLogs, getConnectionHistory, notificationsCrud, renderUserList,
+  heartbeat, listUsersPresence,
 };
