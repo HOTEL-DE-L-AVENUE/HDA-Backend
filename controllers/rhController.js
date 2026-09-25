@@ -4,13 +4,13 @@ const PDFDocument = require('pdfkit');
 const ApiError = require('../utils/ApiError');
 const { ok, created, noContent } = require('../utils/apiResponse');
 const { getPagination, getSort } = require('../utils/queryHelpers');
-const { EMPLOYMENT_STATUSES, DEPARTURE_STATUSES, CONTRACT_TYPES, DAILY_RATE_CONTRACT, DOCUMENT_TYPES, LEAVE_TYPES, LEAVE_STATUSES, PAYROLL_STATUSES, DEPARTMENTS, statutoryContributions, weeksInMonth } = require('../utils/hr');
+const { EMPLOYMENT_STATUSES, DEPARTURE_STATUSES, CONTRACT_TYPES, DAILY_RATE_CONTRACT, DOCUMENT_TYPES, LEAVE_TYPES, LEAVE_STATUSES, PAYROLL_STATUSES, DEPARTMENTS, statutoryContributions, weeksInMonth, formatAmount, amountInWords } = require('../utils/hr');
 const { RH_DOCUMENTS_DIR } = require('../middlewares/upload');
 const model = require('../models/rhModel');
 const { logAction } = require('../models/adminModel');
 
-const numericFields = ['salary', 'prime', 'pourboire', 'irsa'];
-const renderEmployee = (row) => ({ ...row, salary: Number(row.salary || 0), prime: Number(row.prime || 0), pourboire: Number(row.pourboire || 0), cnaps: Number(row.cnaps || 0), ostie: Number(row.ostie || 0), irsa: Number(row.irsa || 0), ...(row.presence_days !== undefined ? { presence_days: Number(row.presence_days || 0) } : {}), status: String(row.status || '').toUpperCase() });
+const numericFields = ['salary', 'prime', 'pourboire', 'irsa', 'dependents'];
+const renderEmployee = (row) => ({ ...row, salary: Number(row.salary || 0), prime: Number(row.prime || 0), pourboire: Number(row.pourboire || 0), dependents: Number(row.dependents || 0), cnaps: Number(row.cnaps || 0), ostie: Number(row.ostie || 0), irsa: Number(row.irsa || 0), ...(row.presence_days !== undefined ? { presence_days: Number(row.presence_days || 0) } : {}), status: String(row.status || '').toUpperCase() });
 const audit = (req, action, entite, entiteId, payload) => logAction({ userId: req.user?.id_admin, action, entite, entiteId, payload }).catch((err) => console.error('Audit RH impossible:', err.message));
 function normalized(body) {
   const out = { ...(body || {}) };
@@ -28,6 +28,7 @@ function assertEmployee(body, partial = false) {
   for (const [field, label] of [['salary', 'Salaire'], ['prime', 'Prime'], ['pourboire', 'Pourboire'], ['irsa', 'IRSA']]) {
     if (body[field] !== undefined && (!Number.isFinite(Number(body[field])) || Number(body[field]) < 0)) throw ApiError.badRequest(`${label} invalide`);
   }
+  if (body.dependents !== undefined && (!Number.isInteger(Number(body.dependents)) || Number(body.dependents) < 0 || Number(body.dependents) > 255)) throw ApiError.badRequest('Nombre de personnes à charge invalide');
   if (body.joined_at && body.contract_end_date && body.contract_end_date < body.joined_at) throw ApiError.badRequest('La date de débauche doit être postérieure à la date d’embauche');
 }
 // Recalcule CNAPS / OSTIE (1 % du salaire) et l'IRSA saisie, selon le contrat résultant
@@ -47,6 +48,7 @@ async function ensureDuplicates(body, excludeId) {
 function page(req) { return getPagination(req.query); }
 function businessError(error) {
   const messages = { OVERLAP: 'Cette demande chevauche un congé déjà approuvé', LEAVE_FINAL: 'Une demande traitée ne peut plus être modifiée', INSUFFICIENT_BALANCE: 'Solde de congé annuel insuffisant', ALREADY_CHECKED_IN: 'Employé déjà pointé à l’arrivée', NO_CHECK_IN: 'Aucun pointage d’arrivée pour aujourd’hui', ALREADY_CHECKED_OUT: 'Employé déjà pointé au départ', PAYROLL_LOCKED: 'Une paie validée ou payée ne peut plus être modifiée', INVALID_PAYROLL_TRANSITION: 'Transition de statut de paie invalide', INVALID_PAYROLL_AMOUNT: 'Les montants de paie doivent être positifs', PAYROLL_PAID_DELETE: 'Une paie déjà payée ne peut pas être supprimée', INVALID_DEDUCTION_FREQUENCY: 'Fréquence de retenue invalide (MENSUEL ou HEBDOMADAIRE)' };
+  if (error.message === 'NEGATIVE_NET') throw ApiError.badRequest(`Les avances et retenues dépassent la rémunération de ${formatAmount(error.shortfall)} Ar : le net serait négatif. Réduisez l’avance ou la retenue.`);
   if (messages[error.message]) throw ApiError.badRequest(messages[error.message]);
   if (/date|jour ouvré/i.test(error.message || '')) throw ApiError.badRequest(error.message);
   throw error;
@@ -120,16 +122,89 @@ async function payrollGenerate(req, res) { try { const result = await model.gene
 async function payrollUpdate(req, res) { try { const row = await model.updatePayroll(req.params.id, req.body || {}); if (!row) throw ApiError.notFound('Ligne de paie introuvable'); await audit(req, 'UPDATE_HR_PAYROLL', 'rh_payroll', row.id, { fields: Object.keys(req.body || {}) }); return ok(res, row); } catch (err) { businessError(err); } }
 async function payrollStatus(req, res) { const status = String(req.body?.status || '').toUpperCase(); if (!PAYROLL_STATUSES.includes(status) || status === 'BROUILLON') throw ApiError.badRequest('Statut de paie invalide'); try { const row = await model.transitionPayroll(req.params.id, status); if (!row) throw ApiError.notFound('Ligne de paie introuvable'); await audit(req, `HR_PAYROLL_${status}`, 'rh_payroll', row.id, { employee_id: row.employee_id }); return ok(res, row); } catch (err) { businessError(err); } }
 async function payrollDelete(req, res) { try { const row = await model.deletePayroll(req.params.id); if (!row) throw ApiError.notFound('Ligne de paie introuvable'); await audit(req, 'DELETE_HR_PAYROLL', 'rh_payroll', row.id, { employee_id: row.employee_id, period: row.period_month }); return noContent(res); } catch (err) { businessError(err); } }
+// En-tête du bulletin (modèle Diamond Club).
+const PAYSLIP_COMPANY = { name: 'DIAMOND CLUB', addressLines: ["26, Avenue de l'Indépendance", '101 - ANTANANARIVO'], city: 'Antananarivo' };
+const MONTHS_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+
+// Correspondance avec le modèle :
+// - Rémunération mensuelle globale = base + HS + primes + pourboire
+// - Retenue impôt = IRSA · Paiement partiel effectué = avances
+// - Retenue divers = retenue saisie + absences · Allocation familiale = allocations
+// → Net = globale − CNaPS − OSTIE − impôt − paiement partiel − retenue divers + allocation (= net_amount).
 async function payrollPayslip(req, res) {
-  const rows = (await model.listPayroll({ period: req.params.period, page: 1, limit: 1000 })).rows; const line = rows.find((item) => String(item.employee_id) === String(req.params.employeeId));
+  let line;
+  try { line = await model.findPayslip(req.params.period, req.params.employeeId); } catch (err) { businessError(err); }
   if (!line) throw ApiError.notFound('Bulletin de paie introuvable');
-  res.setHeader('Content-Type', 'application/pdf'); res.setHeader('Content-Disposition', `attachment; filename="bulletin-${line.matricule}-${req.params.period}.pdf"`);
-  const doc = new PDFDocument({ margin: 50 }); doc.pipe(res); doc.fontSize(20).text("Hôtel de l'Avenue — Bulletin de paie"); doc.moveDown().fontSize(12).text(`${line.first_name} ${line.last_name} (${line.matricule})`).text(`Contrat : ${line.contract_type}`).text(`Période : ${req.params.period.slice(0, 7)}`).moveDown();
+  const [year, month] = line.bounds.start.split('-').map(Number);
+  const daysInMonth = Number(line.bounds.end.slice(8, 10));
   const isDailyRate = line.contract_type === DAILY_RATE_CONTRACT;
-  const baseLabel = isDailyRate ? `Rémunération (${Number(line.presence_days || 0)} jour(s) de présence)` : 'Salaire de base';
-  const manualDeduction = Math.max(0, Number(line.deductions || 0) - Number(line.absence_deductions || 0));
-  const deductionLabel = `Retenue${line.deduction_frequency === 'HEBDOMADAIRE' ? ` (hebdomadaire, ${Number(line.deduction_amount || 0).toLocaleString('fr-FR')} Ar × ${weeksInMonth(line.period_month)} semaines)` : ''}${line.deduction_reason ? ` : ${line.deduction_reason}` : ''}`;
-  [[baseLabel, line.base_salary], ['Heures supplémentaires', line.overtime_amount], ['Primes', line.bonuses], ['Pourboire', line.pourboire], ['Indemnités', line.allowances], ['Avances', -line.advances], [deductionLabel, -manualDeduction], ['Absences et congés sans solde', -line.absence_deductions], ['CNAPS (1 %)', -line.cnaps], ['OSTIE (1 %)', -line.ostie], ['IRSA', -line.irsa], ['Net à payer', line.net_amount]].forEach(([label, amount]) => doc.text(`${label} : ${Number(amount || 0).toLocaleString('fr-FR')} Ar`));
+  const workedDays = isDailyRate ? Number(line.presence_days || 0) : Math.max(0, daysInMonth - line.absence_days);
+  const globalPay = Number(line.base_salary) + Number(line.overtime_amount) + Number(line.bonuses) + Number(line.pourboire || 0);
+  const weekly = line.deduction_frequency === 'HEBDOMADAIRE' && Number(line.deduction_amount) > 0;
+  const deductionNote = [line.deduction_reason, weekly ? `${formatAmount(line.deduction_amount)} × ${weeksInMonth(line.period_month)} sem.` : ''].filter(Boolean).join(', ');
+  const today = new Date();
+
+  const safeMatricule = String(line.matricule).replace(/[^\w-]+/g, '_');
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="bulletin-${safeMatricule}-${line.bounds.start.slice(0, 7)}.pdf"`);
+  const doc = new PDFDocument({ size: 'A4', margin: 40 });
+  doc.pipe(res);
+
+  const x = 40; const w = 515; const pad = 5; const top = 40;
+  let y = top;
+  const rule = (weight = 0.8) => doc.moveTo(x, y).lineTo(x + w, y).lineWidth(weight).stroke();
+  // Ligne « libellé ........ valeur » alignée comme le modèle Excel.
+  const row = (label, value, { labelFont = 'Helvetica', valueFont = 'Helvetica', size = 9, valueSize = size, height = 15 } = {}) => {
+    doc.font(labelFont).fontSize(size).text(label, x + pad, y + (height - size) / 2, { width: w * 0.62, lineBreak: false, ellipsis: true });
+    doc.font(valueFont).fontSize(valueSize).text(String(value ?? ''), x + w * 0.35, y + (height - valueSize) / 2, { width: w * 0.65 - pad, align: 'right', lineBreak: false });
+    y += height;
+  };
+
+  doc.font('Times-Roman').fontSize(20).text(PAYSLIP_COMPANY.name, x + pad, y + 4); y += 28;
+  for (const addressLine of PAYSLIP_COMPANY.addressLines) { doc.font('Helvetica-Bold').fontSize(8).text(addressLine, x + pad, y + 2); y += 13; }
+  rule();
+  doc.font('Helvetica-Bold').fontSize(12).text('BULLETIN DE PAIE', x, y + 4, { width: w, align: 'center' }); y += 20;
+  rule();
+
+  doc.font('Helvetica').fontSize(9).text('MOIS DE :', x + pad, y + 3);
+  doc.font('Helvetica-Bold').text(MONTHS_FR[month - 1].toUpperCase(), x + 150, y + 3);
+  doc.font('Helvetica').text('ANNEE :', x + 300, y + 3);
+  doc.font('Helvetica-Bold').text(String(year), x, y + 3, { width: w - pad, align: 'right' });
+  y += 15;
+  row('Nom et Prénom :', `${line.last_name} ${line.first_name}`.toUpperCase());
+  row('Numéro Matricule :', line.matricule);
+  row('Fonction :', String(line.position || '').toUpperCase());
+  row('Qualification :', line.qualification || '');
+  row('N° CNaPS :', line.cnaps_number || '');
+  row('Personne en Charge :', Number(line.dependents || 0));
+  row('Adresse :', line.address || '');
+  row(isDailyRate ? 'Nb de jours de présence dans le mois :' : 'Nb de jours de travail dans le mois :', workedDays);
+  row("Nb de jours d'Absence :", line.absence_days);
+  rule();
+
+  doc.font('Helvetica-Bold').fontSize(13).text(isDailyRate ? 'Rémunération :' : 'Salaire de base :', x + pad, y + 4);
+  doc.font('Helvetica-Bold').fontSize(13).text(formatAmount(line.base_salary), x + 170, y + 4, { width: 130, align: 'right' });
+  doc.font('Helvetica-Bold').fontSize(10).text('Ariary', x + 310, y + 6);
+  y += 22;
+  row('REMUNERATION MENSUELLE GLOBALE FORFAITAIRE :', formatAmount(globalPay), { labelFont: 'Helvetica-Bold', size: 8, valueSize: 10 });
+  row('Cotisation CNaPS :', formatAmount(line.cnaps), { valueSize: 10 });
+  row('Cotisation OSTIE :', formatAmount(line.ostie), { valueSize: 10 });
+  row('Retenue impôt :', formatAmount(line.irsa), { valueSize: 10 });
+  row('Paiement Partiel effectué :', formatAmount(line.advances), { valueSize: 10 });
+  row(`Retenue divers${deductionNote ? ` (${deductionNote})` : ''} :`, formatAmount(line.deductions), { valueSize: 10 });
+  row('Allocation Familiale :', formatAmount(line.allowances), { valueSize: 10 });
+  row('Salaire Net à Payer :', formatAmount(line.net_amount), { labelFont: 'Helvetica-Bold', valueFont: 'Helvetica-Bold', size: 13, height: 22 });
+  rule();
+
+  y += 18;
+  doc.font('Helvetica-BoldOblique').fontSize(10).text('Arrêté à la somme de :', x + pad, y); y += 20;
+  doc.font('Helvetica-Bold').fontSize(10).text(amountInWords(line.net_amount), x + pad, y, { width: w - 2 * pad }); y = doc.y + 30;
+  doc.font('Helvetica-Bold').fontSize(9).text("L'EMPLOYEUR", x + pad, y, { underline: true });
+  doc.font('Helvetica-Bold').fontSize(9).text("L'EMPLOYE", x, y, { width: w - 25, align: 'right', underline: true });
+  y += 130; // espace des signatures
+  doc.font('Helvetica').fontSize(10).text(`${PAYSLIP_COMPANY.city}, le ${String(today.getDate()).padStart(2, '0')} ${MONTHS_FR[today.getMonth()].replace(/^./, (c) => c.toUpperCase())} ${today.getFullYear()}`, x, y, { width: w, align: 'center' });
+  y += 20;
+  doc.rect(x, top, w, y - top).lineWidth(1).stroke();
   doc.end();
 }
 const evaluationsCrud = require('./controllerFactory').createCrudController(model.evaluations, { filterable: ['employee_id', 'status'] });

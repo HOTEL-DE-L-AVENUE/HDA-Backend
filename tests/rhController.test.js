@@ -1,12 +1,29 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { workingDays, calculateNet, monthBounds, statutoryContributions, weeksInMonth, deductionTotal } = require('../utils/hr');
+const { workingDays, calculateNet, calculateRawNet, monthBounds, statutoryContributions, weeksInMonth, deductionTotal, formatAmount, numberToFrenchWords, amountInWords } = require('../utils/hr');
+
+test('payslip amounts are written like the Diamond Club model', () => {
+  assert.equal(formatAmount(350000), '350 000,00');
+  assert.equal(formatAmount(3500), '3 500,00');
+  assert.equal(amountInWords(220000), 'Deux cent vingt mille Ariary');
+});
+
+test('French number words follow the traditional spelling rules', () => {
+  const cases = { 0: 'zéro', 21: 'vingt et un', 71: 'soixante et onze', 80: 'quatre-vingts', 81: 'quatre-vingt-un', 99: 'quatre-vingt-dix-neuf', 200: 'deux cents', 201: 'deux cent un', 1000: 'mille', 80000: 'quatre-vingt mille', 200000: 'deux cent mille', 1200000: 'un million deux cent mille', 2000000: 'deux millions', 1350750: 'un million trois cent cinquante mille sept cent cinquante' };
+  for (const [n, words] of Object.entries(cases)) assert.equal(numberToFrenchWords(Number(n)), words, n);
+});
 
 test('weekly deduction is multiplied by the number of Mondays in the month', () => {
   assert.equal(weeksInMonth('2026-09'), 4); // lundis 7, 14, 21, 28
   assert.equal(weeksInMonth('2026-08'), 5); // lundis 3, 10, 17, 24, 31
   assert.equal(deductionTotal(10000, 'HEBDOMADAIRE', '2026-08-01'), 50000);
   assert.equal(deductionTotal(10000, 'MENSUEL', '2026-08-01'), 10000);
+});
+
+test('raw net exposes the shortfall that the floored net hides (Dubois, sept. 2026)', () => {
+  const line = { base_salary: 0, overtime_amount: 36777, allowances: 44554, advances: 565665, deductions: 54546 };
+  assert.equal(calculateRawNet(line), -538880);
+  assert.equal(calculateNet(line), 0);
 });
 
 test('tips (pourboire) are added to the net amount', () => {

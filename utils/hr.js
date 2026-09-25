@@ -50,8 +50,13 @@ function statutoryContributions({ contract_type, salary = 0, irsa = 0 }) {
   return { cnaps: round2(Number(salary) * CNAPS_RATE), ostie: round2(Number(salary) * OSTIE_RATE), irsa: round2(irsa) };
 }
 
-function calculateNet({ base_salary = 0, overtime_amount = 0, bonuses = 0, pourboire = 0, allowances = 0, advances = 0, deductions = 0, cnaps = 0, ostie = 0, irsa = 0 }) {
-  return Math.max(0, Number(base_salary) + Number(overtime_amount) + Number(bonuses) + Number(pourboire) + Number(allowances) - Number(advances) - Number(deductions) - Number(cnaps) - Number(ostie) - Number(irsa));
+// Net avant plancher : négatif quand avances + retenues dépassent la rémunération.
+function calculateRawNet({ base_salary = 0, overtime_amount = 0, bonuses = 0, pourboire = 0, allowances = 0, advances = 0, deductions = 0, cnaps = 0, ostie = 0, irsa = 0 }) {
+  return Math.round((Number(base_salary) + Number(overtime_amount) + Number(bonuses) + Number(pourboire) + Number(allowances) - Number(advances) - Number(deductions) - Number(cnaps) - Number(ostie) - Number(irsa)) * 100) / 100;
+}
+
+function calculateNet(values) {
+  return Math.max(0, calculateRawNet(values));
 }
 
 const DEDUCTION_FREQUENCIES = ['MENSUEL', 'HEBDOMADAIRE'];
@@ -71,4 +76,53 @@ function deductionTotal(amount, frequency, period) {
   return round2(Number(amount || 0) * (frequency === 'HEBDOMADAIRE' ? weeksInMonth(period) : 1));
 }
 
-module.exports = { EMPLOYMENT_STATUSES, DEPARTURE_STATUSES, CONTRACT_TYPES, SALARIED_CONTRACTS, DAILY_RATE_CONTRACT, DOCUMENT_TYPES, DEDUCTION_FREQUENCIES, LEAVE_TYPES, LEAVE_STATUSES, PAYROLL_STATUSES, DEPARTMENTS, IN_WORKFORCE_SQL, workingDays, monthBounds, statutoryContributions, calculateNet, weeksInMonth, deductionTotal };
+// --- Bulletin de paie : montants ------------------------------------------------
+
+// « 350 000,00 ». Espaces normaux : l'espace fine insécable de toLocaleString('fr-FR')
+// n'existe pas dans les polices standard du PDF.
+function formatAmount(value) {
+  const n = Number(value || 0);
+  const [int, dec] = Math.abs(n).toFixed(2).split('.');
+  return `${n < 0 ? '-' : ''}${int.replace(/\B(?=(\d{3})+(?!\d))/g, ' ')},${dec}`;
+}
+
+const UNITS = ['zéro', 'un', 'deux', 'trois', 'quatre', 'cinq', 'six', 'sept', 'huit', 'neuf', 'dix', 'onze', 'douze', 'treize', 'quatorze', 'quinze', 'seize', 'dix-sept', 'dix-huit', 'dix-neuf'];
+const TENS = { 2: 'vingt', 3: 'trente', 4: 'quarante', 5: 'cinquante', 6: 'soixante' };
+
+// plural : « quatre-vingts » / « deux cents » ne prennent le s qu'en fin de nombre ou
+// devant million / milliard, jamais devant mille (orthographe traditionnelle).
+function below100(n, plural) {
+  if (n < 20) return UNITS[n];
+  const t = Math.floor(n / 10); const u = n % 10;
+  if (t <= 6) return TENS[t] + (u === 0 ? '' : u === 1 ? ' et un' : `-${UNITS[u]}`);
+  if (t === 7) return `soixante${u === 1 ? ' et onze' : `-${UNITS[10 + u]}`}`;
+  if (t === 8) return u === 0 ? `quatre-vingt${plural ? 's' : ''}` : `quatre-vingt-${UNITS[u]}`;
+  return `quatre-vingt-${UNITS[10 + u]}`;
+}
+
+function below1000(n, plural) {
+  const h = Math.floor(n / 100); const r = n % 100;
+  const hundreds = h === 0 ? '' : h === 1 ? 'cent' : `${UNITS[h]} cent${r === 0 && plural ? 's' : ''}`;
+  return [hundreds, r ? below100(r, plural) : ''].filter(Boolean).join(' ');
+}
+
+function numberToFrenchWords(value) {
+  const n = Math.floor(Math.abs(Number(value || 0)));
+  if (n === 0) return 'zéro';
+  const parts = [];
+  const scale = (count, word) => { if (count) parts.push(`${below1000(count, true)} ${word}${count > 1 ? 's' : ''}`); };
+  scale(Math.floor(n / 1e9) % 1000, 'milliard');
+  scale(Math.floor(n / 1e6) % 1000, 'million');
+  const thousands = Math.floor(n / 1000) % 1000;
+  if (thousands) parts.push(thousands === 1 ? 'mille' : `${below1000(thousands, false)} mille`);
+  if (n % 1000) parts.push(below1000(n % 1000, true));
+  return parts.join(' ');
+}
+
+// « Deux cent vingt mille Ariary » (arrondi à l'ariary).
+function amountInWords(value) {
+  const words = numberToFrenchWords(Math.round(Number(value || 0)));
+  return `${words.charAt(0).toUpperCase()}${words.slice(1)} Ariary`;
+}
+
+module.exports = { formatAmount, numberToFrenchWords, amountInWords, EMPLOYMENT_STATUSES, DEPARTURE_STATUSES, CONTRACT_TYPES, SALARIED_CONTRACTS, DAILY_RATE_CONTRACT, DOCUMENT_TYPES, DEDUCTION_FREQUENCIES, LEAVE_TYPES, LEAVE_STATUSES, PAYROLL_STATUSES, DEPARTMENTS, IN_WORKFORCE_SQL, workingDays, monthBounds, statutoryContributions, calculateNet, calculateRawNet, weeksInMonth, deductionTotal };
