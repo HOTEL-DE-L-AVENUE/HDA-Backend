@@ -31,7 +31,7 @@ function requireHR(req, res, next) {
 }
 router.use(requireAuth, requireHR);
 router.get('/dashboard', ctrl.dashboard);
-router.get('/employees', ctrl.employeesList); router.post('/employees', ctrl.createEmployee); router.get('/employees/:id', ctrl.getEmployee); router.put('/employees/:id', ctrl.updateEmployee); router.post('/employees/:id/offboard', ctrl.offboardEmployee);
+router.get('/employees', ctrl.employeesList); router.post('/employees', ctrl.createEmployee); router.get('/employees/:id', ctrl.getEmployee); router.put('/employees/:id', ctrl.updateEmployee); router.delete('/employees/:id', ctrl.deleteEmployee);router.post('/employees/:id/offboard', ctrl.offboardEmployee);
 router.get('/leave-requests', ctrl.leaveList); router.post('/leave-requests', ctrl.leaveCreate); router.patch('/leave-requests/:id/status', ctrl.leaveStatus);
 router.get('/attendance', ctrl.attendanceList); router.post('/attendance/check-in', ctrl.checkIn); router.post('/attendance/check-out', ctrl.checkOut);
 router.get('/payroll', ctrl.payrollList); router.post('/payroll/:period/generate', ctrl.payrollGenerate); router.patch('/payroll/:id', ctrl.payrollUpdate); router.patch('/payroll/:id/status', ctrl.payrollStatus); router.delete('/payroll/:id', ctrl.payrollDelete); router.get('/payroll/:period/payslip/:employeeId', ctrl.payrollPayslip);

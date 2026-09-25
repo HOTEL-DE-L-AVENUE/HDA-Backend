@@ -307,6 +307,22 @@ async function deletePayroll(id) {
   return row;
 }
 
+// Suppression définitive d'un employé et de tout son historique RH, dans une seule
+// transaction (les clés étrangères sont en RESTRICT pour protéger l'historique).
+// Retourne l'employé supprimé et les fichiers de pièces jointes à effacer du disque.
+async function deleteEmployee(id) {
+  return withTransaction(async (conn) => {
+    const [[employee]] = await conn.query('SELECT * FROM rh_employees WHERE id=? FOR UPDATE', [id]);
+    if (!employee) return null;
+    const [documents] = await conn.query('SELECT stored_name FROM rh_employee_documents WHERE employee_id=?', [id]);
+    for (const table of ['rh_employee_documents', 'rh_evaluations', 'rh_leave_balances', 'rh_leave_requests', 'rh_attendance', 'rh_payroll']) {
+      await conn.query(`DELETE FROM ${table} WHERE employee_id=?`, [id]);
+    }
+    await conn.query('DELETE FROM rh_employees WHERE id=?', [id]);
+    return { employee, storedNames: documents.map((doc) => doc.stored_name) };
+  });
+}
+
 // --- Pièces jointes du dossier employé ------------------------------------------
 
 async function listDocuments(employeeId) {
@@ -374,4 +390,4 @@ async function setDepartmentBudget(department, monthlyBudget, userId) {
   return { department: row.department, monthly_budget: Number(row.monthly_budget) };
 }
 
-module.exports = { listDocuments, createDocument, findDocument, deleteDocument, listEvaluations, listDepartmentBudgets, setDepartmentBudget, findEmployeeWithPresence, employees, evaluations, listEmployees, dashboard, listLeaveRequests, createLeaveRequest, updateLeaveStatus, listAttendance, checkIn, checkOut, listMyAttendance, generatePayroll, listPayroll, updatePayroll, syncEmployeePayrollSnapshot, transitionPayroll, deletePayroll, monthBounds, findEmployeeByUserId, createOrLinkEmployeeFromUser };
+module.exports = { listDocuments, createDocument, findDocument, deleteDocument, listEvaluations, listDepartmentBudgets, setDepartmentBudget, findEmployeeWithPresence, employees, evaluations, listEmployees, dashboard, listLeaveRequests, createLeaveRequest, updateLeaveStatus, listAttendance, checkIn, checkOut, listMyAttendance, generatePayroll, listPayroll, updatePayroll, syncEmployeePayrollSnapshot, transitionPayroll, deletePayroll, deleteEmployee, monthBounds, findEmployeeByUserId, createOrLinkEmployeeFromUser };
