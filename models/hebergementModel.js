@@ -54,8 +54,8 @@ const RoomStatusHistory = createCrudModel({
 
 const Reservations = createCrudModel({
   table: 'reservations', pk: 'id',
-  fields: ['client_id', 'room_id', 'date_arrivee', 'date_depart', 'pdj_inclus', 'moyen_paiement', 'montant_brut', 'remise_pourcentage', 'montant_remise', 'remise_validee_par', 'remise_validee_at', 'montant_total', 'statut', 'type_reservation', 'laundry_included', 'laundry_price', 'manual_price'],
-  sortable: ['id', 'date_arrivee', 'date_depart', 'statut'],
+  fields: ['client_id', 'room_id', 'date_arrivee', 'date_depart', 'pdj_inclus', 'moyen_paiement', 'montant_brut', 'remise_pourcentage', 'montant_remise', 'remise_validee_par', 'remise_validee_at', 'montant_total', 'statut', 'type_reservation', 'laundry_included', 'laundry_price', 'manual_price', 'created_by', 'modified_by', 'created_at', 'updated_at'],
+  sortable: ['id', 'date_arrivee', 'date_depart', 'statut', 'created_at', 'updated_at'],
 });
 
 const reservationsFindAll = Reservations.findAll;
@@ -65,8 +65,17 @@ const reservationsCrudUpdate = Reservations.update;
 const reservationsRemove = Reservations.remove;
 
 async function findReservationWithDetails(id) {
-  const [rows] = await pool.query(
-    `SELECT r.*, c.nom AS client_nom, c.prenom AS client_prenom, room.numero AS room_numero,
+  // Check if tracking columns exist
+  const [trackingColumns] = await pool.query(
+    "SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'reservations' AND COLUMN_NAME IN ('created_by', 'modified_by')"
+  );
+  const hasTracking = trackingColumns.length >= 2;
+
+  let query, params;
+  if (hasTracking) {
+    query = `SELECT r.*, c.nom AS client_nom, c.prenom AS client_prenom, room.numero AS room_numero,
+            creator.nom AS created_by_nom, creator.prenom AS created_by_prenom,
+            modifier.nom AS modified_by_nom, modifier.prenom AS modified_by_prenom,
             EXISTS(
               SELECT 1 FROM financial_transactions ft
               WHERE ft.ref_flux_global IN (
@@ -77,9 +86,27 @@ async function findReservationWithDetails(id) {
      FROM reservations r
      LEFT JOIN clients c ON c.id = r.client_id
      LEFT JOIN rooms room ON room.id = r.room_id
-     WHERE r.id = ? LIMIT 1`,
-    [id]
-  );
+     LEFT JOIN users creator ON creator.id_admin = r.created_by
+     LEFT JOIN users modifier ON modifier.id_admin = r.modified_by
+     WHERE r.id = ? LIMIT 1`;
+    params = [id];
+  } else {
+    query = `SELECT r.*, c.nom AS client_nom, c.prenom AS client_prenom, room.numero AS room_numero,
+            EXISTS(
+              SELECT 1 FROM financial_transactions ft
+              WHERE ft.ref_flux_global IN (
+                CONCAT('HEBERGEMENT-RESERVATION-', r.id),
+                CONCAT('HOTEL-RESERVATION-', r.id)
+              )
+            ) AS est_payee
+     FROM reservations r
+     LEFT JOIN clients c ON c.id = r.client_id
+     LEFT JOIN rooms room ON room.id = r.room_id
+     WHERE r.id = ? LIMIT 1`;
+    params = [id];
+  }
+
+  const [rows] = await pool.query(query, params);
   return rows[0] || null;
 }
 
@@ -88,12 +115,89 @@ Reservations.findAll = async function (options) {
   return Promise.all(rows.map((row) => findReservationWithDetails(row.id)));
 };
 
+// New function to get reservations with user info for history filtering
+async function findReservationsWithUserDetails(options = {}) {
+  // Check if tracking columns exist
+  const [trackingColumns] = await pool.query(
+    "SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'reservations' AND COLUMN_NAME IN ('created_by', 'modified_by', 'created_at')"
+  );
+  const hasTracking = trackingColumns.length >= 3;
+
+  let query, params;
+  
+  if (hasTracking) {
+    query = `
+      SELECT r.*, c.nom AS client_nom, c.prenom AS client_prenom, room.numero AS room_numero,
+             creator.nom AS created_by_nom, creator.prenom AS created_by_prenom,
+             modifier.nom AS modified_by_nom, modifier.prenom AS modified_by_prenom
+      FROM reservations r
+      LEFT JOIN clients c ON c.id = r.client_id
+      LEFT JOIN rooms room ON room.id = r.room_id
+      LEFT JOIN users creator ON creator.id_admin = r.created_by
+      LEFT JOIN users modifier ON modifier.id_admin = r.modified_by
+    `;
+  } else {
+    query = `
+      SELECT r.*, c.nom AS client_nom, c.prenom AS client_prenom, room.numero AS room_numero
+      FROM reservations r
+      LEFT JOIN clients c ON c.id = r.client_id
+      LEFT JOIN rooms room ON room.id = r.room_id
+    `;
+  }
+  
+  const conditions = [];
+  params = [];
+  
+  if (hasTracking && options.userId) {
+    conditions.push('(r.created_by = ? OR r.modified_by = ?)');
+    params.push(options.userId, options.userId);
+  }
+  
+  if (hasTracking && options.startDate) {
+    conditions.push('r.created_at >= ?');
+    params.push(options.startDate);
+  }
+  
+  if (hasTracking && options.endDate) {
+    conditions.push('r.created_at <= ?');
+    params.push(options.endDate);
+  }
+  
+  if (options.statut) {
+    conditions.push('r.statut = ?');
+    params.push(options.statut);
+  }
+  
+  if (conditions.length > 0) {
+    query += ' WHERE ' + conditions.join(' AND ');
+  }
+  
+  if (hasTracking) {
+    query += ' ORDER BY r.created_at DESC';
+  } else {
+    query += ' ORDER BY r.id DESC';
+  }
+  
+  if (options.limit) {
+    query += ' LIMIT ?';
+    params.push(options.limit);
+  }
+  
+  if (options.offset) {
+    query += ' OFFSET ?';
+    params.push(options.offset);
+  }
+  
+  const [rows] = await pool.query(query, params);
+  return rows;
+}
+
 Reservations.findById = findReservationWithDetails;
 Reservations.create = async function (data) {
   const row = await reservationsCreate.call(this, data);
   return findReservationWithDetails(row.id);
 };
-Reservations.update = async function (id, data) {
+Reservations.update = async function (id, data, modifiedBy = null) {
   const willComplete = String(data?.statut || '').toUpperCase() === 'TERMINEE';
   const changesAmount = Object.prototype.hasOwnProperty.call(data || {}, 'montant_total');
   if (willComplete || changesAmount) {
@@ -107,7 +211,20 @@ Reservations.update = async function (id, data) {
     const nextMontant = changesAmount ? Number(data.montant_total) : Number(current?.montant_total);
     if (nextStatut === 'TERMINEE' && !(nextMontant > 0)) throw new Error('Montant de réservation invalide');
   }
-  await reservationsCrudUpdate.call(this, id, data);
+  
+  // Check if modified_by column exists before using it
+  const [columns] = await pool.query(
+    "SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'reservations' AND COLUMN_NAME = 'modified_by'"
+  );
+  const hasModifiedBy = columns.length > 0;
+  
+  // Add modified_by to the data only if column exists
+  const updateData = { ...data };
+  if (modifiedBy && hasModifiedBy) {
+    updateData.modified_by = modifiedBy;
+  }
+  
+  await reservationsCrudUpdate.call(this, id, updateData);
   // Depuis la page Hôtel, « encaisser » met directement la réservation à
   // TERMINEE. Synchroniser son montant dans la caisse Hôtel.
   const updatedReservation = await findReservationWithDetails(id);
@@ -345,16 +462,29 @@ async function isRoomAvailable(roomId, dateArrivee, dateDepart, excludeReservati
 }
 
 // Crée une réservation + ses accompagnants dans une transaction
-async function createReservationWithGuests({ clientId, roomId, dateArrivee, dateDepart, pdjInclus = false, montantTotal, montantBrut, remisePourcentage, montantRemise, statut, guests = [], typeReservation = 'BOOKING', laundryIncluded = false, laundryPrice = 0, manualPrice = 0 }) {
+async function createReservationWithGuests({ clientId, roomId, dateArrivee, dateDepart, pdjInclus = false, montantTotal, montantBrut, remisePourcentage, montantRemise, statut, guests = [], typeReservation = 'BOOKING', laundryIncluded = false, laundryPrice = 0, manualPrice = 0, createdBy = null }) {
   return withTransaction(async (conn) => {
     // Utilise le statut envoyé par le contrôleur ou 'EN_COURS' par défaut
     const statusValue = statut || 'EN_COURS';
 
-    const [result] = await conn.query(
-      `INSERT INTO reservations (client_id, room_id, date_arrivee, date_depart, pdj_inclus, montant_brut, remise_pourcentage, montant_remise, montant_total, statut, type_reservation, laundry_included, laundry_price, manual_price)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [clientId, roomId, dateArrivee, dateDepart, Boolean(pdjInclus), montantBrut, remisePourcentage || 0, montantRemise || 0, montantTotal, statusValue, typeReservation, Boolean(laundryIncluded), laundryPrice, manualPrice]
+    // Check if created_by column exists before using it
+    const [columns] = await conn.query(
+      "SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'reservations' AND COLUMN_NAME = 'created_by'"
     );
+    const hasCreatedBy = columns.length > 0;
+
+    let query, params;
+    if (hasCreatedBy) {
+      query = `INSERT INTO reservations (client_id, room_id, date_arrivee, date_depart, pdj_inclus, montant_brut, remise_pourcentage, montant_remise, montant_total, statut, type_reservation, laundry_included, laundry_price, manual_price, created_by, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`;
+      params = [clientId, roomId, dateArrivee, dateDepart, Boolean(pdjInclus), montantBrut, remisePourcentage || 0, montantRemise || 0, montantTotal, statusValue, typeReservation, Boolean(laundryIncluded), laundryPrice, manualPrice, createdBy];
+    } else {
+      query = `INSERT INTO reservations (client_id, room_id, date_arrivee, date_depart, pdj_inclus, montant_brut, remise_pourcentage, montant_remise, montant_total, statut, type_reservation, laundry_included, laundry_price, manual_price)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+      params = [clientId, roomId, dateArrivee, dateDepart, Boolean(pdjInclus), montantBrut, remisePourcentage || 0, montantRemise || 0, montantTotal, statusValue, typeReservation, Boolean(laundryIncluded), laundryPrice, manualPrice];
+    }
+
+    const [result] = await conn.query(query, params);
     const reservationId = result.insertId;
     for (const g of guests) {
       await conn.query(
@@ -907,4 +1037,5 @@ module.exports = {
   updateRoomStatus, getEquipmentByCode, getEquipmentCategories, getEquipmentStats,
   updateRoomEquipmentStatus, getRoomStats, updateHousekeepingStatus, getHousekeepingStats,
   transferStockToMinibar, handleMinibarConsumption, getMinibarWithAlerts, getLowStockMinibarItems, restockMinibar,
+  findReservationsWithUserDetails,
 };

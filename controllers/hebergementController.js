@@ -49,6 +49,15 @@ const maintenanceWorkersCrud = createCrudController(heb.MaintenanceWorkers, { fi
 const roomMinibarCrud = createCrudController(heb.RoomMinibar, { filterable: ['room_id'] });
 const roomStatusHistoryCrud = createCrudController(heb.RoomStatusHistory, { filterable: ['room_id'] });
 const reservationsCrud = createCrudController(heb.Reservations, { filterable: ['client_id', 'room_id', 'statut'] });
+
+// Custom update handler to track user modifications
+const reservationsCrudUpdate = reservationsCrud.update;
+reservationsCrud.update = async function(req, res) {
+  const id = req.params.id || req.params.reservationId;
+  const modifiedBy = req.user?.id_admin || req.user?.id;
+  const row = await heb.Reservations.update(id, req.body, modifiedBy);
+  return ok(res, row);
+};
 const reservationGuestsCrud = createCrudController(heb.ReservationGuests, { filterable: ['reservation_id'] });
 const staysCrud = createCrudController(heb.Stays, { filterable: ['reservation_id'] });
 const housekeepingCrud = createCrudController(heb.HousekeepingTasks, { filterable: ['room_id', 'statut', 'assigned_user_id'] });
@@ -152,6 +161,7 @@ async function createReservationHandler(req, res) {
     laundryIncluded: laundry_included,
     laundryPrice: laundry_price,
     manualPrice: manual_price,
+    createdBy: req.user?.id_admin || req.user?.id,
   });
   const reservationWithDetails = await heb.Reservations.findById(reservation.id);
   return created(res, reservationWithDetails);
@@ -322,6 +332,59 @@ async function restockMinibarHandler(req, res) {
 async function getLowStockMinibarHandler(req, res) {
   const items = await heb.getLowStockMinibarItems();
   return ok(res, items);
+}
+
+// Hotel history with user filtering
+async function getHotelHistoryHandler(req, res) {
+  const { user_id, start_date, end_date, statut, limit = 50, offset = 0 } = req.query;
+
+  const options = {
+    userId: user_id ? Number(user_id) : undefined,
+    startDate: start_date || undefined,
+    endDate: end_date ? `${end_date} 23:59:59` : undefined,
+    statut: statut || undefined,
+    limit: limit ? Number(limit) : undefined,
+    offset: offset ? Number(offset) : undefined,
+  };
+
+  const reservations = await heb.findReservationsWithUserDetails(options);
+  return ok(res, reservations);
+}
+
+// Get users for hotel history filtering
+async function getUsersHandler(req, res) {
+  const { pool } = require('../config/db');
+  try {
+    // Check if users table exists
+    const [tables] = await pool.query(
+      "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users'"
+    );
+
+    if (tables.length === 0) {
+      return ok(res, []);
+    }
+
+    // Check if required columns exist
+    const [columns] = await pool.query(
+      "SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME IN ('id_admin', 'nom', 'prenom', 'role', 'statut')"
+    );
+
+    if (columns.length < 5) {
+      return ok(res, []);
+    }
+
+    // Get active users with receptionist role (case-insensitive)
+    const [rows] = await pool.query(
+      `SELECT id_admin, nom, prenom, email, role, statut
+       FROM users
+       WHERE statut = 'ACTIF' AND LOWER(role) IN ('reception', 'receptionist', 'receptioniste')
+       ORDER BY nom, prenom`
+    );
+    return ok(res, rows);
+  } catch (error) {
+    console.error('Error loading users:', error);
+    return ok(res, []);
+  }
 }
 
 // --- Accommodation Stock Management Handlers ---
@@ -520,4 +583,5 @@ module.exports = {
   roomStatsHandler, updateHousekeepingStatusHandler, housekeepingStatsHandler,
   transferStockToMinibarHandler, handleMinibarConsumptionHandler, getMinibarWithAlertsHandler, restockMinibarHandler, getLowStockMinibarHandler,
   getHebergementStockHandler, addHebergementStockHandler, updateHebergementStockHandler, deleteHebergementStockHandler,
+  getHotelHistoryHandler, getUsersHandler,
 };
