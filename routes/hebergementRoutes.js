@@ -35,6 +35,8 @@ router.use('/room-status-history', createCrudRouter(ctrl.roomStatusHistoryCrud))
 router.post('/reservations', ctrl.createReservationHandler);             // POST /api/hebergement/reservations (avec accompagnants)
 router.post('/reservations/:id/validate-discount', ctrl.validateReservationDiscountHandler);
 router.get('/reservations/stats', ctrl.reservationStatsHandler);         // GET /api/hebergement/reservations/stats
+router.get('/reservations/history', ctrl.getHotelHistoryHandler);          // GET /api/hebergement/reservations/history?user_id=&start_date=&end_date=&statut=
+router.get('/users', ctrl.getUsersHandler);                              // GET /api/hebergement/users
 router.use('/reservations', createCrudRouter(ctrl.reservationsCrud));
 router.use('/reservation-guests', createCrudRouter(ctrl.reservationGuestsCrud));
 
