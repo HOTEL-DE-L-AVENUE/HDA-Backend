@@ -6,18 +6,17 @@ let schemaReady;
 async function ensureBarReportsTable() {
   if (!schemaReady) {
     schemaReady = pool.query(`
-      CREATE TABLE IF NOT EXISTS bar_daily_reports (
-        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-        report_date DATE NOT NULL,
-        personnel JSON NOT NULL,
-        manual JSON NOT NULL,
-        metrics JSON NOT NULL,
-        created_by BIGINT UNSIGNED DEFAULT NULL,
-        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (id),
-        UNIQUE KEY uq_bar_daily_reports_date (report_date),
-        KEY idx_bar_daily_reports_created_by (created_by)
+      CREATE TABLE IF NOT EXISTS \`bar_daily_reports\` (
+        \`id\` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+        \`report_date\` DATE NOT NULL,
+        \`personnel\` LONGTEXT NULL,
+        \`manual\` LONGTEXT NULL,
+        \`metrics\` LONGTEXT NULL,
+        \`created_by\` BIGINT UNSIGNED NULL,
+        \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        \`updated_at\` DATETIME NULL,
+        PRIMARY KEY (\`id\`),
+        UNIQUE KEY \`uq_bar_daily_reports_date\` (\`report_date\`)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `).catch((error) => {
       schemaReady = undefined;
@@ -62,7 +61,7 @@ function validateDate(reportDate) {
 async function getBarReport(reportDate) {
   await ensureBarReportsTable();
   const date = validateDate(reportDate);
-  const [rows] = await pool.query('SELECT * FROM bar_daily_reports WHERE report_date = ? LIMIT 1', [date]);
+  const [rows] = await pool.query('SELECT * FROM \`bar_daily_reports\` WHERE \`report_date\` = ? LIMIT 1', [date]);
   return mapReport(rows[0]);
 }
 
@@ -74,13 +73,13 @@ async function saveBarReport({ reportDate, personnel, manual, metrics, createdBy
   }
 
   await pool.query(
-    `INSERT INTO bar_daily_reports (report_date, personnel, manual, metrics, created_by)
+    `INSERT INTO \`bar_daily_reports\` (\`report_date\`, \`personnel\`, \`manual\`, \`metrics\`, \`created_by\`)
      VALUES (?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE
-       personnel = VALUES(personnel),
-       manual = VALUES(manual),
-       metrics = VALUES(metrics),
-       created_by = VALUES(created_by)`,
+       \`personnel\` = VALUES(\`personnel\`),
+       \`manual\` = VALUES(\`manual\`),
+       \`metrics\` = VALUES(\`metrics\`),
+       \`created_by\` = VALUES(\`created_by\`)`,
     [date, JSON.stringify(personnel), JSON.stringify(manual), JSON.stringify(metrics), createdBy ?? null]
   );
 

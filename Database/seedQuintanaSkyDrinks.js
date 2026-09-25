@@ -581,7 +581,19 @@ class SeedQuintanaSkyDrinks {
                 { nom: 'Cageot de 24', ingredients: 'Cageot vide', prix: 0, categorie: 'Consignes & Divers', alcool: 0, stock: 20 },
                 { nom: 'Cageot Ranovisy', ingredients: 'Cageot ranovisy vide', prix: 0, categorie: 'Consignes & Divers', alcool: 0, stock: 20 },
                 { nom: 'Parfum Shisha', ingredients: 'Parfum pour chisha', prix: 20000, categorie: 'Consignes & Divers', alcool: 0, stock: 15 },
-                { nom: 'Charbon Shisha', ingredients: 'Charbon pour chisha', prix: 10000, categorie: 'Consignes & Divers', alcool: 0, stock: 30 }
+                { nom: 'Charbon Shisha', ingredients: 'Charbon pour chisha', prix: 10000, categorie: 'Consignes & Divers', alcool: 0, stock: 30 },
+
+                // =========================================================================
+                // MATERIEL
+                // =========================================================================
+                { nom: 'Shisha Lumineuse géante', ingredients: 'Shisha lumineuse', prix: 500000, categorie: 'Materiel', alcool: 0, stock: 5 },
+                { nom: 'Shisha géante Simple', ingredients: 'Shisha géante', prix: 400000, categorie: 'Materiel', alcool: 0, stock: 5 },
+                { nom: 'Petite Shisha', ingredients: 'Petite shisha', prix: 200000, categorie: 'Materiel', alcool: 0, stock: 10 },
+                { nom: 'Cendriers et verres simples', ingredients: 'Cendriers et verres', prix: 7000, categorie: 'Materiel', alcool: 0, stock: 20 },
+                { nom: 'Vitres Tables grande rectangle', ingredients: 'Vitre table grande rectangle', prix: 100000, categorie: 'Materiel', alcool: 0, stock: 10 },
+                { nom: 'Vitres Petite rectangle', ingredients: 'Vitre table petite rectangle', prix: 70000, categorie: 'Materiel', alcool: 0, stock: 10 },
+                { nom: 'Queue de billiard', ingredients: 'Queue de billiard', prix: 150000, categorie: 'Materiel', alcool: 0, stock: 5 },
+                { nom: 'Boule de billiard', ingredients: 'Boule de billiard', prix: 50000, categorie: 'Materiel', alcool: 0, stock: 10 }
             ];
 
             let insertedCount = 0;
