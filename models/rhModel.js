@@ -66,6 +66,9 @@ function paginationMeta(page, limit, total) { return { page, limit, total: Numbe
 // sans tâche planifiée ni remise à zéro manuelle.
 const PRESENCE_DAYS_THIS_MONTH_SQL = (alias) => `(SELECT COUNT(*) FROM rh_attendance a WHERE a.employee_id = ${alias}.id AND a.status IN ('PRESENT', 'RETARD') AND a.attendance_date BETWEEN DATE_FORMAT(CURDATE(), '%Y-%m-01') AND LAST_DAY(CURDATE()))`;
 
+// Nombre de signatures faciales enregistrées (0 = visage non enrôlé).
+const FACE_SAMPLES_SQL = (alias) => `(SELECT COUNT(*) FROM rh_face_descriptors f WHERE f.employee_id = ${alias}.id)`;
+
 async function countPresenceDays(conn, employeeId, start, end) {
   const [[row]] = await conn.query(`SELECT COUNT(*) total FROM rh_attendance WHERE employee_id=? AND status IN ('PRESENT', 'RETARD') AND attendance_date BETWEEN ? AND ?`, [employeeId, start, end]);
   return Number(row.total || 0);
@@ -80,7 +83,7 @@ async function listEmployees({ search, department, status, contractType, page = 
   if (contractType) { c.push('contract_type = ?'); values.push(contractType); }
   const where = c.length ? `WHERE ${c.join(' AND ')}` : '';
   const [[count]] = await pool.query(`SELECT COUNT(*) total FROM rh_employees e ${where}`, values);
-  const [rows] = await pool.query(`SELECT e.*, ${PRESENCE_DAYS_THIS_MONTH_SQL('e')} presence_days FROM rh_employees e ${where} ORDER BY ${orderBy} LIMIT ? OFFSET ?`, [...values, limit, offset]);
+  const [rows] = await pool.query(`SELECT e.*, ${PRESENCE_DAYS_THIS_MONTH_SQL('e')} presence_days, ${FACE_SAMPLES_SQL('e')} face_samples FROM rh_employees e ${where} ORDER BY ${orderBy} LIMIT ? OFFSET ?`, [...values, limit, offset]);
   // Compteurs d'effectif sur tout le registre, indépendamment des filtres affichés.
   const [statusRows] = await pool.query('SELECT status, COUNT(*) total FROM rh_employees GROUP BY status');
   const statusCounts = Object.fromEntries(statusRows.map((r) => [r.status, Number(r.total)]));
@@ -89,7 +92,7 @@ async function listEmployees({ search, department, status, contractType, page = 
 }
 
 async function findEmployeeWithPresence(id) {
-  const [[row]] = await pool.query(`SELECT e.*, ${PRESENCE_DAYS_THIS_MONTH_SQL('e')} presence_days FROM rh_employees e WHERE e.id = ?`, [id]);
+  const [[row]] = await pool.query(`SELECT e.*, ${PRESENCE_DAYS_THIS_MONTH_SQL('e')} presence_days, ${FACE_SAMPLES_SQL('e')} face_samples FROM rh_employees e WHERE e.id = ?`, [id]);
   return row || null;
 }
 
@@ -158,13 +161,15 @@ async function listAttendance({ date, page = 1, limit = 20, offset = 0 } = {}) {
   await syncCurrentLeaveStatus();
   const attendanceDate = date || new Date().toISOString().slice(0, 10);
   const [[count]] = await pool.query(`SELECT COUNT(*) total FROM rh_employees e WHERE ${IN_WORKFORCE_SQL('e')} AND ${NOT_ON_APPROVED_LEAVE}`, [attendanceDate]);
-  const [rows] = await pool.query(`SELECT e.id employee_id, e.matricule, e.first_name, e.last_name, e.department, a.attendance_date, a.check_in, a.check_out,
+  const [rows] = await pool.query(`SELECT e.id employee_id, e.matricule, e.first_name, e.last_name, e.department, a.id attendance_id, a.attendance_date, a.check_in, a.check_out,
+    a.check_in_method, a.check_out_method, (a.check_in_photo IS NOT NULL) has_check_in_photo, (a.check_out_photo IS NOT NULL) has_check_out_photo,
     CASE WHEN a.id IS NOT NULL THEN a.status WHEN ? < CURDATE() THEN 'ABSENT' ELSE 'NON_POINTE' END attendance_status, a.notes
     FROM rh_employees e LEFT JOIN rh_attendance a ON a.employee_id=e.id AND a.attendance_date=? WHERE ${IN_WORKFORCE_SQL('e')} AND ${NOT_ON_APPROVED_LEAVE} ORDER BY e.last_name, e.first_name LIMIT ? OFFSET ?`, [attendanceDate, attendanceDate, attendanceDate, limit, offset]);
   return { rows, meta: paginationMeta(page, limit, count.total) };
 }
 
-async function checkIn(employeeId, notes) {
+// method : MANUEL (bouton dans la liste) ou VISAGE (reconnaissance faciale, avec photo).
+async function checkIn(employeeId, notes, { method = 'MANUEL', photo = null } = {}) {
   // Remet d'abord à ACTIF les employés dont le congé est terminé : le pointage
   // redevient possible dès le lendemain de la fin du congé, sans réactivation manuelle.
   await syncCurrentLeaveStatus();
@@ -175,18 +180,56 @@ async function checkIn(employeeId, notes) {
     if (existing?.check_in) { const err = new Error('ALREADY_CHECKED_IN'); throw err; }
     const [[time]] = await conn.query('SELECT TIME(NOW()) value');
     const status = time.value > '08:15:00' ? 'RETARD' : 'PRESENT';
-    if (existing) await conn.query('UPDATE rh_attendance SET check_in=?, check_out=NULL, status=?, notes=? WHERE id=?', [time.value, status, notes || null, existing.id]);
-    else await conn.query('INSERT INTO rh_attendance (employee_id, attendance_date, check_in, status, notes) VALUES (?, CURDATE(), ?, ?, ?)', [employeeId, time.value, status, notes || null]);
+    if (existing) await conn.query('UPDATE rh_attendance SET check_in=?, check_out=NULL, check_in_method=?, check_out_method=NULL, check_in_photo=?, check_out_photo=NULL, status=?, notes=? WHERE id=?', [time.value, method, photo, status, notes || null, existing.id]);
+    else await conn.query('INSERT INTO rh_attendance (employee_id, attendance_date, check_in, check_in_method, check_in_photo, status, notes) VALUES (?, CURDATE(), ?, ?, ?, ?, ?)', [employeeId, time.value, method, photo, status, notes || null]);
     return (await conn.query('SELECT * FROM rh_attendance WHERE employee_id=? AND attendance_date=CURDATE()', [employeeId]))[0][0];
   });
 }
 
-async function checkOut(employeeId, notes) {
+async function checkOut(employeeId, notes, { method = 'MANUEL', photo = null } = {}) {
   const [[entry]] = await pool.query('SELECT * FROM rh_attendance WHERE employee_id=? AND attendance_date=CURDATE()', [employeeId]);
   if (!entry?.check_in) { const err = new Error('NO_CHECK_IN'); throw err; }
   if (entry.check_out) { const err = new Error('ALREADY_CHECKED_OUT'); throw err; }
-  await pool.query('UPDATE rh_attendance SET check_out=TIME(NOW()), notes=COALESCE(?, notes) WHERE id=?', [notes || null, entry.id]);
+  await pool.query('UPDATE rh_attendance SET check_out=TIME(NOW()), check_out_method=?, check_out_photo=?, notes=COALESCE(?, notes) WHERE id=?', [method, photo, notes || null, entry.id]);
   return (await pool.query('SELECT * FROM rh_attendance WHERE id=?', [entry.id]))[0][0];
+}
+
+// Pointage du jour d'un employé + secondes écoulées depuis l'entrée (anti double-passage).
+async function todayAttendance(employeeId) {
+  const [[row]] = await pool.query('SELECT *, TIMESTAMPDIFF(SECOND, TIMESTAMP(attendance_date, check_in), NOW()) seconds_since_check_in FROM rh_attendance WHERE employee_id=? AND attendance_date=CURDATE()', [employeeId]);
+  return row || null;
+}
+
+async function findAttendancePhoto(attendanceId, kind) {
+  const column = kind === 'out' ? 'check_out_photo' : 'check_in_photo';
+  const [[row]] = await pool.query(`SELECT ${column} photo FROM rh_attendance WHERE id=?`, [attendanceId]);
+  return row?.photo || null;
+}
+
+// --- Signatures faciales ---------------------------------------------------------
+
+// Signatures des employés pointables (actifs), pour la comparaison côté serveur.
+async function listFaceSamples() {
+  const [rows] = await pool.query(`SELECT f.employee_id, f.descriptor FROM rh_face_descriptors f JOIN rh_employees e ON e.id = f.employee_id WHERE e.status = 'ACTIF'`);
+  return rows.map((r) => ({ employee_id: r.employee_id, descriptor: typeof r.descriptor === 'string' ? JSON.parse(r.descriptor) : r.descriptor }));
+}
+
+// Remplace l'enrôlement d'un employé et enregistre la date de son accord.
+async function replaceFaceDescriptors(employeeId, descriptors, userId) {
+  return withTransaction(async (conn) => {
+    await conn.query('DELETE FROM rh_face_descriptors WHERE employee_id=?', [employeeId]);
+    for (const descriptor of descriptors) await conn.query('INSERT INTO rh_face_descriptors (employee_id, descriptor, created_by) VALUES (?, ?, ?)', [employeeId, JSON.stringify(descriptor), userId || null]);
+    await conn.query('UPDATE rh_employees SET face_consent_at = NOW() WHERE id=?', [employeeId]);
+    return descriptors.length;
+  });
+}
+
+async function deleteFaceDescriptors(employeeId) {
+  return withTransaction(async (conn) => {
+    const [result] = await conn.query('DELETE FROM rh_face_descriptors WHERE employee_id=?', [employeeId]);
+    await conn.query('UPDATE rh_employees SET face_consent_at = NULL WHERE id=?', [employeeId]);
+    return result.affectedRows;
+  });
 }
 
 async function listMyAttendance(employeeId, { page = 1, limit = 31, offset = 0 } = {}) {
@@ -338,11 +381,13 @@ async function deleteEmployee(id) {
     const [[employee]] = await conn.query('SELECT * FROM rh_employees WHERE id=? FOR UPDATE', [id]);
     if (!employee) return null;
     const [documents] = await conn.query('SELECT stored_name FROM rh_employee_documents WHERE employee_id=?', [id]);
+    const [photos] = await conn.query('SELECT check_in_photo, check_out_photo FROM rh_attendance WHERE employee_id=?', [id]);
     for (const table of ['rh_employee_documents', 'rh_evaluations', 'rh_leave_balances', 'rh_leave_requests', 'rh_attendance', 'rh_payroll']) {
       await conn.query(`DELETE FROM ${table} WHERE employee_id=?`, [id]);
     }
     await conn.query('DELETE FROM rh_employees WHERE id=?', [id]);
-    return { employee, storedNames: documents.map((doc) => doc.stored_name) };
+    // Les signatures faciales partent avec la fiche (ON DELETE CASCADE).
+    return { employee, storedNames: documents.map((doc) => doc.stored_name), attendancePhotos: photos.flatMap((p) => [p.check_in_photo, p.check_out_photo]).filter(Boolean) };
   });
 }
 
@@ -413,4 +458,4 @@ async function setDepartmentBudget(department, monthlyBudget, userId) {
   return { department: row.department, monthly_budget: Number(row.monthly_budget) };
 }
 
-module.exports = { findPayslip, listDocuments, createDocument, findDocument, deleteDocument, listEvaluations, listDepartmentBudgets, setDepartmentBudget, findEmployeeWithPresence, employees, evaluations, listEmployees, dashboard, listLeaveRequests, createLeaveRequest, updateLeaveStatus, listAttendance, checkIn, checkOut, listMyAttendance, generatePayroll, listPayroll, updatePayroll, syncEmployeePayrollSnapshot, transitionPayroll, deletePayroll, deleteEmployee, monthBounds, findEmployeeByUserId, createOrLinkEmployeeFromUser };
+module.exports = { todayAttendance, findAttendancePhoto, listFaceSamples, replaceFaceDescriptors, deleteFaceDescriptors, findPayslip, listDocuments, createDocument, findDocument, deleteDocument, listEvaluations, listDepartmentBudgets, setDepartmentBudget, findEmployeeWithPresence, employees, evaluations, listEmployees, dashboard, listLeaveRequests, createLeaveRequest, updateLeaveStatus, listAttendance, checkIn, checkOut, listMyAttendance, generatePayroll, listPayroll, updatePayroll, syncEmployeePayrollSnapshot, transitionPayroll, deletePayroll, deleteEmployee, monthBounds, findEmployeeByUserId, createOrLinkEmployeeFromUser };

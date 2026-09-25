@@ -56,4 +56,8 @@ const rhDocumentUpload = multer({
   },
 });
 
-module.exports = { upload, UPLOAD_DIR, rhDocumentUpload, RH_DOCUMENTS_DIR };
+// Photos prises au pointage par reconnaissance faciale : privées comme les pièces RH.
+const RH_ATTENDANCE_PHOTOS_DIR = path.join(__dirname, '..', 'private_uploads', 'rh_attendance_photos');
+if (!fs.existsSync(RH_ATTENDANCE_PHOTOS_DIR)) fs.mkdirSync(RH_ATTENDANCE_PHOTOS_DIR, { recursive: true });
+
+module.exports = { upload, UPLOAD_DIR, rhDocumentUpload, RH_DOCUMENTS_DIR, RH_ATTENDANCE_PHOTOS_DIR };
