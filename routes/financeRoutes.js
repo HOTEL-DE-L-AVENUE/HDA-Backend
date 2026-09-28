@@ -22,6 +22,7 @@ router.get('/clients/:clientId/statement', ctrl.clientStatementHandler); // GET 
 router.get('/summary', ctrl.financialSummaryHandler);                   // GET /api/finance/summary
 router.get('/reports/monthly', reportingCtrl.monthlyBreakdownHandler);  // GET /api/finance/reports/monthly?department=hotel&year=2026
 router.get('/reports/monthly/:department/:year/:month', reportingCtrl.departmentMonthHandler); // GET /api/finance/reports/monthly/hotel/2026/11
+router.get('/reports/period', reportingCtrl.periodBreakdownHandler);
 router.post('/transactions', cashierRoles, ctrl.createFinancialTransactionHandler);   // POST /api/finance/transactions
 router.get('/transactions', ctrl.listFinancialTransactionsHandler);
 router.use('/transactions', managementRoles, createCrudRouter(ctrl.financialTransactionsCrud));
