@@ -17,6 +17,15 @@ const pool = mysql.createPool({
   dateStrings: true,
 });
 
+// Fuseau horaire des NOW() / CURDATE() de MySQL (heures de pointage, dates du jour).
+// Un serveur hébergé est souvent en UTC : 3 h de moins qu'à Madagascar. Mettre par
+// exemple DB_TIMEZONE=+03:00 dans .env pour aligner MySQL sur l'heure locale.
+if (process.env.DB_TIMEZONE) {
+  pool.pool.on('connection', (connection) => {
+    connection.query('SET time_zone = ?', [process.env.DB_TIMEZONE]);
+  });
+}
+
 // Vérification de la connexion au démarrage
 async function checkConnection() {
   const conn = await pool.getConnection();
