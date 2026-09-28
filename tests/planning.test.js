@@ -40,24 +40,39 @@ test('daily planning is saved and loaded by date and category', async () => {
     const saved = await planning.saveDailyPlanning({
       date: '2026-09-25',
       category: 'Videur',
-      assignments: [{ slot: 1, employeeId: 4, employeeName: 'Alex Martin', schedule: '19:00 – 05:00' }],
+      assignments: [
+        { slot: 1, employeeId: 4, employeeName: 'Alex Martin', schedule: '19:00 – 00:00' },
+        { slot: 2, employeeId: null, employeeName: 'Sam Dupont', schedule: 'OFF' },
+      ],
       userId: 7,
     });
     assert.deepEqual(saved, {
       date: '2026-09-25',
       category: 'Videur',
-      assignments: [{ slot: 1, employeeId: 4, employeeName: 'Alex Martin', schedule: '19:00 – 05:00' }],
+      assignments: [
+        { slot: 1, employeeId: 4, employeeName: 'Alex Martin', schedule: '19:00 – 00:00' },
+        { slot: 2, employeeId: null, employeeName: 'Sam Dupont', schedule: 'OFF' },
+      ],
     });
     const defaultSchedule = await planning.saveDailyPlanning({
       date: '2026-09-26',
       category: 'Videur',
-      assignments: [{ slot: 1, employeeName: 'Sam Dupont' }],
+      assignments: [
+        { slot: 1, employeeName: 'Sam Dupont' },
+        { slot: 2, employeeName: 'Lina Martin', schedule: '' },
+      ],
     });
     assert.equal(defaultSchedule.assignments[0].schedule, '00:00 – 00:00');
+    assert.equal(defaultSchedule.assignments[1].schedule, '');
+    rowsByKey.set('2026-09-28:Videur', [{ slot: 1, employeeId: null, employeeName: 'Sam Dupont', schedule: '19:05 – 02:30' }]);
+    assert.deepEqual(await planning.getDailyPlanning('2026-09-28', 'Videur'), {
+      date: '2026-09-28', category: 'Videur',
+      assignments: [{ slot: 1, employeeId: null, employeeName: 'Sam Dupont', schedule: '19:05 – 02:30' }],
+    });
     await assert.rejects(planning.saveDailyPlanning({
       date: '2026-09-27',
       category: 'Videur',
-      assignments: [{ slot: 1, employeeName: 'Sam Dupont', schedule: '10:75 – 12:00' }],
+      assignments: [{ slot: 1, employeeName: 'Sam Dupont', schedule: '25:00 – 00:00' }],
     }), { status: 400 });
     assert.deepEqual(await planning.getDailyPlanning('2026-09-25', 'Bar'), {
       date: '2026-09-25', category: 'Bar', assignments: [],
