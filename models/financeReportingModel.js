@@ -161,7 +161,86 @@ async function departmentMonthSummary({ department, year, month }) {
   return { ...bucket, solde: bucket.ca - bucket.charges };
 }
 
+async function periodDepartmentBreakdown({ period, department, startDate, endDate }) {
+  const normalisedDepartment = department ? normaliseModule(department) : undefined;
+  if (department && !normalisedDepartment) {
+    throw new Error(`Département inconnu: "${department}" (attendus: ${DEPARTMENTS.join(', ')})`);
+  }
+  if (!['daily', 'weekly'].includes(period)) throw new Error('period doit être daily ou weekly');
+
+  const periodStart = period === 'daily'
+    ? (column) => `DATE(${column})`
+    : (column) => `DATE_SUB(DATE(${column}), INTERVAL WEEKDAY(${column}) DAY)`;
+  const periodEnd = period === 'daily'
+    ? (column) => `DATE(${column})`
+    : (column) => `DATE_ADD(${periodStart(column)}, INTERVAL 6 DAY)`;
+  const dateFilter = (column) => `${column} >= ? AND ${column} < DATE_ADD(?, INTERVAL 1 DAY)`;
+  const keyFor = (module, start) => `${module}|${start}`;
+  const buckets = new Map();
+  const getBucket = (module, start, end) => {
+    const key = keyFor(module, start);
+    if (!buckets.has(key)) buckets.set(key, { department: module, start_date: start, end_date: end, ca: 0, charges: 0 });
+    return buckets.get(key);
+  };
+
+  const [orders] = await pool.query(
+    `SELECT source_module AS module, DATE_FORMAT(${periodStart('created_at')}, '%Y-%m-%d') AS period_start,
+            DATE_FORMAT(${periodEnd('created_at')}, '%Y-%m-%d') AS period_end, COALESCE(SUM(montant_total), 0) AS montant
+     FROM orders
+     WHERE UPPER(COALESCE(statut, '')) IN ('PAYEE', 'PAYE')
+       AND UPPER(COALESCE(source_module, '')) <> 'BAR'
+       AND created_at IS NOT NULL AND ${dateFilter('created_at')}
+     GROUP BY source_module, ${periodStart('created_at')}, ${periodEnd('created_at')}`,
+    [startDate, endDate]
+  );
+  orders.forEach((row) => {
+    const module = normaliseModule(row.module);
+    if (module) getBucket(module, row.period_start, row.period_end).ca += Number(row.montant) || 0;
+  });
+
+  const [ledger] = await pool.query(
+    `SELECT UPPER(module) AS module, type_flux, DATE_FORMAT(${periodStart('created_at')}, '%Y-%m-%d') AS period_start,
+            DATE_FORMAT(${periodEnd('created_at')}, '%Y-%m-%d') AS period_end, COALESCE(SUM(montant), 0) AS montant
+     FROM financial_transactions
+     WHERE UPPER(module) IN ('HEBERGEMENT', 'HOTEL', 'CASINO', 'BAR')
+       AND created_at IS NOT NULL AND ${dateFilter('created_at')}
+     GROUP BY UPPER(module), type_flux, ${periodStart('created_at')}, ${periodEnd('created_at')}`,
+    [startDate, endDate]
+  );
+  ledger.forEach((row) => {
+    const module = normaliseModule(row.module);
+    if (!module) return;
+    const bucket = getBucket(module, row.period_start, row.period_end);
+    const flux = String(row.type_flux || '').toUpperCase();
+    if (flux.startsWith('ENTREE')) bucket.ca += Number(row.montant) || 0;
+    else if (module !== 'hotel' && flux.startsWith('SORTIE')) bucket.charges += Number(row.montant) || 0;
+  });
+
+  const [stockMovements] = await pool.query(
+    `SELECT sl.nom AS module, DATE_FORMAT(${periodStart('sm.created_at')}, '%Y-%m-%d') AS period_start,
+            DATE_FORMAT(${periodEnd('sm.created_at')}, '%Y-%m-%d') AS period_end,
+            COALESCE(SUM(sm.quantite * COALESCE(p.prix_achat, 0)), 0) AS montant
+     FROM stock_movements sm
+     JOIN products p ON p.id = sm.product_id
+     JOIN stock_locations sl ON sl.id = sm.location_id
+     WHERE UPPER(sm.type_mouvement) = 'SORTIE'
+       AND sm.created_at IS NOT NULL AND ${dateFilter('sm.created_at')}
+     GROUP BY sl.id, sl.nom, ${periodStart('sm.created_at')}, ${periodEnd('sm.created_at')}`,
+    [startDate, endDate]
+  );
+  stockMovements.forEach((row) => {
+    const module = normaliseModule(row.module);
+    if (module) getBucket(module, row.period_start, row.period_end).charges += Number(row.montant) || 0;
+  });
+
+  return [...buckets.values()]
+    .filter((row) => !normalisedDepartment || row.department === normalisedDepartment)
+    .map((row) => ({ ...row, solde: row.ca - row.charges }))
+    .sort((a, b) => a.department.localeCompare(b.department) || a.start_date.localeCompare(b.start_date));
+}
+
 module.exports = {
   monthlyDepartmentBreakdown,
   departmentMonthSummary,
+  periodDepartmentBreakdown,
 };

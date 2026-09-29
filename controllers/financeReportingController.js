@@ -28,4 +28,28 @@ async function departmentMonthHandler(req, res) {
   }
 }
 
-module.exports = { monthlyBreakdownHandler, departmentMonthHandler };
+async function periodBreakdownHandler(req, res) {
+  const { period, department, startDate, endDate } = req.query;
+  const isValidDate = (value) => {
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const date = new Date(`${value}T00:00:00.000Z`);
+    return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+  };
+  if (!['daily', 'weekly'].includes(period)) throw ApiError.badRequest('period doit être daily ou weekly');
+  if (!isValidDate(startDate) || !isValidDate(endDate) || startDate > endDate) {
+    throw ApiError.badRequest('startDate et endDate doivent être des dates valides au format AAAA-MM-JJ');
+  }
+  try {
+    const rows = await reporting.periodDepartmentBreakdown({
+      period,
+      department: department || undefined,
+      startDate,
+      endDate,
+    });
+    return ok(res, rows);
+  } catch (err) {
+    throw ApiError.badRequest(err.message);
+  }
+}
+
+module.exports = { monthlyBreakdownHandler, departmentMonthHandler, periodBreakdownHandler };

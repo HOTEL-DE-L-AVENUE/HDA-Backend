@@ -3,7 +3,17 @@ const ApiError = require('../utils/ApiError');
 
 const categories = ['Videur', 'Femme de ménage', 'Agents d’accueil', 'Bar', 'Restaurant', 'Poker'];
 const DEFAULT_SCHEDULE = '00:00 – 00:00';
-const SCHEDULE_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d – (?:[01]\d|2[0-3]):[0-5]\d$/;
+const SCHEDULE_PATTERN = /^(?:|OFF|(?:[01]\d|2[0-3]):[0-5]\d – (?:[01]\d|2[0-3]):[0-5]\d)$/;
+const INPUT_SCHEDULE_PATTERN = /^((?:[01]\d|2[0-3]):[0-5]\d)(?:\s*[–-]\s*((?:[01]\d|2[0-3]):[0-5]\d))?$/;
+
+function normalizeSchedule(value) {
+  if (value == null) return DEFAULT_SCHEDULE;
+  const schedule = String(value).trim();
+  if (!schedule) return '';
+  if (schedule.toUpperCase() === 'OFF') return 'OFF';
+  const match = INPUT_SCHEDULE_PATTERN.exec(schedule);
+  return match ? `${match[1]} – ${match[2] || '00:00'}` : schedule;
+}
 let schemaReady;
 
 async function ensurePlanningTable() {
@@ -49,7 +59,7 @@ function normalizeAssignments(value) {
   return value.map((entry) => {
     const slot = Number(entry?.slot);
     const employeeName = String(entry?.employeeName || '').trim();
-    const schedule = String(entry?.schedule || '').trim() || DEFAULT_SCHEDULE;
+    const schedule = normalizeSchedule(entry?.schedule);
     const employeeId = entry?.employeeId == null || entry.employeeId === '' ? null : Number(entry.employeeId);
     if (!Number.isInteger(slot) || slot < 1 || slot > 50 || slots.has(slot)) throw ApiError.badRequest('Un numéro de ligne est invalide ou dupliqué.');
     if (!employeeName || employeeName.length > 160) throw ApiError.badRequest('Le nom du personnel est invalide.');
@@ -61,8 +71,11 @@ function normalizeAssignments(value) {
 }
 
 function parseAssignments(value) {
-  if (Array.isArray(value)) return value;
-  try { return JSON.parse(value || '[]'); } catch { return []; }
+  let assignments = value;
+  if (!Array.isArray(assignments)) {
+    try { assignments = JSON.parse(value || '[]'); } catch { assignments = []; }
+  }
+  return Array.isArray(assignments) ? assignments.map((entry) => ({ ...entry, schedule: normalizeSchedule(entry?.schedule) })) : [];
 }
 
 async function getDailyPlanning(dateValue, categoryValue) {
