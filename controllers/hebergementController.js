@@ -1,5 +1,6 @@
 // controllers/hebergementController.js
 const heb = require('../models/hebergementModel');
+const hotelReport = require('../models/hotelReport.model');
 const stock = require('../models/stockModel');
 const { createCrudController } = require('./controllerFactory');
 const ApiError = require('../utils/ApiError');
@@ -611,6 +612,45 @@ async function deleteHebergementStockHandler(req, res) {
   }
 }
 
+// --- Rapport journalier Hotel (situation des chambres durant la nuitee) ---
+
+async function getHotelDailyReportHandler(req, res) {
+  return ok(res, await hotelReport.getHotelReport(req.params.date));
+}
+
+async function listHotelDailyReportsHandler(req, res) {
+  const { start_date, end_date, limit } = req.query || {};
+  const reports = await hotelReport.listHotelReports({
+    startDate: start_date,
+    endDate: end_date,
+    limit,
+  });
+  return ok(res, reports);
+}
+
+async function saveHotelDailyReportHandler(req, res) {
+  const { reportDate, heureDebut, heureFin, receptionniste, rooms, observations, metrics, autoState } = req.body || {};
+  const report = await hotelReport.saveHotelReport({
+    reportDate,
+    heureDebut,
+    heureFin,
+    receptionniste,
+    rooms,
+    observations,
+    metrics,
+    autoState,
+    createdBy: req.user?.id_admin ?? null,
+  });
+  return ok(res, report);
+}
+
+async function deleteHotelDailyReportHandler(req, res) {
+  if (!isAdmin(req)) {
+    throw ApiError.forbidden('Seul un administrateur peut supprimer un rapport journalier.');
+  }
+  return ok(res, await hotelReport.deleteHotelReport(req.params.date));
+}
+
 module.exports = {
   roomTypesCrud, roomsCrud, equipmentsCrud, roomEquipmentsCrud, roomMaintenanceCrud, maintenanceWorkersCrud,
   roomMinibarCrud, roomStatusHistoryCrud, reservationsCrud, reservationGuestsCrud,
@@ -623,4 +663,5 @@ module.exports = {
   transferStockToMinibarHandler, handleMinibarConsumptionHandler, getMinibarWithAlertsHandler, restockMinibarHandler, getLowStockMinibarHandler,
   getHebergementStockHandler, addHebergementStockHandler, updateHebergementStockHandler, deleteHebergementStockHandler,
   getHotelHistoryHandler, getUsersHandler,
+  getHotelDailyReportHandler, listHotelDailyReportsHandler, saveHotelDailyReportHandler, deleteHotelDailyReportHandler,
 };
