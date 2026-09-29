@@ -59,6 +59,12 @@ router.get('/minibar/alerts', ctrl.getMinibarWithAlertsHandler);                
 router.get('/minibar/low-stock', ctrl.getLowStockMinibarHandler);               // GET /api/hebergement/minibar/low-stock
 router.post('/minibar/restock', ctrl.restockMinibarHandler);                    // POST /api/hebergement/minibar/restock
 
+// Rapport journalier Hôtel — situation des chambres durant la nuitée
+router.get('/daily-reports', ctrl.listHotelDailyReportsHandler);                 // GET /api/hebergement/daily-reports?start_date=&end_date=&limit=
+router.get('/daily-reports/:date', ctrl.getHotelDailyReportHandler);             // GET /api/hebergement/daily-reports/2026-09-27
+router.post('/daily-reports', ctrl.saveHotelDailyReportHandler);                 // POST /api/hebergement/daily-reports
+router.delete('/daily-reports/:date', ctrl.deleteHotelDailyReportHandler);       // DELETE /api/hebergement/daily-reports/2026-09-27 (admin)
+
 // Accommodation stock management routes
 router.get('/stock', ctrl.getHebergementStockHandler);                           // GET /api/hebergement/stock
 router.post('/stock', ctrl.addHebergementStockHandler);                          // POST /api/hebergement/stock
