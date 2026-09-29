@@ -6,6 +6,7 @@ const barProductModel = require('../models/barProduct.model');
 const { addTransaction } = require('../models/barTransaction.model');
 const { getBarReport, saveBarReport } = require('../models/barReport.model');
 const { listBarOrders, listBarHistory, createBarOrder, updateBarOrder, deleteBarOrder, updateBarOrderStatus, closeAllBarOrders } = require('../models/barOrder.model');
+const { getProductHistory } = require('../models/barProductHistory.model');
 const { createCrudController } = require('./controllerFactory');
 const ApiError = require('../utils/ApiError');
 const { ok, created } = require('../utils/apiResponse');
@@ -20,7 +21,6 @@ const tablesCrud = {
 const cashiersCrud = createCrudController(BarCashiers, { filterable: ['statut'] });
 const sessionsCrud = createCrudController(BarSessions, { filterable: ['cashier_id', 'user_id'] });
 
-// Surcharge de productsCrud pour forcer l'utilisation de getBarProductsWithStock
 const productsCrud = {
   ...createCrudController(barProductModel.barProducts, { filterable: ['categorie', 'alcool'] }),
   list: async (req, res) => {
@@ -185,6 +185,12 @@ async function saveBarReportHandler(req, res) {
   return ok(res, report);
 }
 
+async function getProductHistoryHandler(req, res) {
+  const { dateFrom, dateTo, productName } = req.query;
+  const history = await getProductHistory({ dateFrom, dateTo, productName });
+  return ok(res, history);
+}
+
 function normalizeBarOrderRequest(body = {}) {
   const { client, table, nombre_personnes, moyen_paiement, observation, items, hotel_reservation_id, room_id, room_guest_name, room_account_paid } = body;
   const safeTableValue = Number(table);
@@ -299,6 +305,8 @@ module.exports = {
   currentSessionHandler, getBarStockHandler,
   addBarStockHandler, updateBarStockHandler, deleteBarStockHandler,
   addTransactionHandler, latestTransactionsByProductHandler, listTransactionsHandler,
-  listBarOrdersHandler, listBarHistoryHandler, getBarReportHandler, saveBarReportHandler, createBarOrderHandler, updateBarOrderHandler, deleteBarOrderHandler, updateBarOrderStatusHandler, closeAllBarOrdersHandler,
+  listBarOrdersHandler, listBarHistoryHandler, getBarReportHandler, saveBarReportHandler,
+  getProductHistoryHandler,
+  createBarOrderHandler, updateBarOrderHandler, deleteBarOrderHandler, updateBarOrderStatusHandler, closeAllBarOrdersHandler,
   normalizeBarOrderRequest,
 };
