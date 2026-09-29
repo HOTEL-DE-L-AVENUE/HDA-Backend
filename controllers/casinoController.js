@@ -757,7 +757,7 @@ exports.searchClientHandler = async (req, res, next) => {
     const [rows] = await pool.query(
       `SELECT id, code_client, nom, prenom, telephone, is_casino_player, statut
          FROM clients
-        WHERE nom LIKE ? OR prenom LIKE ? OR telephone LIKE ? OR code_client LIKE ?
+        WHERE deleted_at IS NULL AND (nom LIKE ? OR prenom LIKE ? OR telephone LIKE ? OR code_client LIKE ?)
         ORDER BY nom LIMIT 20`,
       [like, like, like, like]
     );

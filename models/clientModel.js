@@ -117,7 +117,7 @@ async function search(term, limit = 20) {
   const like = `%${term}%`;
   const [rows] = await pool.query(
     `SELECT * FROM clients
-     WHERE nom LIKE ? OR prenom LIKE ? OR code_client LIKE ? OR telephone LIKE ? OR email LIKE ?
+     WHERE deleted_at IS NULL AND (nom LIKE ? OR prenom LIKE ? OR code_client LIKE ? OR telephone LIKE ? OR email LIKE ?)
      ORDER BY nom ASC LIMIT ?`,
     [like, like, like, like, like, limit]
   );
