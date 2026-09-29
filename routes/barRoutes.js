@@ -58,6 +58,10 @@ router.use('/sessions', managementRoles, createCrudRouter(ctrl.sessionsCrud));
 router.get('/history', adminOnly, ctrl.listBarHistoryHandler);
 router.get('/reports/:date', ctrl.getBarReportHandler);
 router.post('/reports', orderRoles, ctrl.saveBarReportHandler);
+
+// Historique produits (admin uniquement)
+router.get('/product-history', adminOnly, ctrl.getProductHistoryHandler);
+
 router.get('/orders', ctrl.listBarOrdersHandler);
 router.post('/orders', orderRoles, ctrl.createBarOrderHandler);
 router.put('/orders/:id', orderRoles, ctrl.updateBarOrderHandler);
