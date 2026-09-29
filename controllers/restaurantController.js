@@ -7,6 +7,7 @@ const { pool, withTransaction } = require('../config/db');
 const stock = require('../models/stockModel');
 const PDFDocument = require('pdfkit');
 const { getRestaurantReport, saveRestaurantReport } = require('../models/restaurantReport.model');
+const { getProductHistory } = require('../models/restaurantProductHistory.model');
 
 // Simple HTML escaper for values interpolated into the invoice template
 function escapeHtml(input) {
@@ -36,6 +37,13 @@ async function saveRestaurantReportHandler(req, res) {
     createdBy: req.user?.id_admin ?? null,
   }));
 }
+
+async function getProductHistoryHandler(req, res) {
+  const { dateFrom, dateTo, productName } = req.query;
+  const history = await getProductHistory({ dateFrom, dateTo, productName });
+  return ok(res, history);
+}
+
 const orderItemsCrud = createCrudController(resto.OrderItems, { filterable: ['order_id', 'product_id'] });
 // Recipes removed: feature deprecated
 const cashiersCrud = createCrudController(resto.RestaurantCashiers, { filterable: ['statut'] });
@@ -76,12 +84,10 @@ const productsCrud = {
 };
 
 async function createOrderHandler(req, res) {
-  // Debug: log incoming payload to help diagnose 400 errors from frontend
   console.debug('[restaurant] createOrderHandler body:', JSON.stringify(req.body));
   const { client_id, table_id, items, notes, location_type, special_person_name } = req.body;
   if (!items || !items.length) throw ApiError.badRequest('items requis (au moins une ligne)');
 
-  // Validate referenced entities to return clearer 400 errors instead of DB foreign-key messages
   try {
     if (client_id) {
       const [[client]] = await pool.query('SELECT id FROM clients WHERE id = ? LIMIT 1', [client_id]);
@@ -101,9 +107,7 @@ async function createOrderHandler(req, res) {
     const missing = productIds.filter((id) => !foundIds.has(id));
     if (missing.length) throw ApiError.badRequest(`product_id introuvable: ${missing.join(',')}`);
   } catch (err) {
-    // If it's an ApiError, rethrow so middleware returns the proper 400
     if (err instanceof ApiError) throw err;
-    // Log unexpected SQL errors and return a generic bad request
     console.error('[restaurant] validation error', err);
     throw ApiError.badRequest('Données de référence invalides');
   }
@@ -142,7 +146,6 @@ async function orderDetailHandler(req, res) {
   return ok(res, order);
 }
 
-// Return a simple printable HTML invoice for an order
 async function orderInvoiceHandler(req, res) {
   const order = await resto.orderWithItems(req.params.id);
   if (!order) throw ApiError.notFound(`Commande #${req.params.id} introuvable`);
@@ -159,7 +162,6 @@ async function orderInvoiceHandler(req, res) {
   const date = order.created_at ? new Date(order.created_at).toLocaleString() : '';
   const tableNum = order.table_numero || '';
 
-  // Build a compact, table-focused HTML invoice (Bar-style)
   const rowsHtml = rows
     .map((r, idx) => {
       const qty = Number(r.quantite || 0);
@@ -241,7 +243,6 @@ async function orderInvoiceHandler(req, res) {
   return res.send(html);
 }
 
-// Generate and return PDF invoice for an order (attachment)
 async function orderInvoicePdfHandler(req, res) {
   const order = await resto.orderWithItems(req.params.id);
   if (!order) throw ApiError.notFound(`Commande #${req.params.id} introuvable`);
@@ -262,23 +263,18 @@ async function orderInvoicePdfHandler(req, res) {
   res.setHeader('Content-Disposition', `attachment; filename="facture_commande_${order.id}.pdf"`);
   doc.pipe(res);
 
-  // Simple layout constants
   const left = doc.page.margins.left;
   const right = doc.page.width - doc.page.margins.right;
   let y = 40;
 
-  // Header - company
   doc.font('Helvetica-Bold').fontSize(14).text("Hotel de L'avenue", left, y);
-  // Invoice meta on the right
   doc.fontSize(10).fillColor('#000').text(`Facture #${order.id}`, right - 150, y, { width: 150, align: 'right' });
   doc.fontSize(9).fillColor('#444').text(`${date}`, right - 150, y + 16, { width: 150, align: 'right' });
   y += 36;
 
-  // Draw a thin separator
   doc.moveTo(left, y).lineTo(right, y).lineWidth(0.5).strokeColor('#cccccc').stroke();
   y += 8;
 
-  // Client block
   if (client) {
     doc.font('Helvetica-Bold').fontSize(10).fillColor('#000').text('Client:', left, y);
     doc.font('Helvetica').fontSize(9).fillColor('#000').text(`${client.nom || client.name || ''} ${client.prenom || ''}`, left + 50, y);
@@ -287,19 +283,16 @@ async function orderInvoicePdfHandler(req, res) {
   } else {
     doc.font('Helvetica').fontSize(9).fillColor('#000').text('Client: (non renseigné)', left, y);
   }
-  // Order status on right of client block
   doc.font('Helvetica-Bold').fontSize(9).fillColor('#000').text('Statut:', right - 150, y);
   doc.font('Helvetica').fontSize(9).fillColor('#000').text(`${order.statut || ''}`, right - 90, y);
   y += 40;
 
-  // Notes block if present
   if (order.notes) {
     doc.font('Helvetica-Bold').fontSize(9).fillColor('#000').text('Notes:', left, y);
     doc.font('Helvetica').fontSize(9).fillColor('#000').text(order.notes, left + 50, y, { width: right - left - 50 });
     y += 24;
   }
 
-  // Table header
   const col = {
     no: left + 2,
     desc: left + 40,
@@ -309,7 +302,6 @@ async function orderInvoicePdfHandler(req, res) {
   };
   const rowHeight = 20;
 
-  // Header background
   doc.rect(left, y - 4, right - left, rowHeight).fill('#f3f4f6').fillColor('#000');
   doc.font('Helvetica-Bold').fontSize(9).fillColor('#000');
   doc.text('#', col.no, y, { width: 30, align: 'left' });
@@ -320,14 +312,12 @@ async function orderInvoicePdfHandler(req, res) {
   y += rowHeight + 2;
 
   doc.font('Helvetica').fontSize(9).fillColor('#000');
-  // Rows with separators
   rows.forEach((r, idx) => {
     const qty = Number(r.quantite || 0);
     const pu = Number(r.prix_unitaire || 0);
     const lineTotal = (qty * pu).toFixed(2);
     const cuisson = r.cuisson ? ` (${r.cuisson})` : '';
 
-    // Check for page break
     if (y > doc.page.height - 80) {
       doc.addPage();
       y = 40;
@@ -339,13 +329,11 @@ async function orderInvoicePdfHandler(req, res) {
     doc.text(pu.toFixed(2), col.pu, y, { width: 60, align: 'right' });
     doc.text(lineTotal, col.amount, y, { width: 80, align: 'right' });
 
-    // separator line
     y += rowHeight - 4;
     doc.moveTo(left, y).lineTo(right, y).lineWidth(0.4).strokeColor('#e2e8f0').stroke();
     y += 6;
   });
 
-  // Totals box (right aligned)
   if (y > doc.page.height - 120) {
     doc.addPage();
     y = 40;
@@ -367,8 +355,6 @@ async function ordersInProgressHandler(req, res) {
   const rows = await resto.ordersByTable(req.query.statut || 'EN_COURS');
   return ok(res, rows);
 }
-
-// Recipe handlers removed
 
 async function restaurantStockHandler(req, res) {
   const [rows] = await pool.query(
@@ -431,8 +417,6 @@ async function adjustRestaurantStockHandler(req, res) {
   return ok(res, { newQty: Number(rows[0].quantite) });
 }
 
-// Supprime une ligne de stock pour le restaurant. Accepte soit `id` (stocks.id),
-// soit `product_id` + `location_id` pour supprimer la ligne correspondante.
 async function removeRestaurantStockHandler(req, res) {
   const { id } = req.query || {};
   const productId = req.query && req.query.product_id ? Number(req.query.product_id) : null;
@@ -640,7 +624,6 @@ async function processPaymentHandler(req, res) {
     );
     if (!orderRow) throw ApiError.notFound(`Commande #${order_id} introuvable`);
 
-    // A retry or a double click must not create a second payment for one order.
     const [[existingPayment]] = await conn.query(
       'SELECT id, montant FROM payments WHERE order_id = ? ORDER BY id DESC LIMIT 1',
       [order_id]
@@ -790,6 +773,7 @@ const restaurantPurchaseDetailHandler = getRestaurantPurchaseByIdHandler;
 
 module.exports = {
   getRestaurantReportHandler, saveRestaurantReportHandler,
+  getProductHistoryHandler,
   tablesCrud, ordersCrud, orderItemsCrud, cashiersCrud, sessionsCrud, productsCrud,
   createOrderHandler, updateOrderHandler, orderDetailHandler, orderInvoiceHandler, ordersInProgressHandler,
   orderInvoicePdfHandler, closeAllRestaurantOrdersHandler,
