@@ -19,12 +19,15 @@ router.use('/locations', createCrudRouter(ctrl.stockLocationsCrud)); // Read-onl
 router.get('/alerts/low-stock', ctrl.lowStockHandler);            // GET /api/stock/alerts/low-stock?threshold=
 router.get('/products/:id/stock', ctrl.stockByProductHandler);    // GET /api/stock/products/:id/stock
 router.get('/stocks/with-products', ctrl.getProductsWithStockHandler); // GET /api/stock/stocks/with-products?location_id=
+router.delete('/stocks/:id', managementRoles, ctrl.deleteStockHandler);  // DELETE /api/stock/stocks/:id (custom handler for movement recording)
 router.post('/stocks', managementRoles, ctrl.createStockHandler);
 router.put('/stocks/:id', managementRoles, ctrl.updateStockHandler);
 router.use('/stocks', createCrudRouter(ctrl.stocksCrud));
 
 router.post('/movements', managementRoles, ctrl.movementHandler);                  // POST /api/stock/movements
-router.use('/movements', managementRoles, createCrudRouter(ctrl.stockMovementsCrud));
+// Product movement history endpoint (must be before generic movements router)
+router.get('/movements/history', ctrl.productMovementHistoryHandler);       // GET /api/stock/movements/history?product_id=&location_id=
+router.use('/movements', managementRoles, createCrudRouter(ctrl.stockMovementsCrud)); // Generic CRUD for movements
 
 router.post('/consume-portion', managementRoles, ctrl.consumePortionHandler);       // POST /api/stock/consume-portion
 

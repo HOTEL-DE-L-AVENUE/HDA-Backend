@@ -30,7 +30,7 @@ const RoomMaintenance = createCrudModel({
   fields: ['room_id', 'equipment_id', 'type_intervention', 'description', 'statut',
     'date_declaration', 'date_resolution', 'cout', 'created_by', 'location',
     'equipment_label', 'worker_id', 'execution_date', 'finish_date',
-    'materials_cost', 'labor_cost', 'total_cost'],
+    'materials_cost', 'labor_cost', 'total_cost', 'materials_used'],
   sortable: ['id', 'statut', 'date_declaration'],
 });
 
@@ -302,7 +302,7 @@ const Stays = createCrudModel({
 
 const HousekeepingTasks = createCrudModel({
   table: 'housekeeping_tasks', pk: 'id',
-  fields: ['room_id', 'assigned_user_id', 'type_tache', 'statut', 'commentaire', 'planned_at', 'completed_at'],
+  fields: ['room_id', 'assigned_user_id', 'type_tache', 'statut', 'commentaire', 'planned_at', 'completed_at', 'products_used'],
   sortable: ['id', 'statut', 'planned_at'],
 });
 
@@ -832,7 +832,9 @@ async function getEquipmentStats() {
 async function updateRoomEquipmentStatus(id, statut) {
   const [existing] = await pool.query('SELECT * FROM room_equipments WHERE id = ?', [id]);
   if (!existing[0]) throw new Error(`Équipement de chambre #${id} introuvable`);
+  
   await pool.query('UPDATE room_equipments SET statut = ? WHERE id = ?', [statut, id]);
+  
   const [updated] = await pool.query('SELECT * FROM room_equipments WHERE id = ?', [id]);
   return updated[0];
 }
@@ -858,16 +860,56 @@ async function getRoomStats() {
 }
 
 // Met à jour uniquement le statut d'une tâche de housekeeping
-async function updateHousekeepingStatus(id, statut) {
+async function updateHousekeepingStatus(id, statut, productsUsed = null) {
   const [existing] = await pool.query('SELECT * FROM housekeeping_tasks WHERE id = ?', [id]);
   if (!existing[0]) throw new Error(`Tâche de housekeeping #${id} introuvable`);
 
   const shouldCompleteNow = statut === 'TERMINE' && !existing[0].completed_at;
+  
   if (shouldCompleteNow) {
-    await pool.query(
-      'UPDATE housekeeping_tasks SET statut = ?, completed_at = NOW() WHERE id = ?',
-      [statut, id]
-    );
+    // Use transaction for status update + stock deduction
+    return await withTransaction(async (conn) => {
+      // Update status and completed_at
+      await conn.query(
+        'UPDATE housekeeping_tasks SET statut = ?, completed_at = NOW() WHERE id = ?',
+        [statut, id]
+      );
+
+      // Deduct stock if products are provided and not already deducted
+      if (productsUsed && Array.isArray(productsUsed) && productsUsed.length > 0 && !existing[0].stock_deducted_at) {
+        // Update products_used
+        await conn.query(
+          'UPDATE housekeeping_tasks SET products_used = ? WHERE id = ?',
+          [JSON.stringify(productsUsed), id]
+        );
+
+        // Record stock movements for each product
+        for (const item of productsUsed) {
+          if (item.product_id && item.quantity) {
+            await stockModel.recordMovement({
+              productId: item.product_id,
+              locationId: 5, // Hotel stock location
+              type: 'SORTIE',
+              quantite: item.quantity,
+              sourceModule: 'MENAGE',
+              referenceId: id,
+              motif: `Ménage - Tâche ${existing[0].type_tache}`,
+              allowNegative: false,
+              conn: conn // Use same transaction
+            });
+          }
+        }
+
+        // Mark stock as deducted
+        await conn.query(
+          'UPDATE housekeeping_tasks SET stock_deducted_at = NOW() WHERE id = ?',
+          [id]
+        );
+      }
+
+      const [updated] = await conn.query('SELECT * FROM housekeeping_tasks WHERE id = ?', [id]);
+      return updated[0];
+    });
   } else {
     await pool.query('UPDATE housekeeping_tasks SET statut = ? WHERE id = ?', [statut, id]);
   }

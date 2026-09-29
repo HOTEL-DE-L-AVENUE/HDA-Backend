@@ -1,6 +1,7 @@
 // models/stockModel.js
 const { pool, withTransaction } = require('../config/db');
 const { createCrudModel } = require('./crudFactory');
+const ApiError = require('../utils/ApiError');
 
 const Categories = createCrudModel({
   table: 'categories', pk: 'id', fields: ['nom'], sortable: ['id', 'nom'],
@@ -87,28 +88,62 @@ const PurchaseItems = createCrudModel({
 
 // Enregistre un mouvement de stock et met à jour la table `stocks` en conséquence.
 // type: 'ENTREE' | 'SORTIE' | 'AJUSTEMENT' (le signe de quantite peut aussi porter l'info)
-async function recordMovement({ productId, locationId, type, quantite, sourceModule, referenceId }) {
-  return withTransaction(async (conn) => {
+// New optional params: conn (use caller's transaction), motif, userId, allowNegative
+async function recordMovement({ productId, locationId, type, quantite, sourceModule, referenceId, conn = null, motif = null, userId = null, allowNegative = true }) {
+  const transactionFn = async (connection) => {
     const signedQty = type === 'SORTIE' ? -Math.abs(quantite) : Math.abs(quantite);
+    // For AJUSTEMENT, respect the sign of quantite directly
+    const effectiveSignedQty = type === 'AJUSTEMENT' ? Number(quantite) : signedQty;
 
-    const [stockRows] = await conn.query(
+    const [stockRows] = await connection.query(
       'SELECT * FROM stocks WHERE product_id = ? AND location_id = ? FOR UPDATE',
       [productId, locationId]
     );
+    
+    let newQuantity;
     if (stockRows[0]) {
-      await conn.query('UPDATE stocks SET quantite = quantite + ? WHERE id = ?', [signedQty, stockRows[0].id]);
+      newQuantity = Number(stockRows[0].quantite) + effectiveSignedQty;
+      
+      // Check for negative stock if not allowed
+      if (!allowNegative && newQuantity < 0) {
+        throw ApiError.badRequest(`Stock insuffisant : ${stockRows[0].quantite} disponible, ${Math.abs(effectiveSignedQty)} demandé`);
+      }
+      
+      await connection.query('UPDATE stocks SET quantite = quantite + ? WHERE id = ?', [effectiveSignedQty, stockRows[0].id]);
     } else {
-      await conn.query('INSERT INTO stocks (product_id, location_id, quantite) VALUES (?, ?, ?)', [productId, locationId, signedQty]);
+      newQuantity = effectiveSignedQty;
+      
+      // Check for negative stock if not allowed
+      if (!allowNegative && newQuantity < 0) {
+        throw ApiError.badRequest(`Stock insuffisant : 0 disponible, ${Math.abs(effectiveSignedQty)} demandé`);
+      }
+      
+      await connection.query('INSERT INTO stocks (product_id, location_id, quantite) VALUES (?, ?, ?)', [productId, locationId, newQuantity]);
     }
 
-    const [mv] = await conn.query(
-      `INSERT INTO stock_movements (product_id, location_id, type_mouvement, quantite, source_module, reference_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, NOW())`,
-      [productId, locationId, type, quantite, sourceModule || null, referenceId || null]
+    const [mv] = await connection.query(
+      `INSERT INTO stock_movements (product_id, location_id, type_mouvement, quantite, source_module, reference_id, created_at, stock_after, motif, user_id)
+       VALUES (?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?)`,
+      [productId, locationId, type, quantite, sourceModule || null, referenceId || null, newQuantity, motif, userId]
     );
-    const [row] = await conn.query('SELECT * FROM stock_movements WHERE id = ?', [mv.insertId]);
+    const [row] = await connection.query('SELECT * FROM stock_movements WHERE id = ?', [mv.insertId]);
     return row[0];
-  });
+  };
+
+  if (conn) {
+    return await transactionFn(conn);
+  } else {
+    return await withTransaction(transactionFn);
+  }
+}
+
+// Helper to get current stock quantity for a product at a location
+async function getStockQuantity(productId, locationId) {
+  const [rows] = await pool.query(
+    'SELECT quantite FROM stocks WHERE product_id = ? AND location_id = ?',
+    [productId, locationId]
+  );
+  return rows[0] ? Number(rows[0].quantite) : 0;
 }
 
 // Crée un achat fournisseur + ses lignes, et alimente le stock à réception.
@@ -216,5 +251,5 @@ async function consumePortion({ productId, locationId, portionSize, portionUnit,
 module.exports = {
   Categories, Subcategories, ProductTypes, Units, Products, StockLocations, Stocks, StockMovements,
   Suppliers, Purchases, PurchaseItems,
-  recordMovement, createPurchaseWithItems, lowStock, stockByProduct, getProductsWithStock, consumePortion,
+  recordMovement, createPurchaseWithItems, lowStock, stockByProduct, getProductsWithStock, consumePortion, getStockQuantity,
 };

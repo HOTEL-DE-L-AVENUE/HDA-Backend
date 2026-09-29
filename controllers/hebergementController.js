@@ -1,6 +1,7 @@
 // controllers/hebergementController.js
 const heb = require('../models/hebergementModel');
 const stock = require('../models/stockModel');
+const { withTransaction, pool } = require('../config/db');
 const { createCrudController } = require('./controllerFactory');
 const ApiError = require('../utils/ApiError');
 const { ok, created } = require('../utils/apiResponse');
@@ -11,38 +12,131 @@ function isAdmin(req) {
 
 const roomTypesCrud = createCrudController(heb.RoomTypes, {});
 const roomsCrud = createCrudController(heb.Rooms, { filterable: ['statut', 'room_type_id'] });
+
+// Custom delete handler for equipment to handle foreign key constraints
 const equipmentsCrud = createCrudController(heb.Equipments, { filterable: ['categorie'] });
+const equipmentsCrudRemove = equipmentsCrud.remove;
+equipmentsCrud.remove = async function(req, res, next) {
+  const { pool } = require('../config/db');
+  const id = req.params.id;
+  
+  // Check if equipment is referenced in room_maintenance
+  const [maintenanceRows] = await pool.query(
+    'SELECT COUNT(*) as count FROM room_maintenance WHERE equipment_id = ?',
+    [id]
+  );
+  
+  if (maintenanceRows[0].count > 0) {
+    return next(ApiError.conflict('Cet équipement est utilisé dans des maintenances. Veuillez d\'abord supprimer ou modifier les maintenances associées.'));
+  }
+  
+  // Proceed with normal delete
+  return await equipmentsCrudRemove(req, res, next);
+};
 
 async function createEquipmentHandler(req, res) {
   const data = { ...req.body };
+  console.log('Creating equipment:', data);
   const equipment = await heb.Equipments.create(data);
+  console.log('Equipment created with ID:', equipment.id);
   
-  // If equipment is consumable, automatically add to stock
-  if (data.is_consumable) {
-    try {
-      // Create a product in the products table for this equipment
-      const { pool } = require('../config/db');
-      const [productResult] = await pool.query(
-        `INSERT INTO products (nom, code, categorie, type_produit, prix_vente, actif) 
-         VALUES (?, ?, ?, 'CONSOMMABLE', 0, TRUE)`,
-        [data.nom, data.code || `EQ-${equipment.id}`, data.categorie || 'Équipement']
+  // Automatically add to stock for ALL equipment (both consumable and non-consumable)
+  try {
+    const { pool } = require('../config/db');
+    
+    // Find or create product for this equipment
+    let productId;
+    if (data.product_id) {
+      productId = data.product_id;
+      console.log('Using existing product_id:', productId);
+    } else {
+      // Check if a product already exists for this equipment by code
+      const [existingProducts] = await pool.query(
+        'SELECT id FROM products WHERE code = ?',
+        [data.code || `EQ-${equipment.id}`]
       );
       
-      // Add to hotel stock location (location_id = 5)
-      await pool.query(
-        `INSERT INTO stocks (product_id, location_id, quantite) 
-         VALUES (?, 5, ?) 
-         ON DUPLICATE KEY UPDATE quantite = quantite + VALUES(quantite)`,
-        [productResult.insertId, data.quantite || 1]
-      );
-    } catch (error) {
-      console.error('Error adding equipment to stock:', error);
-      // Don't fail the equipment creation if stock addition fails
+      if (existingProducts.length > 0) {
+        productId = existingProducts[0].id;
+        console.log('Found existing product by code:', productId);
+      } else {
+        // Create a product in the products table for this equipment
+        const [productResult] = await pool.query(
+          `INSERT INTO products (nom, code, type_produit, prix_vente, actif) 
+           VALUES (?, ?, ?, 0, TRUE)`,
+          [data.nom, data.code || `EQ-${equipment.id}`, data.is_consumable ? 'CONSOMMABLE' : 'PRODUIT_FINI']
+        );
+        productId = productResult.insertId;
+        console.log('Created new product with ID:', productId);
+      }
     }
+    
+    // Update equipment with product_id
+    await pool.query('UPDATE equipments SET product_id = ? WHERE id = ?', [productId, equipment.id]);
+    console.log('Updated equipment with product_id');
+    
+    // Use recordMovement to add to stock
+    await stock.recordMovement({
+      productId: productId,
+      locationId: 5, // Hotel stock location
+      type: 'ENTREE',
+      quantite: data.quantite || 1,
+      sourceModule: 'EQUIPEMENT',
+      referenceId: equipment.id,
+      motif: `Création équipement: ${data.nom}`,
+      userId: req.user?.id_admin || req.user?.id,
+      allowNegative: true
+    });
+    console.log('Stock movement recorded');
+  } catch (error) {
+    console.error('Error adding equipment to stock:', error);
+    // Don't fail the equipment creation if stock addition fails
   }
   
   return created(res, equipment);
 }
+
+async function updateEquipmentHandler(req, res) {
+  const id = req.params.id;
+  const data = { ...req.body };
+  
+  // Get current equipment to check quantity change
+  const [currentEquipment] = await pool.query('SELECT * FROM equipments WHERE id = ?', [id]);
+  if (!currentEquipment[0]) {
+    throw ApiError.notFound('Équipement introuvable');
+  }
+  
+  const oldQuantity = currentEquipment[0].quantite || 0;
+  const newQuantity = data.quantite || 0;
+  const quantityDiff = newQuantity - oldQuantity;
+  
+  // Update equipment
+  const updatedEquipment = await heb.Equipments.update(id, data);
+  
+  // If quantity changed, record stock movement
+  if (quantityDiff !== 0 && currentEquipment[0].product_id) {
+    try {
+      const movementType = quantityDiff > 0 ? 'ENTREE' : 'SORTIE';
+      await stock.recordMovement({
+        productId: currentEquipment[0].product_id,
+        locationId: 5,
+        type: movementType,
+        quantite: Math.abs(quantityDiff),
+        sourceModule: 'EQUIPEMENT',
+        referenceId: id,
+        motif: 'Modification équipement',
+        userId: req.user?.id_admin || req.user?.id,
+        allowNegative: true
+      });
+    } catch (error) {
+      console.error('Error recording stock movement for equipment update:', error);
+      // Don't fail the equipment update if stock movement fails
+    }
+  }
+  
+  return ok(res, updatedEquipment);
+}
+
 const roomEquipmentsCrud = createCrudController(heb.RoomEquipments, { filterable: ['room_id', 'statut'] });
 const roomMaintenanceCrud = createCrudController(heb.RoomMaintenance, { filterable: ['room_id', 'statut', 'type_intervention'] });
 const maintenanceWorkersCrud = createCrudController(heb.MaintenanceWorkers, { filterable: ['statut', 'specialite'] });
@@ -101,7 +195,66 @@ async function createMaintenanceHandler(req, res) {
   delete data.date_declaration;
   data.total_cost = Number(data.materials_cost || 0) + Number(data.labor_cost || 0);
   data.cout = data.total_cost;
-  if (!data.location || !data.type_intervention) throw ApiError.badRequest('Le lieu et le type d’intervention sont requis');
+  if (!data.location || !data.type_intervention) throw ApiError.badRequest('Le lieu et le type d\'intervention sont requis');
+  
+  console.log('Creating maintenance with materials_used:', data.materials_used);
+  
+  // Record stock movements if materials are used - do this in the same transaction as maintenance creation
+  if (data.materials_used && Array.isArray(data.materials_used) && data.materials_used.length > 0) {
+    console.log('Materials used detected, will record stock movements');
+    return await withTransaction(async (conn) => {
+      // Create maintenance record
+      const row = await heb.RoomMaintenance.create(data);
+      console.log('Maintenance created with ID:', row.id);
+      
+      // Check if materials_used column exists
+      try {
+        const [columns] = await conn.query(
+          "SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'room_maintenance' AND COLUMN_NAME = 'materials_used'"
+        );
+        const hasMaterialsUsed = columns.length > 0;
+        console.log('materials_used column exists:', hasMaterialsUsed);
+        
+        if (hasMaterialsUsed) {
+          await conn.query(
+            'UPDATE room_maintenance SET materials_used = ? WHERE id = ?',
+            [JSON.stringify(data.materials_used), row.id]
+          );
+          console.log('Materials saved to maintenance record');
+        }
+      } catch (err) {
+        console.error('Error checking/saving materials_used:', err);
+      }
+
+      // Record stock movements for each material using the same connection
+      for (const item of data.materials_used) {
+        if (item.product_id && item.quantity) {
+          console.log(`Recording movement for product ${item.product_id}, quantity ${item.quantity}`);
+          await stock.recordMovement({
+            productId: item.product_id,
+            locationId: 5, // Hotel stock location
+            type: 'SORTIE',
+            quantite: item.quantity,
+            sourceModule: 'MAINTENANCE',
+            referenceId: row.id,
+            motif: `${data.type_intervention}: ${data.description || data.location}`,
+            userId: req.user?.id_admin || req.user?.id,
+            allowNegative: false, // Prevent negative stock
+            conn: conn // Use the same transaction
+          });
+        }
+      }
+      console.log('All stock movements recorded');
+      
+      // Update room status if applicable
+      if (data.room_id) await heb.updateRoomStatus(data.room_id, 'MAINTENANCE');
+      
+      return created(res, row);
+    });
+  }
+  
+  // No materials used - simple creation
+  console.log('No materials used, creating maintenance without stock movements');
   const row = await heb.RoomMaintenance.create(data);
   if (data.room_id) await heb.updateRoomStatus(data.room_id, 'MAINTENANCE');
   return created(res, row);
@@ -302,10 +455,10 @@ async function roomStatsHandler(req, res) {
 }
 
 async function updateHousekeepingStatusHandler(req, res) {
-  const { statut } = req.body;
+  const { statut, products_used } = req.body;
   if (!statut) throw ApiError.badRequest('statut est requis');
   try {
-    const task = await heb.updateHousekeepingStatus(req.params.id, statut);
+    const task = await heb.updateHousekeepingStatus(req.params.id, statut, products_used);
     return ok(res, task);
   } catch (err) {
     throw ApiError.badRequest(err.message);
@@ -617,7 +770,7 @@ module.exports = {
   staysCrud, housekeepingCrud, lostAndFoundCrud, minibarConsumptionsCrud,
   availabilityHandler, availableRoomsHandler, updateRoomHandler, updateRoomTypeHandler, createReservationHandler, validateReservationDiscountHandler, reservationPaymentsHandler, createMaintenanceHandler, checkInHandler, checkOutHandler,
   updateMaintenanceStatusHandler, maintenanceStatsHandler, reservationStatsHandler,
-  updateRoomStatusHandler, equipmentByCodeHandler, equipmentCategoriesHandler, createEquipmentHandler,
+  updateRoomStatusHandler, equipmentByCodeHandler, equipmentCategoriesHandler, createEquipmentHandler, updateEquipmentHandler,
   equipmentStatsHandler, updateRoomEquipmentStatusHandler,
   roomStatsHandler, updateHousekeepingStatusHandler, housekeepingStatsHandler,
   transferStockToMinibarHandler, handleMinibarConsumptionHandler, getMinibarWithAlertsHandler, restockMinibarHandler, getLowStockMinibarHandler,
