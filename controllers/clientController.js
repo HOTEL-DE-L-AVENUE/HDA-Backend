@@ -11,6 +11,7 @@ const { renderClient, renderClientWithKyc, renderKyc } = require('../views/clien
 const ApiError = require('../utils/ApiError');
 const { ok, created } = require('../utils/apiResponse');
 const { pool } = require('../config/db');
+const { getPagination, getSort, buildWhere } = require('../utils/queryHelpers');
 
 const NIVEAUX_RISQUE = ['FAIBLE', 'MOYEN', 'ELEVE'];
 
@@ -154,56 +155,23 @@ async function deleteClientHandler(req, res) {
   const client = await Clients.findById(req.params.id);
   if (!client) throw ApiError.notFound(`Client #${req.params.id} introuvable`);
 
-  // Check for related records in ALL tables that reference clients.id
-  // Note: client_kyc has ON DELETE CASCADE and signatures has ON DELETE SET NULL, so they don't block deletion
-  const [
-    relatedReservations, relatedOrders, relatedPayments, relatedCasinoVisits,
-    relatedCasinoCards, relatedCasinoCashOps, relatedCasinoChipTx, relatedCasinoProfiles,
-    relatedCasinoCredits, relatedCasinoIncidents, relatedCasinoScores, relatedCasinoTableCaves,
-    relatedCasinoTableProlongations, relatedClientAccounts, relatedFinancialTx, relatedInvoices,
-    relatedLostAndFound, relatedLoyaltyPoints, relatedMinibarConsumptions
-  ] = await Promise.all([
-    pool.query('SELECT COUNT(*) as count FROM reservations WHERE client_id = ?', [req.params.id]),
-    pool.query('SELECT COUNT(*) as count FROM orders WHERE client_id = ?', [req.params.id]),
-    pool.query('SELECT COUNT(*) as count FROM payments WHERE client_id = ?', [req.params.id]),
-    pool.query('SELECT COUNT(*) as count FROM casino_visits WHERE client_id = ?', [req.params.id]),
-    pool.query('SELECT COUNT(*) as count FROM casino_cards WHERE client_id = ?', [req.params.id]),
-    pool.query('SELECT COUNT(*) as count FROM casino_cash_operations WHERE client_id = ?', [req.params.id]),
-    pool.query('SELECT COUNT(*) as count FROM casino_chip_transactions WHERE client_id = ?', [req.params.id]),
-    pool.query('SELECT COUNT(*) as count FROM casino_client_profiles WHERE client_id = ?', [req.params.id]),
-    pool.query('SELECT COUNT(*) as count FROM casino_credits WHERE client_id = ?', [req.params.id]),
-    pool.query('SELECT COUNT(*) as count FROM casino_incidents WHERE client_id = ?', [req.params.id]),
-    pool.query('SELECT COUNT(*) as count FROM casino_scores WHERE client_id = ?', [req.params.id]),
-    pool.query('SELECT COUNT(*) as count FROM casino_table_caves WHERE client_id = ?', [req.params.id]),
-    pool.query('SELECT COUNT(*) as count FROM casino_table_prolongations WHERE client_id = ?', [req.params.id]),
-    pool.query('SELECT COUNT(*) as count FROM client_accounts WHERE client_id = ?', [req.params.id]),
-    pool.query('SELECT COUNT(*) as count FROM financial_transactions WHERE client_id = ?', [req.params.id]),
-    pool.query('SELECT COUNT(*) as count FROM invoices WHERE client_id = ?', [req.params.id]),
-    pool.query('SELECT COUNT(*) as count FROM lost_and_found WHERE client_id = ?', [req.params.id]),
-    pool.query('SELECT COUNT(*) as count FROM loyalty_points WHERE client_id = ?', [req.params.id]),
-    pool.query('SELECT COUNT(*) as count FROM minibar_consumptions WHERE client_id = ?', [req.params.id]),
-  ]);
-
-  const totalRelated = 
-    (relatedReservations[0][0]?.count || 0) + 
-    (relatedOrders[0][0]?.count || 0) + 
-    (relatedPayments[0][0]?.count || 0) + 
-    (relatedCasinoVisits[0][0]?.count || 0) +
-    (relatedCasinoCards[0][0]?.count || 0) +
-    (relatedCasinoCashOps[0][0]?.count || 0) +
-    (relatedCasinoChipTx[0][0]?.count || 0) +
-    (relatedCasinoProfiles[0][0]?.count || 0) +
-    (relatedCasinoCredits[0][0]?.count || 0) +
-    (relatedCasinoIncidents[0][0]?.count || 0) +
-    (relatedCasinoScores[0][0]?.count || 0) +
-    (relatedCasinoTableCaves[0][0]?.count || 0) +
-    (relatedCasinoTableProlongations[0][0]?.count || 0) +
-    (relatedClientAccounts[0][0]?.count || 0) +
-    (relatedFinancialTx[0][0]?.count || 0) +
-    (relatedInvoices[0][0]?.count || 0) +
-    (relatedLostAndFound[0][0]?.count || 0) +
-    (relatedLoyaltyPoints[0][0]?.count || 0) +
-    (relatedMinibarConsumptions[0][0]?.count || 0);
+  // Historique du client : toutes les tables dont la clé étrangère vers clients.id
+  // bloque la suppression (NO ACTION / RESTRICT). La liste est lue dans le schéma de la
+  // base, pour qu'une table ajoutée plus tard (ex. casino_table_visits, oubliée dans
+  // l'ancienne liste écrite à la main) ne fasse plus échouer la suppression.
+  // client_kyc (CASCADE) et signatures (SET NULL) ne bloquent pas.
+  const [blockingTables] = await pool.query(
+    `SELECT k.TABLE_NAME table_name, k.COLUMN_NAME column_name
+       FROM information_schema.KEY_COLUMN_USAGE k
+       JOIN information_schema.REFERENTIAL_CONSTRAINTS r
+         ON r.CONSTRAINT_SCHEMA = k.CONSTRAINT_SCHEMA AND r.CONSTRAINT_NAME = k.CONSTRAINT_NAME
+      WHERE k.REFERENCED_TABLE_SCHEMA = DATABASE() AND k.REFERENCED_TABLE_NAME = 'clients'
+        AND r.DELETE_RULE IN ('NO ACTION', 'RESTRICT')`
+  );
+  const counts = await Promise.all(blockingTables.map(({ table_name: table, column_name: column }) =>
+    pool.query(`SELECT COUNT(*) AS count FROM \`${table}\` WHERE \`${column}\` = ?`, [req.params.id]).then(([[row]]) => Number(row.count || 0))
+  ));
+  const totalRelated = counts.reduce((sum, n) => sum + n, 0);
 
   if (totalRelated === 0) {
     // No related records - perform hard delete
@@ -215,20 +183,36 @@ async function deleteClientHandler(req, res) {
       deactivated: false
     });
   } else {
-    // Has related records - perform soft delete (deactivate)
-    await Clients.update(req.params.id, { statut: 'INACTIF' });
-    return ok(res, { 
-      success: true, 
-      message: `Client désactivé (${totalRelated} enregistrements liés conservés)`,
-      deleted: false,
-      deactivated: true,
+    // Historique à conserver : le client est retiré des listes et des recherches
+    // (deleted_at), sans changer son statut. Il reste lisible par son id, pour que
+    // ses anciennes factures, réservations, opérations de casino… affichent son nom.
+    await pool.query('UPDATE clients SET deleted_at = NOW(), deleted_by = ? WHERE id = ?', [req.user?.id_admin || null, req.params.id]);
+    return ok(res, {
+      success: true,
+      message: `Client supprimé de la liste (${totalRelated} enregistrements d’historique conservés)`,
+      deleted: true,
+      deactivated: false,
+      archived: true,
       relatedCount: totalRelated
     });
   }
 }
 
+// GET /api/clients — liste sans les clients supprimés (deleted_at).
+async function listClients(req, res) {
+  const { page, limit, offset } = getPagination(req.query);
+  const orderBy = getSort(req.query, Clients.sortableCols, Clients.pk);
+  const { sql, values } = buildWhere(req.query, ['statut', 'is_casino_player']);
+  const whereSql = sql ? `${sql} AND deleted_at IS NULL` : 'WHERE deleted_at IS NULL';
+  const [rows, total] = await Promise.all([
+    Clients.findAll({ whereSql, whereValues: values, orderBy, limit, offset }),
+    Clients.count({ whereSql, whereValues: values }),
+  ]);
+  return ok(res, rows.map(renderClient), { page, limit, total, totalPages: Math.ceil(total / limit) });
+}
+
 module.exports = {
-  clientsCrud, createClientHandler, updateClientHandler, deleteClientHandler,
+  clientsCrud, listClients, createClientHandler, updateClientHandler, deleteClientHandler,
   getOneWithAccount, searchClients, getAccount, creditAccount, debitAccount, loyaltyHistory,
   getKyc, saveKyc, getKycSignature, getKycSignatureHistory, saveKycSignature,
   ClientAccountsCrud: createCrudController(ClientAccounts, { filterable: ['client_id'] }),

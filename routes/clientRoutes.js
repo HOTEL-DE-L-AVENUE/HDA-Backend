@@ -20,6 +20,7 @@ router.post('/:id/kyc/signature', ctrl.saveKycSignature);         // POST nouvel
 
 // Création / mise à jour : logique dédiée (nom obligatoire, code_client
 // auto-généré et immuable) — doit précéder le CRUD générique ci-dessous.
+router.get('/', ctrl.listClients);                // GET /api/clients (sans les clients supprimés)
 router.post('/', ctrl.createClientHandler);       // POST /api/clients
 router.put('/:id', ctrl.updateClientHandler);     // PUT /api/clients/:id
 router.delete('/:id', ctrl.deleteClientHandler);  // DELETE /api/clients/:id (soft delete support)
