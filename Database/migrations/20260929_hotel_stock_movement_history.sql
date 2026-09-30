@@ -1,23 +1,49 @@
 -- Migration: HOTEL Stock Movement History Enhancement
--- Idempotent migration for hotel-stock relationship
+-- MySQL-compatible version (no "IF NOT EXISTS" on ALTER TABLE)
 -- Run this with: mysql -u root -p hda < Database/migrations/20260929_hotel_stock_movement_history.sql
 
 -- 1. Ensure hotel stock location exists (id=5)
 INSERT IGNORE INTO stock_locations (id, nom) VALUES (5, 'Hôtel');
 
--- 2. Add columns to stock_movements
-ALTER TABLE stock_movements 
-ADD COLUMN IF NOT EXISTS stock_after DECIMAL(15,2) NULL COMMENT 'Stock quantity after this movement',
-ADD COLUMN IF NOT EXISTS motif VARCHAR(255) NULL COMMENT 'Reason/motif for the movement',
-ADD COLUMN IF NOT EXISTS user_id BIGINT UNSIGNED NULL COMMENT 'User who performed the movement';
+-- 2. Add columns to stock_movements (MySQL-compatible)
+SET @dbname = DATABASE();
+
+SET @col_exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'stock_movements' AND COLUMN_NAME = 'stock_after');
+SET @sql = IF(@col_exists = 0,
+  'ALTER TABLE stock_movements ADD COLUMN stock_after DECIMAL(15,2) NULL COMMENT ''Stock quantity after this movement''',
+  'SELECT ''Column stock_after already exists'' AS info');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @col_exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'stock_movements' AND COLUMN_NAME = 'motif');
+SET @sql = IF(@col_exists = 0,
+  'ALTER TABLE stock_movements ADD COLUMN motif VARCHAR(255) NULL COMMENT ''Reason/motif for the movement''',
+  'SELECT ''Column motif already exists'' AS info');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @col_exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'stock_movements' AND COLUMN_NAME = 'user_id');
+SET @sql = IF(@col_exists = 0,
+  'ALTER TABLE stock_movements ADD COLUMN user_id BIGINT UNSIGNED NULL COMMENT ''User who performed the movement''',
+  'SELECT ''Column user_id already exists'' AS info');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 -- 3. Add index for efficient history queries
-CREATE INDEX IF NOT EXISTS idx_stock_movements_product_location_date 
-ON stock_movements (product_id, location_id, created_at);
+SET @idx_exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+  WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'stock_movements' AND INDEX_NAME = 'idx_stock_movements_product_location_date');
+SET @sql = IF(@idx_exists = 0,
+  'CREATE INDEX idx_stock_movements_product_location_date ON stock_movements (product_id, location_id, created_at)',
+  'SELECT ''Index idx_stock_movements_product_location_date already exists'' AS info');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 -- 4. Add product_id to equipments
-ALTER TABLE equipments 
-ADD COLUMN IF NOT EXISTS product_id BIGINT UNSIGNED NULL COMMENT 'Link to products table';
+SET @col_exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'equipments' AND COLUMN_NAME = 'product_id');
+SET @sql = IF(@col_exists = 0,
+  'ALTER TABLE equipments ADD COLUMN product_id BIGINT UNSIGNED NULL COMMENT ''Link to products table''',
+  'SELECT ''Column equipments.product_id already exists'' AS info');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 -- 5. Backfill equipments.product_id by matching products.code
 UPDATE equipments e
@@ -37,16 +63,23 @@ SET product_id = (
 )
 WHERE e.product_id IS NULL;
 
--- 7. Add stock_deducted_at to housekeeping_tasks for idempotency
-ALTER TABLE housekeeping_tasks 
-ADD COLUMN IF NOT EXISTS stock_deducted_at DATETIME NULL COMMENT 'When stock was deducted for this task';
+-- 7. Add stock_deducted_at to housekeeping_tasks
+SET @col_exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'housekeeping_tasks' AND COLUMN_NAME = 'stock_deducted_at');
+SET @sql = IF(@col_exists = 0,
+  'ALTER TABLE housekeeping_tasks ADD COLUMN stock_deducted_at DATETIME NULL COMMENT ''When stock was deducted for this task''',
+  'SELECT ''Column housekeeping_tasks.stock_deducted_at already exists'' AS info');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
--- 8. Add stock_deducted_at to room_maintenance for idempotency
-ALTER TABLE room_maintenance 
-ADD COLUMN IF NOT EXISTS stock_deducted_at DATETIME NULL COMMENT 'When stock was deducted for this maintenance';
+-- 8. Add stock_deducted_at to room_maintenance
+SET @col_exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'room_maintenance' AND COLUMN_NAME = 'stock_deducted_at');
+SET @sql = IF(@col_exists = 0,
+  'ALTER TABLE room_maintenance ADD COLUMN stock_deducted_at DATETIME NULL COMMENT ''When stock was deducted for this maintenance''',
+  'SELECT ''Column room_maintenance.stock_deducted_at already exists'' AS info');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 -- 9. Merge duplicate stocks rows with backup (idempotent)
--- Create backup table if it doesn't exist
 CREATE TABLE IF NOT EXISTS stocks_merge_backup (
   id INT AUTO_INCREMENT PRIMARY KEY,
   original_id INT,
@@ -57,7 +90,6 @@ CREATE TABLE IF NOT EXISTS stocks_merge_backup (
   merged_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Find and merge duplicates
 INSERT INTO stocks_merge_backup (original_id, product_id, location_id, original_quantite, merged_quantite)
 SELECT 
   s.id as original_id,
@@ -81,7 +113,6 @@ WHERE NOT EXISTS (
   WHERE b.original_id = s.id
 );
 
--- Delete duplicate rows (keep the one with lowest id)
 DELETE s FROM stocks s
 INNER JOIN (
   SELECT 
@@ -93,7 +124,6 @@ INNER JOIN (
   HAVING COUNT(*) > 1
 ) dup ON s.product_id = dup.product_id AND s.location_id = dup.location_id AND s.id != dup.keep_id;
 
--- Update the kept row with the sum
 UPDATE stocks s
 INNER JOIN (
   SELECT 
@@ -107,13 +137,15 @@ INNER JOIN (
 ) merged ON s.id = merged.keep_id
 SET s.quantite = merged.total_quantite;
 
--- 10. Add unique key to stocks (idempotent)
-ALTER TABLE stocks 
-ADD UNIQUE KEY IF NOT EXISTS uk_stocks_product_location (product_id, location_id);
+-- 10. Add unique key to stocks
+SET @uk_exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+  WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'stocks' AND INDEX_NAME = 'uk_stocks_product_location');
+SET @sql = IF(@uk_exists = 0,
+  'ALTER TABLE stocks ADD UNIQUE KEY uk_stocks_product_location (product_id, location_id)',
+  'SELECT ''Unique key uk_stocks_product_location already exists'' AS info');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 -- 11. Backfill stock movements for hotel stock (location_id=5) to match real stock
--- Create a movement "Solde initial" for products where stock != sum of movements
--- This is idempotent - checks if "Solde initial" movement already exists
 INSERT INTO stock_movements (product_id, location_id, type_mouvement, quantite, source_module, motif, created_at, stock_after)
 SELECT 
   s.product_id,
@@ -144,4 +176,3 @@ WHERE s.location_id = 5
       AND m2.location_id = s.location_id 
       AND m2.motif = 'Solde initial (ajustement)'
   );
-
