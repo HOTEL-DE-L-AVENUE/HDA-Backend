@@ -1,6 +1,9 @@
 // controllers/hebergementController.js
 const heb = require('../models/hebergementModel');
 const hotelReport = require('../models/hotelReport.model');
+const whatsappModel = require('../models/hotelReportWhatsapp.model');
+const dispatcher = require('../services/hotelReportDispatcher');
+const transport = require('../utils/whatsappTransport');
 const stock = require('../models/stockModel');
 const { withTransaction, pool } = require('../config/db');
 const { createCrudController } = require('./controllerFactory');
@@ -804,6 +807,82 @@ async function deleteHotelDailyReportHandler(req, res) {
   return ok(res, await hotelReport.deleteHotelReport(req.params.date));
 }
 
+// --- Envoi WhatsApp du rapport de nuitee ---
+
+async function hotelReportWhatsappStatusHandler(req, res) {
+  const reportDate = req.query?.date || dispatcher.getCurrentNightDate();
+  const [destinataires, dernier, decision] = await Promise.all([
+    whatsappModel.listRecipients(),
+    whatsappModel.getLastSend(reportDate),
+    dispatcher.evaluate(reportDate).catch((error) => ({ envoyer: false, raison: error.message })),
+  ]);
+  return ok(res, {
+    reportDate,
+    actif: dispatcher.isEnabled(),
+    configure: transport.isConfigured(),
+    transport: transport.getTransportName(),
+    intervalleMinutes: Math.round(dispatcher.getMinIntervalMs() / 60000),
+    destinataires,
+    dernierEnvoi: dernier,
+    prochaineDecision: decision?.raison || null,
+    envoiPossible: Boolean(decision?.envoyer),
+  });
+}
+
+async function hotelReportWhatsappHistoryHandler(req, res) {
+  const reportDate = req.query?.date || dispatcher.getCurrentNightDate();
+  return ok(res, await whatsappModel.listSends(reportDate, req.query?.limit));
+}
+
+async function addHotelReportWhatsappRecipientHandler(req, res) {
+  const { numero, nom, type } = req.body || {};
+  const recipient = await whatsappModel.addRecipient({ numero, nom, type, createdBy: req.user?.id_admin ?? null });
+  return created(res, recipient);
+}
+
+// --- Session WhatsApp Web (transport non officiel) ---
+
+async function hotelReportWhatsappSessionHandler(req, res) {
+  if (!transport.isWeb()) {
+    return ok(res, { transport: transport.getTransportName(), statut: 'INACTIF' });
+  }
+  return ok(res, { transport: 'web', ...transport.web.getState() });
+}
+
+async function connectHotelReportWhatsappSessionHandler(req, res) {
+  if (!transport.isWeb()) {
+    throw ApiError.badRequest('Le transport WhatsApp Web n’est pas actif (WHATSAPP_TRANSPORT doit valoir « web »).');
+  }
+  return ok(res, await transport.web.ensureStarted());
+}
+
+async function disconnectHotelReportWhatsappSessionHandler(req, res) {
+  if (!isAdmin(req)) {
+    throw ApiError.forbidden('Seul un administrateur peut délier le compte WhatsApp.');
+  }
+  return ok(res, await transport.web.stop({ logout: req.query?.logout === 'true' }));
+}
+
+async function hotelReportWhatsappGroupsHandler(req, res) {
+  if (!transport.isWeb()) return ok(res, []);
+  return ok(res, await transport.web.listGroups());
+}
+
+async function updateHotelReportWhatsappRecipientHandler(req, res) {
+  return ok(res, await whatsappModel.setRecipientActive(req.params.id, req.body?.actif));
+}
+
+async function deleteHotelReportWhatsappRecipientHandler(req, res) {
+  return ok(res, await whatsappModel.removeRecipient(req.params.id));
+}
+
+async function sendHotelReportWhatsappHandler(req, res) {
+  const reportDate = req.body?.date || dispatcher.getCurrentNightDate();
+  const result = await dispatcher.dispatch(reportDate, { force: true, declencheur: 'MANUEL' });
+  if (!result.envoye) throw ApiError.badRequest(result.raison);
+  return ok(res, result);
+}
+
 module.exports = {
   roomTypesCrud, roomsCrud, equipmentsCrud, roomEquipmentsCrud, roomMaintenanceCrud, maintenanceWorkersCrud,
   roomMinibarCrud, roomStatusHistoryCrud, reservationsCrud, reservationGuestsCrud,
@@ -817,4 +896,8 @@ module.exports = {
   getHebergementStockHandler, addHebergementStockHandler, updateHebergementStockHandler, deleteHebergementStockHandler,
   getHotelHistoryHandler, getUsersHandler,
   getHotelDailyReportHandler, listHotelDailyReportsHandler, saveHotelDailyReportHandler, deleteHotelDailyReportHandler,
+  hotelReportWhatsappStatusHandler, hotelReportWhatsappHistoryHandler, addHotelReportWhatsappRecipientHandler,
+  updateHotelReportWhatsappRecipientHandler, deleteHotelReportWhatsappRecipientHandler, sendHotelReportWhatsappHandler,
+  hotelReportWhatsappSessionHandler, connectHotelReportWhatsappSessionHandler,
+  disconnectHotelReportWhatsappSessionHandler, hotelReportWhatsappGroupsHandler,
 };
