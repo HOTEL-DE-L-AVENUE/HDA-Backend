@@ -59,6 +59,18 @@ router.get('/minibar/low-stock', ctrl.getLowStockMinibarHandler);               
 router.post('/minibar/restock', ctrl.restockMinibarHandler);                    // POST /api/hebergement/minibar/restock
 
 // Rapport journalier Hôtel — situation des chambres durant la nuitée
+// Les routes /whatsapp/* passent avant /:date, sinon « whatsapp » serait pris pour une date.
+router.get('/daily-reports/whatsapp/status', ctrl.hotelReportWhatsappStatusHandler);          // GET  .../whatsapp/status?date=
+router.get('/daily-reports/whatsapp/history', ctrl.hotelReportWhatsappHistoryHandler);        // GET  .../whatsapp/history?date=&limit=
+router.post('/daily-reports/whatsapp/send', ctrl.sendHotelReportWhatsappHandler);             // POST .../whatsapp/send { date? }
+router.get('/daily-reports/whatsapp/session', ctrl.hotelReportWhatsappSessionHandler);        // GET  .../whatsapp/session  (état + QR)
+router.post('/daily-reports/whatsapp/session', ctrl.connectHotelReportWhatsappSessionHandler); // POST .../whatsapp/session  (démarrer / régénérer le QR)
+router.delete('/daily-reports/whatsapp/session', ctrl.disconnectHotelReportWhatsappSessionHandler); // DELETE .../whatsapp/session?logout=true (admin)
+router.get('/daily-reports/whatsapp/groups', ctrl.hotelReportWhatsappGroupsHandler);          // GET  .../whatsapp/groups
+router.post('/daily-reports/whatsapp/recipients', ctrl.addHotelReportWhatsappRecipientHandler);
+router.put('/daily-reports/whatsapp/recipients/:id', ctrl.updateHotelReportWhatsappRecipientHandler);
+router.delete('/daily-reports/whatsapp/recipients/:id', ctrl.deleteHotelReportWhatsappRecipientHandler);
+
 router.get('/daily-reports', ctrl.listHotelDailyReportsHandler);                 // GET /api/hebergement/daily-reports?start_date=&end_date=&limit=
 router.get('/daily-reports/:date', ctrl.getHotelDailyReportHandler);             // GET /api/hebergement/daily-reports/2026-09-27
 router.post('/daily-reports', ctrl.saveHotelDailyReportHandler);                 // POST /api/hebergement/daily-reports
