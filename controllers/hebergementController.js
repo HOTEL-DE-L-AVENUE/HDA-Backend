@@ -809,6 +809,8 @@ async function getHotelProductHistoryHandler(req, res) {
   const { dateFrom, dateTo, productName, locationId } = req.query;
   const history = await getHotelProductHistory({ dateFrom, dateTo, productName, locationId });
   return ok(res, history);
+}
+
 // --- Envoi WhatsApp du rapport de nuitee ---
 
 async function hotelReportWhatsappStatusHandler(req, res) {
