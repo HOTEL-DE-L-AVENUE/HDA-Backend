@@ -54,7 +54,7 @@ const productsCrud = {
   ...createCrudController(stock.Products, { filterable: ['category_id', 'subcategory_id', 'actif'] }),
   list: async (req, res) => {
     const { category_id, subcategory_id, actif } = req.query;
-    let whereSql = "WHERE p.type_produit = 'PRODUIT_FINI'";
+    let whereSql = "WHERE p.type_produit = 'PRODUIT_FINI' AND p.source_module = 'RESTAURANT'";
     const params = [];
 
     if (category_id) {
@@ -80,6 +80,32 @@ const productsCrud = {
       params
     );
     return ok(res, rows);
+  },
+  getOne: async (req, res) => {
+    const product = await stock.Products.findById(req.params.id);
+    if (!product || product.source_module !== 'RESTAURANT') {
+      throw ApiError.notFound(`Produit restaurant #${req.params.id} introuvable`);
+    }
+    return ok(res, product);
+  },
+  create: async (req, res) => {
+    const product = await stock.Products.create({ ...req.body, source_module: 'RESTAURANT' });
+    return created(res, product);
+  },
+  update: async (req, res) => {
+    const product = await stock.Products.findById(req.params.id);
+    if (!product || product.source_module !== 'RESTAURANT') {
+      throw ApiError.notFound(`Produit restaurant #${req.params.id} introuvable`);
+    }
+    return ok(res, await stock.Products.update(req.params.id, { ...req.body, source_module: 'RESTAURANT' }));
+  },
+  remove: async (req, res) => {
+    const product = await stock.Products.findById(req.params.id);
+    if (!product || product.source_module !== 'RESTAURANT') {
+      throw ApiError.notFound(`Produit restaurant #${req.params.id} introuvable`);
+    }
+    await stock.Products.remove(req.params.id);
+    return noContent(res);
   }
 };
 
@@ -537,7 +563,7 @@ async function menuHandler(req, res) {
     `SELECT p.*, c.nom AS category_nom 
      FROM products p 
      LEFT JOIN categories c ON c.id = p.category_id 
-     WHERE p.actif = 1 AND p.type_produit = 'PRODUIT_FINI' 
+    WHERE p.actif = 1 AND p.type_produit = 'PRODUIT_FINI' AND p.source_module = 'RESTAURANT'
      ORDER BY c.nom, p.nom`
   );
   return ok(res, rows);

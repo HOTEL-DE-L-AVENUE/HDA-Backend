@@ -689,7 +689,8 @@ CREATE TABLE `products` (
   `prix_achat` bigint(20) DEFAULT NULL,
   `prix_vente` bigint(20) DEFAULT NULL,
   `actif` tinyint(1) DEFAULT 1,
-  `type_produit` enum('MATIERE_PREMIERE','PRODUIT_FINI','CONSOMMABLE','SERVICE') DEFAULT 'MATIERE_PREMIERE'
+  `type_produit` enum('MATIERE_PREMIERE','PRODUIT_FINI','CONSOMMABLE','SERVICE') DEFAULT 'MATIERE_PREMIERE',
+  `source_module` varchar(30) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------

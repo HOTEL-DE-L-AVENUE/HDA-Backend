@@ -19,6 +19,7 @@ router.use('/locations', createCrudRouter(ctrl.stockLocationsCrud)); // Read-onl
 router.get('/alerts/low-stock', ctrl.lowStockHandler);            // GET /api/stock/alerts/low-stock?threshold=
 router.get('/products/:id/stock', ctrl.stockByProductHandler);    // GET /api/stock/products/:id/stock
 router.get('/stocks/with-products', ctrl.getProductsWithStockHandler); // GET /api/stock/stocks/with-products?location_id=
+router.post('/products-with-stock', managementRoles, ctrl.createProductWithStockHandler);
 router.delete('/stocks/:id', managementRoles, ctrl.deleteStockHandler);  // DELETE /api/stock/stocks/:id (custom handler for movement recording)
 router.post('/stocks', managementRoles, ctrl.createStockHandler);
 router.put('/stocks/:id', managementRoles, ctrl.updateStockHandler);

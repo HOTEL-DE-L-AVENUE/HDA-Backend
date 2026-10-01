@@ -1,5 +1,6 @@
 // controllers/stockController.js
 const stock = require('../models/stockModel');
+const { withTransaction } = require('../config/db');
 const { createCrudController } = require('./controllerFactory');
 const ApiError = require('../utils/ApiError');
 const { ok, created } = require('../utils/apiResponse');
@@ -34,71 +35,145 @@ function validateStockPayload(body) {
 
 async function createStockHandler(req, res) {
   validateStockPayload(req.body);
-  const { product_id, location_id, quantite } = req.body;
-  
-  // Check if stock row already exists for this product/location
-  const existing = await stock.Stocks.list({ product_id, location_id });
-  if (existing.length > 0) {
-    throw ApiError.conflict('Un stock existe déjà pour ce produit à cet emplacement. Utilisez PUT pour mettre à jour.');
+  const productId = Number(req.body.product_id);
+  const locationId = Number(req.body.location_id);
+  const quantity = Number(req.body.quantite || 0);
+  if (!productId || !locationId) throw ApiError.badRequest('product_id et location_id sont requis');
+  if (locationId === 5 && (!Number.isInteger(quantity) || !Number.isInteger(Number(req.body.seuil_minimum ?? 0)))) {
+    throw ApiError.badRequest('La quantité et le seuil du stock hôtel doivent être des nombres entiers');
   }
-  
-  // Create the stock row
-  const stockRow = await stock.Stocks.create(req.body);
-  
-  // Record the initial stock as a movement if quantity > 0
-  if (quantite && quantite > 0) {
-    try {
+
+  const stockRow = await withTransaction(async (conn) => {
+    const [existing] = await conn.query(
+      'SELECT id FROM stocks WHERE product_id = ? AND location_id = ? FOR UPDATE',
+      [productId, locationId]
+    );
+    if (existing.length) {
+      throw ApiError.conflict('Un stock existe déjà pour ce produit à cet emplacement. Utilisez PUT pour le mettre à jour.');
+    }
+
+    await conn.query(
+      'INSERT INTO stocks (product_id, location_id, quantite, seuil_minimum) VALUES (?, ?, 0, ?)',
+      [productId, locationId, Number(req.body.seuil_minimum || 0)]
+    );
+    if (quantity > 0) {
       await stock.recordMovement({
-        productId: product_id,
-        locationId: location_id,
+        productId,
+        locationId,
         type: 'ENTREE',
-        quantite: quantite,
+        quantite: quantity,
         sourceModule: 'STOCK_MANUEL',
         motif: 'Création stock',
         userId: req.user?.id_admin || req.user?.id,
-        allowNegative: true
+        conn,
       });
-    } catch (err) {
-      console.error('Error recording movement for stock creation:', err);
-      // Don't fail the stock creation if movement fails
     }
-  }
-  
+    const [rows] = await conn.query(
+      'SELECT * FROM stocks WHERE product_id = ? AND location_id = ? LIMIT 1',
+      [productId, locationId]
+    );
+    return rows[0];
+  });
   return created(res, stockRow);
+}
+
+async function createProductWithStockHandler(req, res) {
+  const { nom, categorie, code, unite, prix_vente, quantite, seuil_minimum, location_id } = req.body;
+  const productName = String(nom || '').trim();
+  const categoryName = String(categorie || '').trim();
+  const quantity = Number(quantite ?? 0);
+  const price = Number(prix_vente ?? 0);
+  const threshold = Number(seuil_minimum ?? 5);
+  const locationId = Number(location_id);
+  const sourceModule = locationId === 5 ? 'HOTEL' : locationId === 3 ? 'BAR' : locationId === 2 ? 'RESTAURANT' : 'GENERAL';
+  if (!productName || !categoryName || !locationId) {
+    throw ApiError.badRequest('nom, categorie et location_id sont requis');
+  }
+  if (![quantity, price, threshold].every(Number.isFinite) || quantity < 0 || price < 0 || threshold < 0) {
+    throw ApiError.badRequest('La quantité, le prix et le seuil doivent être positifs ou nuls');
+  }
+  if (locationId === 5 && (!Number.isInteger(quantity) || !Number.isInteger(threshold))) {
+    throw ApiError.badRequest('La quantité et le seuil du stock hôtel doivent être des nombres entiers');
+  }
+
+  const result = await withTransaction(async (conn) => {
+    const [categoryRows] = await conn.query(
+      'SELECT id FROM categories WHERE nom COLLATE utf8mb4_unicode_ci = ? COLLATE utf8mb4_unicode_ci ORDER BY id LIMIT 1 FOR UPDATE',
+      [categoryName]
+    );
+    let categoryId = categoryRows[0]?.id;
+    if (!categoryId) {
+      const [categoryResult] = await conn.query('INSERT INTO categories (nom) VALUES (?)', [categoryName]);
+      categoryId = categoryResult.insertId;
+    }
+
+    const productCode = String(code || `HOTEL-${Date.now()}`).trim();
+    const [productResult] = await conn.query(
+      `INSERT INTO products (category_id, code, nom, unite, prix_vente, actif, type_produit, source_module)
+       VALUES (?, ?, ?, ?, ?, 1, 'CONSOMMABLE', ?)`,
+      [categoryId, productCode, productName, unite || 'unités', price, sourceModule]
+    );
+    const productId = productResult.insertId;
+    await conn.query(
+      'INSERT INTO stocks (product_id, location_id, quantite, seuil_minimum) VALUES (?, ?, 0, ?)',
+      [productId, locationId, threshold]
+    );
+    if (quantity > 0) {
+      await stock.recordMovement({
+        productId,
+        locationId,
+        type: 'ENTREE',
+        quantite: quantity,
+        sourceModule: 'STOCK_MANUEL',
+        motif: 'Création produit et stock hôtel',
+        userId: req.user?.id_admin || req.user?.id,
+        conn,
+      });
+    }
+    const [rows] = await conn.query(
+      `SELECT s.*, p.nom AS product_nom, p.unite AS product_unite, p.prix_vente,
+              p.category_id, p.type_produit
+       FROM stocks s JOIN products p ON p.id = s.product_id WHERE s.product_id = ? AND s.location_id = ?`,
+      [productId, locationId]
+    );
+    return rows[0];
+  });
+  return created(res, result);
 }
 
 async function updateStockHandler(req, res) {
   validateStockPayload(req.body);
-  const existing = await stock.Stocks.findById(req.params.id);
-  if (!existing) throw ApiError.notFound(`stocks #${req.params.id} introuvable`);
-  
-  const oldQuantity = Number(existing.quantite || 0);
-  const newQuantity = Number(req.body.quantite || 0);
-  const quantityDiff = newQuantity - oldQuantity;
-  
-  // Update the stock row
-  const updatedStock = await stock.Stocks.update(req.params.id, req.body);
-  
-  // Record movement if quantity changed
-  if (quantityDiff !== 0) {
-    try {
-      const movementType = quantityDiff > 0 ? 'ENTREE' : 'SORTIE';
-      await stock.recordMovement({
-        productId: existing.product_id,
-        locationId: existing.location_id,
-        type: movementType,
-        quantite: Math.abs(quantityDiff),
-        sourceModule: 'STOCK_MANUEL',
-        motif: 'Modification manuelle',
-        userId: req.user?.id_admin || req.user?.id,
-        allowNegative: true
-      });
-    } catch (err) {
-      console.error('Error recording movement for stock update:', err);
-      // Don't fail the stock update if movement fails
+  const updatedStock = await withTransaction(async (conn) => {
+    const [rows] = await conn.query('SELECT * FROM stocks WHERE id = ? FOR UPDATE', [req.params.id]);
+    const existing = rows[0];
+    if (!existing) throw ApiError.notFound(`stocks #${req.params.id} introuvable`);
+    if (req.body.quantite !== undefined) {
+      if (Number(existing.location_id) === 5 && !Number.isInteger(Number(req.body.quantite))) {
+        throw ApiError.badRequest('La quantité du stock hôtel doit être un nombre entier');
+      }
+      const difference = Number(req.body.quantite) - Number(existing.quantite || 0);
+      if (difference !== 0) {
+        await stock.recordMovement({
+          productId: existing.product_id,
+          locationId: existing.location_id,
+          type: difference > 0 ? 'ENTREE' : 'SORTIE',
+          quantite: Math.abs(difference),
+          sourceModule: 'STOCK_MANUEL',
+          motif: 'Modification manuelle',
+          userId: req.user?.id_admin || req.user?.id,
+          conn,
+        });
+      }
     }
-  }
-  
+    if (req.body.seuil_minimum !== undefined) {
+      if (Number(existing.location_id) === 5 && !Number.isInteger(Number(req.body.seuil_minimum))) {
+        throw ApiError.badRequest('Le seuil du stock hôtel doit être un nombre entier');
+      }
+      await conn.query('UPDATE stocks SET seuil_minimum = ? WHERE id = ?', [Number(req.body.seuil_minimum), req.params.id]);
+    }
+    const [updated] = await conn.query('SELECT * FROM stocks WHERE id = ?', [req.params.id]);
+    return updated[0];
+  });
   return ok(res, updatedStock);
 }
 
@@ -382,6 +457,9 @@ async function productMovementHistoryHandler(req, res, next) {
           case 'EQUIPEMENT':
             referenceLabel = `Équipement #${movement.reference_id}`;
             break;
+          case 'EQUIPEMENT_CHAMBRE':
+            referenceLabel = `Affectation équipement chambre #${movement.reference_id}`;
+            break;
           case 'MAINTENANCE':
             referenceLabel = `Maintenance #${movement.reference_id}`;
             break;
@@ -467,6 +545,7 @@ module.exports = {
   stockByProductHandler,
   getProductsWithStockHandler,
   createStockHandler,
+  createProductWithStockHandler,
   updateStockHandler,
   deleteStockHandler,
   consumePortionHandler,
