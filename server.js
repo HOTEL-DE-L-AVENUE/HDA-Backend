@@ -11,6 +11,7 @@ const morgan = require('morgan');
 const { checkConnection } = require('./config/db');
 const apiRoutes = require('./routes');
 const { notFoundHandler, errorHandler } = require('./middlewares/errorHandler');
+const { startHotelReportDispatcher } = require('./services/hotelReportDispatcher');
 
 const app = express();
 
@@ -64,6 +65,10 @@ async function start() {
     // n'ont pas de limite de taille et peuvent prendre plus de 5 min (défaut Node) à envoyer.
     // Le délai de réception des en-têtes (headersTimeout) reste actif.
     server.requestTimeout = 0;
+
+    // Envoi WhatsApp du rapport de nuitée : boucle inactive tant que
+    // HOTEL_REPORT_WHATSAPP_ENABLED ne vaut pas "true".
+    startHotelReportDispatcher();
   } catch (err) {
     console.error('[server] Échec de démarrage :', err.message);
     process.exit(1);

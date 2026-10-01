@@ -54,22 +54,22 @@ const productsCrud = {
   ...createCrudController(stock.Products, { filterable: ['category_id', 'subcategory_id', 'actif'] }),
   list: async (req, res) => {
     const { category_id, subcategory_id, actif } = req.query;
-    let whereSql = 'WHERE type_produit = "PRODUIT_FINI"';
+    let whereSql = "WHERE p.type_produit = 'PRODUIT_FINI'";
     const params = [];
-    
+
     if (category_id) {
-      whereSql += ' AND category_id = ?';
+      whereSql += ' AND p.category_id = ?';
       params.push(category_id);
     }
     if (subcategory_id) {
-      whereSql += ' AND subcategory_id = ?';
+      whereSql += ' AND p.subcategory_id = ?';
       params.push(subcategory_id);
     }
     if (actif !== undefined) {
-      whereSql += ' AND actif = ?';
+      whereSql += ' AND p.actif = ?';
       params.push(actif);
     }
-    
+
     const [rows] = await pool.query(
       `SELECT p.*, c.nom AS category_nom, sc.nom AS subcategory_nom 
        FROM products p 
@@ -547,13 +547,13 @@ async function updateOrderStatusHandler(req, res) {
   console.debug('[restaurant] updateOrderStatusHandler params:', req.params, 'body:', JSON.stringify(req.body));
   const { statut } = req.body;
   if (!statut) throw ApiError.badRequest('statut est requis');
-  
+
   const [result] = await pool.query(
     'UPDATE orders SET statut = ? WHERE id = ?',
     [statut, req.params.id]
   );
   if (result.affectedRows === 0) throw ApiError.notFound(`Commande #${req.params.id} introuvable`);
-  
+
   const [[order]] = await pool.query('SELECT * FROM orders WHERE id = ?', [req.params.id]);
   return ok(res, order);
 }
@@ -563,18 +563,18 @@ async function openCashierHandler(req, res) {
   if (!nom || !user_id || fond_initial === undefined) {
     throw ApiError.badRequest('nom, user_id et fond_initial sont requis');
   }
-  
+
   const [cashierResult] = await pool.query(
     'INSERT INTO restaurant_cashiers (nom, statut) VALUES (?, "OUVERT")',
     [nom]
   );
   const cashierId = cashierResult.insertId;
-  
+
   const [sessionResult] = await pool.query(
     'INSERT INTO restaurant_sessions (cashier_id, user_id, fond_initial, ouverture_at) VALUES (?, ?, ?, NOW())',
     [cashierId, user_id, fond_initial]
   );
-  
+
   return created(res, { cashier_id: cashierId, session_id: sessionResult.insertId });
 }
 
@@ -583,18 +583,18 @@ async function closeCashierHandler(req, res) {
   if (!session_id || fond_final === undefined) {
     throw ApiError.badRequest('session_id et fond_final sont requis');
   }
-  
+
   const [result] = await pool.query(
     'UPDATE restaurant_sessions SET fond_final = ?, fermeture_at = NOW() WHERE id = ? AND fermeture_at IS NULL',
     [fond_final, session_id]
   );
   if (result.affectedRows === 0) throw ApiError.notFound('Session non trouvée ou déjà fermée');
-  
+
   await pool.query(
     'UPDATE restaurant_cashiers SET statut = "FERME" WHERE id = (SELECT cashier_id FROM restaurant_sessions WHERE id = ?)',
     [session_id]
   );
-  
+
   return ok(res, { message: 'Session fermée' });
 }
 
@@ -665,7 +665,7 @@ async function billToRoomHandler(req, res) {
   if (!order_id || !room_id) {
     throw ApiError.badRequest('order_id et room_id sont requis');
   }
-  
+
   const [result] = await pool.query(
     `INSERT INTO invoices (client_id, montant_total, statut) VALUES (
       (SELECT r.client_id FROM stays s JOIN reservations r ON r.id = s.reservation_id WHERE r.room_id = ? AND s.checkout_at IS NULL LIMIT 1),
@@ -674,12 +674,12 @@ async function billToRoomHandler(req, res) {
     )`,
     [room_id, order_id]
   );
-  
+
   await pool.query(
     'UPDATE orders SET statut = "FACTURE" WHERE id = ?',
     [order_id]
   );
-  
+
   return created(res, { invoice_id: result.insertId });
 }
 
@@ -688,21 +688,21 @@ async function statsHandler(req, res) {
   if (!date_debut || !date_fin) {
     throw ApiError.badRequest('date_debut et date_fin sont requis');
   }
-  
+
   const [[ordersStats]] = await pool.query(
     `SELECT COUNT(*) as total_orders, SUM(montant_total) as total_revenue
      FROM orders
      WHERE created_at BETWEEN ? AND ?`,
     [date_debut, date_fin]
   );
-  
+
   const [[paymentsStats]] = await pool.query(
     `SELECT COUNT(*) as total_payments, SUM(montant) as total_collected 
      FROM payments 
      WHERE date_paiement BETWEEN ? AND ?`,
     [date_debut, date_fin]
   );
-  
+
   return ok(res, {
     orders: ordersStats,
     payments: paymentsStats
