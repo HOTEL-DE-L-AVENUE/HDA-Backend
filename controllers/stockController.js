@@ -36,6 +36,12 @@ async function createStockHandler(req, res) {
   validateStockPayload(req.body);
   const { product_id, location_id, quantite } = req.body;
   
+  // Check if stock row already exists for this product/location
+  const existing = await stock.Stocks.list({ product_id, location_id });
+  if (existing.length > 0) {
+    throw ApiError.conflict('Un stock existe déjà pour ce produit à cet emplacement. Utilisez PUT pour mettre à jour.');
+  }
+  
   // Create the stock row
   const stockRow = await stock.Stocks.create(req.body);
   

@@ -83,4 +83,7 @@ router.post('/stock', ctrl.addHebergementStockHandler);                         
 router.put('/stock/:id', ctrl.updateHebergementStockHandler);                    // PUT /api/hebergement/stock/:id
 router.delete('/stock/:id', ctrl.deleteHebergementStockHandler);                 // DELETE /api/hebergement/stock/:id
 
+// Hotel product history route
+router.get('/product-history', ctrl.getHotelProductHistoryHandler);               // GET /api/hebergement/product-history?dateFrom=&dateTo=&productName=&locationId=
+
 module.exports = router;
