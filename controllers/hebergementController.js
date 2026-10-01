@@ -1,6 +1,7 @@
 // controllers/hebergementController.js
 const heb = require('../models/hebergementModel');
 const hotelReport = require('../models/hotelReport.model');
+const { getHotelProductHistory } = require('../models/hotelProductHistory.model');
 const stock = require('../models/stockModel');
 const { withTransaction, pool } = require('../config/db');
 const { createCrudController } = require('./controllerFactory');
@@ -804,6 +805,12 @@ async function deleteHotelDailyReportHandler(req, res) {
   return ok(res, await hotelReport.deleteHotelReport(req.params.date));
 }
 
+async function getHotelProductHistoryHandler(req, res) {
+  const { dateFrom, dateTo, productName, locationId } = req.query;
+  const history = await getHotelProductHistory({ dateFrom, dateTo, productName, locationId });
+  return ok(res, history);
+}
+
 module.exports = {
   roomTypesCrud, roomsCrud, equipmentsCrud, roomEquipmentsCrud, roomMaintenanceCrud, maintenanceWorkersCrud,
   roomMinibarCrud, roomStatusHistoryCrud, reservationsCrud, reservationGuestsCrud,
@@ -813,6 +820,7 @@ module.exports = {
   updateRoomStatusHandler, equipmentByCodeHandler, equipmentCategoriesHandler, createEquipmentHandler, updateEquipmentHandler,
   equipmentStatsHandler, updateRoomEquipmentStatusHandler,
   roomStatsHandler, updateHousekeepingStatusHandler, housekeepingStatsHandler,
+  getHotelProductHistoryHandler,
   transferStockToMinibarHandler, handleMinibarConsumptionHandler, getMinibarWithAlertsHandler, restockMinibarHandler, getLowStockMinibarHandler,
   getHebergementStockHandler, addHebergementStockHandler, updateHebergementStockHandler, deleteHebergementStockHandler,
   getHotelHistoryHandler, getUsersHandler,
