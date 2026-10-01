@@ -703,26 +703,182 @@ async function checkOut(stayId) {
   });
 }
 
-// Met à jour uniquement le statut d'une maintenance.
-async function updateMaintenanceStatus(id, statut) {
-  const [existing] = await pool.query('SELECT * FROM room_maintenance WHERE id = ?', [id]);
-  if (!existing[0]) throw new Error(`Maintenance #${id} introuvable`);
+function normalizeUsedProducts(value) {
+  let items = value;
+  if (typeof items === 'string') {
+    try { items = JSON.parse(items || '[]'); } catch { items = []; }
+  }
+  if (!Array.isArray(items)) return [];
+  const normalized = items.map((item) => ({
+    product_id: Number(item?.product_id),
+    quantity: Number(item?.quantity),
+  }));
+  if (normalized.some((item) => !Number.isInteger(item.product_id) || item.product_id <= 0 || !Number.isFinite(item.quantity) || item.quantity <= 0)) {
+    throw new Error('Chaque produit utilisé doit avoir un identifiant valide et une quantité positive');
+  }
+  return normalized;
+}
 
-  const shouldCloseNow = ['TERMINE', 'ANNULE'].includes(statut) && !existing[0].date_resolution;
-  if (shouldCloseNow) {
-    await pool.query(
-      'UPDATE room_maintenance SET statut = ?, date_resolution = NOW() WHERE id = ?',
-      [statut, id]
+async function refreshRoomOperationalStatus(conn, roomId) {
+  if (!roomId) return;
+  const [[maintenance]] = await conn.query(
+    "SELECT COUNT(*) AS total FROM room_maintenance WHERE room_id = ? AND statut IN ('OUVERT','EN_COURS')",
+    [roomId]
+  );
+  const [[stay]] = await conn.query(
+    `SELECT COUNT(*) AS total FROM stays s
+     JOIN reservations r ON r.id = s.reservation_id
+     WHERE r.room_id = ? AND s.checkout_at IS NULL AND r.statut IN ('CHECKED_IN','EN_COURS')`,
+    [roomId]
+  );
+  const [[housekeeping]] = await conn.query(
+    "SELECT COUNT(*) AS total FROM housekeeping_tasks WHERE room_id = ? AND statut = 'EN_COURS'",
+    [roomId]
+  );
+  const nextStatus = Number(maintenance.total) > 0
+    ? 'MAINTENANCE'
+    : Number(stay.total) > 0
+      ? 'OCCUPEE'
+      : Number(housekeeping.total) > 0
+        ? 'NETTOYAGE'
+        : 'LIBRE';
+  const [[room]] = await conn.query('SELECT statut FROM rooms WHERE id = ? FOR UPDATE', [roomId]);
+  if (room && room.statut !== nextStatus) {
+    await conn.query('UPDATE rooms SET statut = ? WHERE id = ?', [nextStatus, roomId]);
+    await conn.query(
+      'INSERT INTO room_status_history (room_id, ancien_statut, nouveau_statut, changed_at) VALUES (?, ?, ?, NOW())',
+      [roomId, room.statut, nextStatus]
     );
-  } else {
-    await pool.query('UPDATE room_maintenance SET statut = ? WHERE id = ?', [statut, id]);
   }
+}
 
-  const [updated] = await pool.query('SELECT * FROM room_maintenance WHERE id = ?', [id]);
-  if (['TERMINE', 'ANNULE'].includes(statut) && existing[0].room_id) {
-    await pool.query('UPDATE rooms SET statut = "LIBRE" WHERE id = ? AND statut = "MAINTENANCE"', [existing[0].room_id]);
-  }
-  return updated[0];
+async function saveOperationalRecord({ table, fields, id = null, data, stockField, sourceModule, referenceLabel, statusField }) {
+  return withTransaction(async (conn) => {
+    let existing = null;
+    if (id) {
+      const [rows] = await conn.query(`SELECT * FROM ${table} WHERE id = ? FOR UPDATE`, [id]);
+      existing = rows[0];
+      if (!existing) throw new Error(`${table} #${id} introuvable`);
+    }
+
+    const payload = { ...data };
+    const usedSupplied = Object.prototype.hasOwnProperty.call(payload, stockField);
+    const usedProducts = normalizeUsedProducts(usedSupplied ? payload[stockField] : existing?.[stockField]);
+    if (usedSupplied) payload[stockField] = usedProducts;
+    if (statusField === 'statut' && payload.statut === 'TERMINE' && !existing) {
+      payload.completed_at = new Date();
+    }
+    if (statusField === 'statut' && payload.statut === 'TERMINE' && existing && table === 'room_maintenance') {
+      payload.date_resolution = existing.date_resolution || new Date();
+    }
+    if (statusField === 'statut' && payload.statut === 'TERMINE' && existing && table === 'housekeeping_tasks') {
+      payload.completed_at = existing.completed_at || new Date();
+    }
+
+    const columns = fields.filter((field) => payload[field] !== undefined);
+    const values = columns.map((field) => {
+      const value = payload[field];
+      if (field === stockField && Array.isArray(value)) return JSON.stringify(value);
+      if (value instanceof Date) return value;
+      if (value === '') return null;
+      return value;
+    });
+    let recordId = id;
+    if (existing) {
+      if (columns.length) {
+        await conn.query(
+          `UPDATE ${table} SET ${columns.map((field) => `\`${field}\` = ?`).join(', ')} WHERE id = ?`,
+          [...values, id]
+        );
+      }
+    } else {
+      if (!columns.length) throw new Error(`Aucun champ valide fourni pour ${table}`);
+      const [inserted] = await conn.query(
+        `INSERT INTO ${table} (${columns.map((field) => `\`${field}\``).join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
+        values
+      );
+      recordId = inserted.insertId;
+    }
+
+    const [currentRows] = await conn.query(`SELECT * FROM ${table} WHERE id = ?`, [recordId]);
+    const current = currentRows[0];
+    const completing = current?.statut === 'TERMINE' && !existing?.stock_deducted_at;
+    if (completing && usedProducts.length) {
+      for (const item of usedProducts) {
+        await stockModel.recordMovement({
+          productId: item.product_id,
+          locationId: 5,
+          type: 'SORTIE',
+          quantite: item.quantity,
+          sourceModule,
+          referenceId: recordId,
+          motif: `${referenceLabel} - ${current.type_tache || current.type_intervention || 'tâche'}`,
+          allowNegative: false,
+          conn,
+        });
+      }
+      await conn.query(`UPDATE ${table} SET stock_deducted_at = NOW() WHERE id = ?`, [recordId]);
+    }
+    if (existing?.stock_deducted_at && usedSupplied) {
+      const prior = normalizeUsedProducts(existing[stockField]);
+      if (JSON.stringify(prior) !== JSON.stringify(usedProducts)) {
+        throw new Error('Les produits ne peuvent plus être modifiés après leur déduction du stock');
+      }
+    }
+
+    await refreshRoomOperationalStatus(conn, current.room_id);
+    const [savedRows] = await conn.query(`SELECT * FROM ${table} WHERE id = ?`, [recordId]);
+    return savedRows[0];
+  });
+}
+
+async function saveMaintenance(id, data) {
+  return saveOperationalRecord({
+    table: 'room_maintenance',
+    fields: RoomMaintenance.fields,
+    id,
+    data,
+    stockField: 'materials_used',
+    sourceModule: 'MAINTENANCE',
+    referenceLabel: 'Maintenance',
+    statusField: 'statut',
+  });
+}
+
+async function saveHousekeepingTask(id, data) {
+  return saveOperationalRecord({
+    table: 'housekeeping_tasks',
+    fields: [...HousekeepingTasks.fields, 'exceptional_details'],
+    id,
+    data,
+    stockField: 'products_used',
+    sourceModule: 'MENAGE',
+    referenceLabel: 'Ménage',
+    statusField: 'statut',
+  });
+}
+
+async function deleteOperationalRecord(table, id) {
+  return withTransaction(async (conn) => {
+    const [rows] = await conn.query(`SELECT room_id FROM ${table} WHERE id = ? FOR UPDATE`, [id]);
+    if (!rows[0]) throw new Error(`${table} #${id} introuvable`);
+    await conn.query(`DELETE FROM ${table} WHERE id = ?`, [id]);
+    await refreshRoomOperationalStatus(conn, rows[0].room_id);
+    return true;
+  });
+}
+
+async function deleteMaintenance(id) {
+  return deleteOperationalRecord('room_maintenance', id);
+}
+
+async function deleteHousekeepingTask(id) {
+  return deleteOperationalRecord('housekeeping_tasks', id);
+}
+
+// Les statuts et déductions sont traités comme une seule opération atomique.
+async function updateMaintenanceStatus(id, statut, materialsUsed = undefined) {
+  return saveMaintenance(id, { statut, ...(materialsUsed === undefined ? {} : { materials_used: materialsUsed }) });
 }
 
 // Statistiques agrégées des maintenances
@@ -861,61 +1017,10 @@ async function getRoomStats() {
 
 // Met à jour uniquement le statut d'une tâche de housekeeping
 async function updateHousekeepingStatus(id, statut, productsUsed = null) {
-  const [existing] = await pool.query('SELECT * FROM housekeeping_tasks WHERE id = ?', [id]);
-  if (!existing[0]) throw new Error(`Tâche de housekeeping #${id} introuvable`);
-
-  const shouldCompleteNow = statut === 'TERMINE' && !existing[0].completed_at;
-  
-  if (shouldCompleteNow) {
-    // Use transaction for status update + stock deduction
-    return await withTransaction(async (conn) => {
-      // Update status and completed_at
-      await conn.query(
-        'UPDATE housekeeping_tasks SET statut = ?, completed_at = NOW() WHERE id = ?',
-        [statut, id]
-      );
-
-      // Deduct stock if products are provided and not already deducted
-      if (productsUsed && Array.isArray(productsUsed) && productsUsed.length > 0 && !existing[0].stock_deducted_at) {
-        // Update products_used
-        await conn.query(
-          'UPDATE housekeeping_tasks SET products_used = ? WHERE id = ?',
-          [JSON.stringify(productsUsed), id]
-        );
-
-        // Record stock movements for each product
-        for (const item of productsUsed) {
-          if (item.product_id && item.quantity) {
-            await stockModel.recordMovement({
-              productId: item.product_id,
-              locationId: 5, // Hotel stock location
-              type: 'SORTIE',
-              quantite: item.quantity,
-              sourceModule: 'MENAGE',
-              referenceId: id,
-              motif: `Ménage - Tâche ${existing[0].type_tache}`,
-              allowNegative: false,
-              conn: conn // Use same transaction
-            });
-          }
-        }
-
-        // Mark stock as deducted
-        await conn.query(
-          'UPDATE housekeeping_tasks SET stock_deducted_at = NOW() WHERE id = ?',
-          [id]
-        );
-      }
-
-      const [updated] = await conn.query('SELECT * FROM housekeeping_tasks WHERE id = ?', [id]);
-      return updated[0];
-    });
-  } else {
-    await pool.query('UPDATE housekeeping_tasks SET statut = ? WHERE id = ?', [statut, id]);
-  }
-
-  const [updated] = await pool.query('SELECT * FROM housekeeping_tasks WHERE id = ?', [id]);
-  return updated[0];
+  return saveHousekeepingTask(id, {
+    statut,
+    ...(productsUsed === null ? {} : { products_used: productsUsed }),
+  });
 }
 
 // Statistiques agrégées des tâches de housekeeping
@@ -949,6 +1054,9 @@ async function availableRooms({ typeId } = {}) {
 
 // Transfer stock from source location (restaurant/bar) to hotel minibar location
 async function transferStockToMinibar({ productId, sourceLocationId, quantity, roomId, userId }) {
+  if (!Number.isInteger(Number(quantity)) || Number(quantity) <= 0) {
+    throw new Error('La quantité transférée doit être un nombre entier positif');
+  }
   return withTransaction(async (conn) => {
     // Check if there's enough stock in source location
     const [sourceStock] = await conn.query(
@@ -1004,6 +1112,9 @@ async function transferStockToMinibar({ productId, sourceLocationId, quantity, r
 
 // Handle minibar consumption with stock movement tracking
 async function handleMinibarConsumption({ roomId, productId, quantity, clientId, price }) {
+  if (!Number.isInteger(Number(quantity)) || Number(quantity) <= 0) {
+    throw new Error('La quantité consommée doit être un nombre entier positif');
+  }
   return withTransaction(async (conn) => {
     // Check if product exists in room minibar
     const [minibarItem] = await conn.query(
@@ -1087,6 +1198,9 @@ async function getLowStockMinibarItems() {
 
 // Restock minibar from hotel stock location
 async function restockMinibar({ roomId, productId, quantity, userId }) {
+  if (!Number.isInteger(Number(quantity)) || Number(quantity) <= 0) {
+    throw new Error('La quantité réapprovisionnée doit être un nombre entier positif');
+  }
   return withTransaction(async (conn) => {
     // Check hotel stock
     const [hotelStock] = await conn.query(
@@ -1140,7 +1254,8 @@ module.exports = {
   isRoomAvailable, createReservationWithGuests, validateReservationDiscount, recordReservationPayment, listReservationPayments, checkIn, checkOut, availableRooms,
   updateMaintenanceStatus, getMaintenanceStats, getReservationStats,
   updateRoomStatus, getEquipmentByCode, getEquipmentCategories, getEquipmentStats,
-  updateRoomEquipmentStatus, getRoomStats, updateHousekeepingStatus, getHousekeepingStats,
+  updateRoomEquipmentStatus, getRoomStats, saveMaintenance, saveHousekeepingTask,
+  deleteMaintenance, deleteHousekeepingTask, updateHousekeepingStatus, getHousekeepingStats,
   transferStockToMinibar, handleMinibarConsumption, getMinibarWithAlerts, getLowStockMinibarItems, restockMinibar,
   findReservationsWithUserDetails,
 };

@@ -26,7 +26,7 @@ const Units = createCrudModel({
 
 const Products = createCrudModel({
   table: 'products', pk: 'id',
-  fields: ['category_id', 'subcategory_id', 'code', 'nom', 'unite', 'prix_achat', 'prix_vente', 'actif', 'type_produit', 'portion_size', 'portion_unite'],
+  fields: ['category_id', 'subcategory_id', 'code', 'nom', 'unite', 'prix_achat', 'prix_vente', 'actif', 'type_produit', 'portion_size', 'portion_unite', 'source_module'],
   sortable: ['id', 'nom', 'code', 'prix_vente'],
   filterable: ['category_id', 'subcategory_id', 'actif', 'type_produit'],
 });
@@ -44,10 +44,12 @@ const Stocks = createCrudModel({
 // Custom method to get stocks with product information
 async function getProductsWithStock(locationId = null) {
   let sql = `
-    SELECT s.*, p.nom as product_nom, p.unite as product_unite, p.code as product_code,
-           p.prix_achat, p.prix_vente, p.prix_achat as prix, p.category_id, p.subcategory_id, p.type_produit
+        SELECT s.*, p.nom as product_nom, p.unite as product_unite, p.code as product_code,
+          p.prix_achat, p.prix_vente, p.prix_achat as prix, p.category_id, c.nom AS category_name,
+          p.subcategory_id, p.type_produit
     FROM stocks s
     JOIN products p ON p.id = s.product_id
+        LEFT JOIN categories c ON c.id = p.category_id
   `;
   const params = [];
   
@@ -90,6 +92,9 @@ const PurchaseItems = createCrudModel({
 // type: 'ENTREE' | 'SORTIE' | 'AJUSTEMENT' (le signe de quantite peut aussi porter l'info)
 // New optional params: conn (use caller's transaction), motif, userId, allowNegative
 async function recordMovement({ productId, locationId, type, quantite, sourceModule, referenceId, conn = null, motif = null, userId = null, allowNegative = true }) {
+  if (Number(locationId) === 5 && !Number.isInteger(Number(quantite))) {
+    throw ApiError.badRequest('Les quantités du stock hôtel doivent être des nombres entiers');
+  }
   const transactionFn = async (connection) => {
     const signedQty = type === 'SORTIE' ? -Math.abs(quantite) : Math.abs(quantite);
     // For AJUSTEMENT, respect the sign of quantite directly

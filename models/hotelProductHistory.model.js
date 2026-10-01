@@ -2,13 +2,12 @@
 const { pool } = require('../config/db');
 
 /**
- * Récupère l'historique des produits consommés dans l'hôtel entre deux dates.
- * Se base sur stock_movements (type_mouvement = 'SORTIE') pour compter les consommations réelles.
- * Inclut les opérations de ménage, maintenance, équipements et ajustements manuels.
+ * Récupère le journal des mouvements de stock de l'hôtel entre deux dates.
+ * Inclut les entrées, sorties et ajustements issus des opérations Hotel.
  */
 async function getHotelProductHistory({ dateFrom, dateTo, productName, locationId = 5 } = {}) {
   const params = [];
-  const conditions = ["sm.location_id = ?", "sm.type_mouvement = 'SORTIE'"];
+  const conditions = ['sm.location_id = ?'];
   params.push(locationId);
 
   if (dateFrom) {
@@ -29,15 +28,17 @@ async function getHotelProductHistory({ dateFrom, dateTo, productName, locationI
       DATE(sm.created_at) AS date_consommation,
       sm.product_id AS product_id,
       p.nom AS produit,
-      p.category_id AS categorie,
+      COALESCE(c.nom, 'Autre') AS categorie,
       p.unite AS unite,
       SUM(sm.quantite) AS quantite_totale,
       sm.source_module AS source,
-      COUNT(DISTINCT sm.reference_id) AS nb_operations
+      sm.type_mouvement AS type_mouvement,
+      COUNT(*) AS nb_operations
     FROM stock_movements sm
     JOIN products p ON p.id = sm.product_id
+    LEFT JOIN categories c ON c.id = p.category_id
     WHERE ${conditions.join(' AND ')}
-    GROUP BY DATE(sm.created_at), sm.product_id, p.nom, p.category_id, p.unite, sm.source_module
+    GROUP BY DATE(sm.created_at), sm.product_id, p.nom, c.nom, p.unite, sm.source_module, sm.type_mouvement
     ORDER BY date_consommation DESC, quantite_totale DESC
   `;
 
@@ -49,10 +50,11 @@ async function getHotelProductHistory({ dateFrom, dateTo, productName, locationI
       : String(row.date_consommation).slice(0, 10),
     product_id: Number(row.product_id),
     produit: row.produit,
-    categorie: row.categorie ? `Catégorie ${row.categorie}` : 'Stock',
+    categorie: row.categorie || 'Autre',
     unite: row.unite || 'unités',
     quantite_totale: Number(row.quantite_totale || 0),
     source: row.source || 'AUTRE',
+    type_mouvement: row.type_mouvement,
     nb_operations: Number(row.nb_operations || 0),
   }));
 }
