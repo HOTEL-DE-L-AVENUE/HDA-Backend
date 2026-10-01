@@ -31,6 +31,9 @@ router.get('/products', ctrl.productsCrud.list);
 router.get('/products/:id', ctrl.productsCrud.getOne);
 router.use('/products', managementRoles, createCrudRouter(ctrl.productsCrud));
 
+// Équipements propres au Bar — accès réservé à l'administrateur.
+router.use('/equipments', adminOnly, createCrudRouter(ctrl.barEquipmentsCrud));
+
 // Tables — stats route BEFORE CRUD so it doesn't get caught by/:id wildcard
 router.get('/tables/stats', ctrl.tablesStatsHandler);
 router.get('/tables', ctrl.tablesCrud.list);
