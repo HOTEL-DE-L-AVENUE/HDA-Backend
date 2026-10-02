@@ -165,6 +165,7 @@ async function financialSummary() {
     `SELECT UPPER(module) AS module, type_flux, COALESCE(SUM(montant), 0) AS montant
      FROM financial_transactions
      WHERE UPPER(module) IN ('HEBERGEMENT', 'HOTEL')
+       AND (UPPER(module) NOT IN ('HEBERGEMENT', 'HOTEL') OR UPPER(COALESCE(moyen_paiement, '')) NOT IN ('CREDIT', 'GRATUIT'))
        AND COALESCE(ref_flux_global, '') NOT LIKE 'HEBERGEMENT-STOCK-ADD-%'
      GROUP BY UPPER(module), type_flux`
   );
@@ -205,6 +206,9 @@ async function financialSummary() {
     `SELECT COALESCE(SUM(r.montant_total), 0) AS montant
        FROM reservations r
       WHERE UPPER(COALESCE(r.statut, '')) = 'TERMINEE'
+        AND NOT EXISTS (
+          SELECT 1 FROM reservation_payments rp WHERE rp.reservation_id = r.id
+        )
         AND NOT EXISTS (
           SELECT 1
             FROM financial_transactions ft

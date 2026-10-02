@@ -313,6 +313,15 @@ reservationsCrud.update = async function(req, res) {
   const id = req.params.id || req.params.reservationId;
   const modifiedBy = req.user?.id_admin || req.user?.id;
   const body = { ...req.body };
+  const role = String(req.user?.role || '').toLowerCase();
+  if (String(body.moyen_paiement || '').toUpperCase() === 'GRATUIT'
+      || String(body.statut || '').toUpperCase() === 'TERMINEE') {
+    const existing = await heb.Reservations.findById(id);
+    const effectiveMethod = String(body.moyen_paiement || existing?.moyen_paiement || '').toUpperCase();
+    if (effectiveMethod === 'GRATUIT' && !['admin', 'manager'].includes(role)) {
+      throw ApiError.forbidden('Seule la direction peut autoriser une gratuité.');
+    }
+  }
   if (Object.prototype.hasOwnProperty.call(body, 'services_extras')) {
     const extras = normalizeServicesExtras(body.services_extras);
     body.services_extras = extras.json;
@@ -461,6 +470,32 @@ async function createReservationHandler(req, res) {
 async function reservationPaymentsHandler(req, res) {
   const rows = await heb.listReservationPayments(req.params.id);
   return ok(res, rows);
+}
+
+async function createReservationPaymentHandler(req, res) {
+  const role = String(req.user?.role || '').toLowerCase();
+  const canAuthorizeFree = ['admin', 'manager'].includes(role);
+  if (Array.isArray(req.body?.modes_paiement)
+      && req.body.modes_paiement.some((mode) => String(mode?.moyen_paiement || '').toUpperCase() === 'GRATUIT')
+      && !canAuthorizeFree) {
+    throw ApiError.forbidden('Seule la direction peut autoriser une gratuité.');
+  }
+  try {
+    const result = await heb.createReservationPayment(req.params.id, {
+      amount: req.body?.montant,
+      methods: req.body?.modes_paiement,
+      idempotencyKey: req.body?.idempotency_key,
+      createdBy: req.user?.id_admin || req.user?.id,
+      canAuthorizeFree,
+    });
+    return result.duplicate ? ok(res, result) : created(res, result);
+  } catch (err) {
+    if (err?.code === 'ER_DUP_ENTRY') throw ApiError.conflict('Cette opération de paiement a déjà été enregistrée.');
+    if (err?.statusCode === 403) throw ApiError.forbidden(err.message);
+    if (err?.statusCode === 404) throw ApiError.notFound(err.message);
+    if (err?.code && String(err.code).startsWith('ER_')) throw err;
+    throw ApiError.badRequest(err.message || 'Paiement invalide.');
+  }
 }
 
 async function validateReservationDiscountHandler(req, res) {
@@ -917,7 +952,7 @@ module.exports = {
   roomTypesCrud, roomsCrud, equipmentsCrud, roomEquipmentsCrud, roomMaintenanceCrud, maintenanceWorkersCrud,
   roomMinibarCrud, roomStatusHistoryCrud, reservationsCrud, reservationGuestsCrud,
   staysCrud, housekeepingCrud, lostAndFoundCrud, minibarConsumptionsCrud,
-  availabilityHandler, availableRoomsHandler, updateRoomHandler, updateRoomTypeHandler, createReservationHandler, validateReservationDiscountHandler, reservationPaymentsHandler, createMaintenanceHandler, checkInHandler, checkOutHandler,
+  availabilityHandler, availableRoomsHandler, updateRoomHandler, updateRoomTypeHandler, createReservationHandler, validateReservationDiscountHandler, reservationPaymentsHandler, createReservationPaymentHandler, createMaintenanceHandler, checkInHandler, checkOutHandler,
   updateMaintenanceStatusHandler, maintenanceStatsHandler, reservationStatsHandler,
   updateRoomStatusHandler, equipmentByCodeHandler, equipmentCategoriesHandler, createEquipmentHandler, updateEquipmentHandler,
   equipmentStatsHandler, updateRoomEquipmentStatusHandler,
