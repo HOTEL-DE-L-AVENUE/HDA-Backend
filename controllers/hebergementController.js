@@ -1,6 +1,9 @@
 // controllers/hebergementController.js
 const heb = require('../models/hebergementModel');
 const hotelReport = require('../models/hotelReport.model');
+const whatsappModel = require('../models/hotelReportWhatsapp.model');
+const dispatcher = require('../services/hotelReportDispatcher');
+const transport = require('../utils/whatsappTransport');
 const { getHotelProductHistory } = require('../models/hotelProductHistory.model');
 const stock = require('../models/stockModel');
 const { withTransaction, pool } = require('../config/db');

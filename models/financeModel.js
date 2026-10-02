@@ -313,9 +313,22 @@ async function financialSummary() {
   };
 }
 
+// Clôture de caisse d'un module : les transactions clôturées disparaissent de la caisse
+// du jour (GET /transactions les exclut par défaut) mais restent en base pour l'historique.
+async function closeFinancialTransactions({ module, ids = [] }) {
+  const cleanIds = [...new Set(ids.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))];
+  if (cleanIds.length === 0) return { closed_transactions: 0 };
+  const [res] = await pool.query(
+    `UPDATE financial_transactions SET cloturee = 1, cloture_at = NOW()
+      WHERE id IN (?) AND UPPER(COALESCE(module, '')) = ? AND (cloturee = 0 OR cloturee IS NULL)`,
+    [cleanIds, module]
+  );
+  return { closed_transactions: res.affectedRows };
+}
+
 module.exports = {
   Invoices, InvoiceItems, Payments, FinancialTransactions,
-  findFinancialTransactionsWithDetails,
+  findFinancialTransactionsWithDetails, closeFinancialTransactions,
   createInvoiceWithItems, recordPayment, invoiceWithItemsAndPayments, clientFinancialStatement, financialSummary,
   DEPARTMENTS, normaliseModule,
 };
