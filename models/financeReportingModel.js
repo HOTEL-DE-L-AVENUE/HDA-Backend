@@ -79,6 +79,7 @@ async function buildMonthlyBuckets({ year } = {}) {
             COALESCE(SUM(montant), 0) AS montant
      FROM financial_transactions
      WHERE UPPER(module) IN ('HEBERGEMENT', 'HOTEL', 'CASINO', 'BAR')
+       AND (UPPER(module) NOT IN ('HEBERGEMENT', 'HOTEL') OR UPPER(COALESCE(moyen_paiement, '')) NOT IN ('CREDIT', 'GRATUIT'))
        AND created_at IS NOT NULL
        ${yearFilter}
      GROUP BY UPPER(module), type_flux, YEAR(created_at), MONTH(created_at)`,
@@ -203,6 +204,7 @@ async function periodDepartmentBreakdown({ period, department, startDate, endDat
             DATE_FORMAT(${periodEnd('created_at')}, '%Y-%m-%d') AS period_end, COALESCE(SUM(montant), 0) AS montant
      FROM financial_transactions
      WHERE UPPER(module) IN ('HEBERGEMENT', 'HOTEL', 'CASINO', 'BAR')
+       AND (UPPER(module) NOT IN ('HEBERGEMENT', 'HOTEL') OR UPPER(COALESCE(moyen_paiement, '')) NOT IN ('CREDIT', 'GRATUIT'))
        AND created_at IS NOT NULL AND ${dateFilter('created_at')}
      GROUP BY UPPER(module), type_flux, ${periodStart('created_at')}, ${periodEnd('created_at')}`,
     [startDate, endDate]
