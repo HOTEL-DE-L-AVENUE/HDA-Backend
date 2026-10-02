@@ -91,8 +91,19 @@ async function createFinancialTransactionHandler(req, res) {
   return created(res, row);
 }
 
+async function closeFinancialTransactionsHandler(req, res) {
+  const { module, transaction_ids } = req.body;
+  const normalizedModule = String(module || '').trim().toUpperCase();
+  if (!normalizedModule || !Array.isArray(transaction_ids) || transaction_ids.length === 0) {
+    throw ApiError.badRequest('module et transaction_ids (au moins une transaction) sont requis');
+  }
+  const result = await finance.closeFinancialTransactions({ module: normalizedModule, ids: transaction_ids });
+  return ok(res, result);
+}
+
 module.exports = {
   invoicesCrud, invoiceItemsCrud, paymentsCrud, financialTransactionsCrud,
   createInvoiceHandler, invoiceDetailHandler, recordPaymentHandler, clientStatementHandler,
   financialSummaryHandler, createFinancialTransactionHandler, listFinancialTransactionsHandler,
+  closeFinancialTransactionsHandler,
 };

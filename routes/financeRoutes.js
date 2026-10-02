@@ -24,6 +24,7 @@ router.get('/reports/monthly', reportingCtrl.monthlyBreakdownHandler);  // GET /
 router.get('/reports/monthly/:department/:year/:month', reportingCtrl.departmentMonthHandler); // GET /api/finance/reports/monthly/hotel/2026/11
 router.get('/reports/period', reportingCtrl.periodBreakdownHandler);
 router.post('/transactions', cashierRoles, ctrl.createFinancialTransactionHandler);   // POST /api/finance/transactions
+router.post('/transactions/close', cashierRoles, ctrl.closeFinancialTransactionsHandler); // POST /api/finance/transactions/close (clôture de caisse)
 router.get('/transactions', ctrl.listFinancialTransactionsHandler);
 router.use('/transactions', managementRoles, createCrudRouter(ctrl.financialTransactionsCrud));
 
