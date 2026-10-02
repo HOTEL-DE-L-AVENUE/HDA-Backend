@@ -911,14 +911,16 @@ async function refreshRoomOperationalStatus(conn, roomId) {
     "SELECT COUNT(*) AS total FROM housekeeping_tasks WHERE room_id = ? AND statut = 'EN_COURS'",
     [roomId]
   );
-  const nextStatus = Number(maintenance.total) > 0
-    ? 'MAINTENANCE'
-    : Number(stay.total) > 0
-      ? 'OCCUPEE'
-      : Number(housekeeping.total) > 0
-        ? 'NETTOYAGE'
-        : 'LIBRE';
   const [[room]] = await conn.query('SELECT statut FROM rooms WHERE id = ? FOR UPDATE', [roomId]);
+  const nextStatus = Number(stay.total) > 0
+    ? 'OCCUPEE'
+    : room?.statut === 'RESERVEE'
+      ? 'RESERVEE'
+      : Number(maintenance.total) > 0
+        ? 'MAINTENANCE'
+        : Number(housekeeping.total) > 0
+          ? 'NETTOYAGE'
+          : 'LIBRE';
   if (room && room.statut !== nextStatus) {
     await conn.query('UPDATE rooms SET statut = ? WHERE id = ?', [nextStatus, roomId]);
     await conn.query(
