@@ -11,25 +11,22 @@ class SeedQuintanaSkyDrinks {
                 // =========================================================================
                 // BIERES & SOFTS
                 // =========================================================================
-                { nom: 'THB (PM)', ingredients: 'Bière blonde locale', prix: 8000, categorie: 'Bières & Softs', alcool: 1, stock: 50 },
-                { nom: 'THB (GM)', ingredients: 'Bière blonde locale grand format', prix: 12000, categorie: 'Bières & Softs', alcool: 1, stock: 50 },
-                { nom: 'THB PM 33 cl', ingredients: 'Bière blonde locale 33cl', prix: 8000, categorie: 'Bières & Softs', alcool: 1, stock: 50 },
-                { nom: 'THB GM 65 cl', ingredients: 'Bière blonde locale 65cl', prix: 12000, categorie: 'Bières & Softs', alcool: 1, stock: 50 },
-                { nom: 'Gold Blanche (PM)', ingredients: 'Bière blanche', prix: 8000, categorie: 'Bières & Softs', alcool: 1, stock: 30 },
+                // "alias" = anciens noms du même article (doublons des versions précédentes du seed) :
+                // le seeder les renomme / fusionne pour ne garder qu'un seul article.
+                { nom: 'THB PM 33cl', alias: ['THB (PM)', 'THB PM 33 cl'], ingredients: 'Bière blonde locale 33cl', prix: 8000, categorie: 'Bières & Softs', alcool: 1, stock: 50 },
+                { nom: 'THB GM 65cl', alias: ['THB (GM)', 'THB GM 65 cl'], ingredients: 'Bière blonde locale 65cl', prix: 12000, categorie: 'Bières & Softs', alcool: 1, stock: 50 },
+                { nom: 'Gold Blanche PM 33cl', alias: ['Gold Blanche (PM)', 'Gold Blanche 33 cl'], ingredients: 'Bière blanche 33cl', prix: 8000, categorie: 'Bières & Softs', alcool: 1, stock: 30 },
                 { nom: 'Gold Blanche (GM)', ingredients: 'Bière blanche grand format', prix: 12000, categorie: 'Bières & Softs', alcool: 1, stock: 30 },
-                { nom: 'Gold Blanche 33 cl', ingredients: 'Bière blanche 33cl', prix: 8000, categorie: 'Bières & Softs', alcool: 1, stock: 30 },
                 { nom: 'Gold Blanche 50 cl', ingredients: 'Bière blanche 50cl', prix: 10000, categorie: 'Bières & Softs', alcool: 1, stock: 30 },
                 { nom: 'Gold Normale 50 cl', ingredients: 'Bière blonde 50cl', prix: 10000, categorie: 'Bières & Softs', alcool: 1, stock: 30 },
                 { nom: 'Gold Blonde (PM)', ingredients: 'Bière blonde', prix: 8000, categorie: 'Bières & Softs', alcool: 1, stock: 30 },
                 { nom: 'Gold Blonde (GM)', ingredients: 'Bière blonde grand format', prix: 12000, categorie: 'Bières & Softs', alcool: 1, stock: 30 },
-                { nom: 'Beaufort (PM)', ingredients: 'Bière', prix: 10000, categorie: 'Bières & Softs', alcool: 1, stock: 25 },
+                { nom: 'Beaufort PM 33cl', alias: ['Beaufort (PM)', 'Beaufort 33 CL'], ingredients: 'Bière 33cl', prix: 10000, categorie: 'Bières & Softs', alcool: 1, stock: 25 },
                 { nom: 'Beaufort (GM)', ingredients: 'Bière grand format', prix: 15000, categorie: 'Bières & Softs', alcool: 1, stock: 25 },
-                { nom: 'Beaufort 33 CL', ingredients: 'Bière 33cl', prix: 10000, categorie: 'Bières & Softs', alcool: 1, stock: 25 },
                 { nom: 'BBA PM', ingredients: 'Bière Beaufort PM', prix: 10000, categorie: 'Bières & Softs', alcool: 1, stock: 25 },
                 { nom: 'BBA GM 100 CL', ingredients: 'Bière Beaufort GM 100cl', prix: 20000, categorie: 'Bières & Softs', alcool: 1, stock: 25 },
-                { nom: 'Heineken (PM)', ingredients: 'Bière importée', prix: 16000, categorie: 'Bières & Softs', alcool: 1, stock: 20 },
+                { nom: 'Heineken PM 33cl', alias: ['Heineken (PM)', 'Heineken 33 CL'], ingredients: 'Bière importée 33cl', prix: 16000, categorie: 'Bières & Softs', alcool: 1, stock: 20 },
                 { nom: 'Heineken (GM)', ingredients: 'Bière importée grand format', prix: 22000, categorie: 'Bières & Softs', alcool: 1, stock: 20 },
-                { nom: 'Heineken 33 CL', ingredients: 'Bière importée 33cl', prix: 16000, categorie: 'Bières & Softs', alcool: 1, stock: 20 },
                 { nom: '1664 (bière blonde)', ingredients: 'Bière blonde', prix: 22000, categorie: 'Bières & Softs', alcool: 1, stock: 20 },
                 { nom: 'Bière Importée (50cl)', ingredients: 'Bière importée 50cl', prix: 25000, categorie: 'Bières & Softs', alcool: 1, stock: 15 },
                 { nom: 'Ranovisy 33 cl', ingredients: 'Boisson locale Ranovisy', prix: 6000, categorie: 'Bières & Softs', alcool: 1, stock: 30 },
@@ -38,14 +35,13 @@ class SeedQuintanaSkyDrinks {
                 { nom: 'Fanta (PM)', ingredients: 'Boisson gazeuse', prix: 6000, categorie: 'Bières & Softs', alcool: 0, stock: 40 },
                 { nom: 'World Cola (GM)', ingredients: 'Boisson gazeuse grand format', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 40 },
                 { nom: 'Fanta (GM)', ingredients: 'Boisson gazeuse grand format', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 40 },
-                { nom: 'Coca 30 cl', ingredients: 'Coca-Cola 30cl', prix: 8000, categorie: 'Bières & Softs', alcool: 0, stock: 40 },
-                { nom: 'Coca GM 100 CL', ingredients: 'Coca-Cola 100cl', prix: 20000, categorie: 'Bières & Softs', alcool: 0, stock: 40 },
+                { nom: 'Coca Cola PM 30cl', alias: ['Coca 30 cl', 'Coca Cola (PM)'], ingredients: 'Coca-Cola 30cl', prix: 8000, categorie: 'Bières & Softs', alcool: 0, stock: 40 },
+                { nom: 'Coca Cola GM 100cl', alias: ['Coca GM 100 CL', 'Coca Cola (GM)'], ingredients: 'Coca-Cola 100cl', prix: 20000, categorie: 'Bières & Softs', alcool: 0, stock: 40 },
                 { nom: 'Youzu (PM)', ingredients: 'Boisson fruitée', prix: 6000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
                 { nom: 'Caprice (PM)', ingredients: 'Boisson fruitée', prix: 6000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
                 { nom: 'Caprice Soda', ingredients: 'Boisson gazeuse fruitée', prix: 6000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
                 { nom: 'Caprice Grenadine', ingredients: 'Boisson fruitée grenadine', prix: 6000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
-                { nom: 'Youzu (GM)', ingredients: 'Boisson fruitée grand format', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
-                { nom: 'Youzou 100cl', ingredients: 'Boisson fruitée 100cl', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
+                { nom: 'Youzu GM 100cl', alias: ['Youzu (GM)', 'Youzou 100cl'], ingredients: 'Boisson fruitée 100cl', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
                 { nom: 'Caprice (GM)', ingredients: 'Boisson fruitée grand format', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
                 { nom: 'Bonbon Anglais (PM)', ingredients: 'Sodas', prix: 6000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
                 { nom: 'Bonbon Anglais (GM)', ingredients: 'Sodas grand format', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
@@ -61,16 +57,11 @@ class SeedQuintanaSkyDrinks {
                 { nom: 'XXL', ingredients: 'Boisson énergisante', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
                 { nom: 'Tonic PM', ingredients: 'Eau tonique', prix: 6000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
                 { nom: 'Tonic GM', ingredients: 'Eau tonique grand format', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
-                { nom: 'Eau Vive (PM)', ingredients: 'Eau plate 50cl', prix: 6000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
-                { nom: 'Eau Vive PM 50 cl', ingredients: 'Eau plate 50cl', prix: 6000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
-                { nom: 'Eau Vive GM 100 CL', ingredients: 'Eau plate 100cl', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
-                { nom: 'Eau Vive (GM)', ingredients: 'Eau tonique grand format', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
-                { nom: 'Cristal (50cl)', ingredients: 'Eau plate 50cl', prix: 8000, categorie: 'Bières & Softs', alcool: 0, stock: 50 },
-                { nom: 'Cristal PM 50 CL', ingredients: 'Eau plate 50cl', prix: 8000, categorie: 'Bières & Softs', alcool: 0, stock: 50 },
+                { nom: 'Eau Vive PM 50cl', alias: ['Eau Vive (PM)', 'Eau Vive PM 50 cl'], ingredients: 'Eau plate 50cl', prix: 6000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
+                { nom: 'Eau Vive GM 100cl', alias: ['Eau Vive GM 100 CL', 'Eau Vive (GM)'], ingredients: 'Eau plate 100cl', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
+                { nom: 'Cristal PM 50cl', alias: ['Cristal (50cl)', 'Cristal PM 50 CL'], ingredients: 'Eau plate 50cl', prix: 8000, categorie: 'Bières & Softs', alcool: 0, stock: 50 },
                 { nom: 'Cristal (1.5L)', ingredients: 'Eau plate 1.5L', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 50 },
-                { nom: 'Coca Cola (PM)', ingredients: 'Sodas', prix: 8000, categorie: 'Bières & Softs', alcool: 0, stock: 40 },
                 { nom: 'Sprite (PM)', ingredients: 'Sodas', prix: 8000, categorie: 'Bières & Softs', alcool: 0, stock: 40 },
-                { nom: 'Coca Cola (GM)', ingredients: 'Sodas grand format', prix: 20000, categorie: 'Bières & Softs', alcool: 0, stock: 40 },
                 { nom: 'Sprite (GM)', ingredients: 'Sodas grand format', prix: 20000, categorie: 'Bières & Softs', alcool: 0, stock: 40 },
                 { nom: 'Jus Naturel (PM)', ingredients: 'Jus de fruit frais', prix: 8000, categorie: 'Bières & Softs', alcool: 0, stock: 25 },
                 { nom: 'Jus Naturel (GM)', ingredients: 'Jus de fruit frais grand format', prix: 20000, categorie: 'Bières & Softs', alcool: 0, stock: 25 },
@@ -134,75 +125,75 @@ class SeedQuintanaSkyDrinks {
                 { nom: 'Medaillon Rose', ingredients: 'Vin rosé', prix: 75000, categorie: 'Vins - Bouteille', alcool: 1, stock: 10 },
 
                 // =========================================================================
-                // NOUVEAUX VINS : VINS ROUGES
+                // NOUVEAUX VINS : VINS ROUGES (Listing CHR Juin 2026 – nom = Référence – Appellation Millésime)
                 // =========================================================================
-                { nom: 'Vin de France', ingredients: 'Vieux Papes', prix: 70000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Vallée de la Loire, Saumur-Champigny', ingredients: 'Maison Plessis-Duval', prix: 170000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Alsace Pinot Noir', ingredients: 'Maison DRESCHLER, Pinot Noir', prix: 180000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Languedoc-Roussillon, IGP Pays d\'Hérault', ingredients: 'SAS Moulin de Gassac, Grenache-Syrah', prix: 130000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Bordeaux, Bordeaux', ingredients: 'Cercle des Epicuriens', prix: 70000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Bordeaux, Bordeaux', ingredients: 'Baron de Lestac', prix: 120000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Bordeaux, Bordeaux', ingredients: 'Maison CASTEL, Bordeaux Merlot', prix: 130000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Bordeaux, Bordeaux Supérieur', ingredients: 'Chateau du Lort', prix: 150000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Bordeaux, Médoc', ingredients: 'Maison CASTEL, Médoc', prix: 150000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Bordeaux, Bordeaux', ingredients: 'Cru de la Maqueline', prix: 160000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Bordeaux, Saint-Emilion', ingredients: 'Maison CASTEL, Saint-Emilion', prix: 170000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Bordeaux, 1ères Cotes de Bordeaux', ingredients: 'Chateau Campet', prix: 210000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'France, Médoc', ingredients: 'Château Tartuguière', prix: 200000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Bordeaux, Côtes de Bourg', ingredients: 'Chateau du Bousquet', prix: 240000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Bordeaux, Bordeaux', ingredients: 'Clarence Dillon Wines SAS, Clarendelle', prix: 280000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Bordeaux, Haut-Médoc', ingredients: 'Chateau d\'Arcins', prix: 310000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Bordeaux, Graves', ingredients: 'Château FERRANDE', prix: 400000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Bordeaux, Médoc', ingredients: 'Clarence Dillon Wines SAS, Clarendelle', prix: 360000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Bordeaux, Haut-Médoc', ingredients: 'Chateau Peyrat-Fourthon', prix: 370000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Bordeaux, Médoc', ingredients: 'Tour Prignac, Grande Réserve', prix: 450000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Bordeaux, Saint-Emilion Grand Cru', ingredients: 'Chateau La Croix Montlabert, Saint Emilion Grand Cru', prix: 460000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Bordeaux, Saint-Emilion Grand Cru', ingredients: 'Chateau Montlabert, Saint Emilion Grand Cru', prix: 620000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Vallée du Rhône, AOP Côtes du Rhône', ingredients: 'Maison JEANTET, Côtes du Rhône', prix: 110000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Vallée du Rhône, AOP Côtes du Rhône', ingredients: 'Maison CASTEL, Syrah-Grenache', prix: 120000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Vallée du Rhône, AOP Chateauneuf du Pape', ingredients: 'Maison JEANTET, Châteauneuf du Pape', prix: 600000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Vallée du Rhône, AOP Chateauneuf du Pape', ingredients: 'Maison CASTEL, Châteauneuf du Pape', prix: 630000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Provence, Bandol', ingredients: 'Château Canadel', prix: 440000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Espagne, Rioja', ingredients: 'Domaine Igay, Marques de Murrieta', prix: 300000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Bordeaux, Haut-Médoc', ingredients: 'Chateau d\'Arcins (Magnum)', prix: 670000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Vieux Papes – Vin de France', ingredients: 'Vin de France – Code AVIRGEVDFGEN007870', prix: 70000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Maison Plessis-Duval – Saumur-Champigny 2023', ingredients: 'Vallée de la Loire, Saumur-Champigny – Code AVIRGELOISMR005346', prix: 170000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Maison DRESCHLER, Pinot Noir – Alsace 2022', ingredients: 'Alsace Pinot Noir – Code AVIBLCALSGEW010472', prix: 180000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'SAS Moulin de Gassac, Grenache-Syrah – IGP Pays d\'Hérault 2023', ingredients: 'Languedoc-Roussillon, IGP Pays d\'Hérault – Code AVIRGELGCVOC009242', prix: 130000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Cercle des Epicuriens – Bordeaux 2023', ingredients: 'Bordeaux, Bordeaux – Code AVIRGEBDX999009643', prix: 70000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Baron de Lestac – Bordeaux 2023', ingredients: 'Bordeaux, Bordeaux – Code AVIBLCBDXGEN004724', prix: 120000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Maison CASTEL, Bordeaux Merlot – Bordeaux 2023', ingredients: 'Bordeaux, Bordeaux – Code AVIRGEBDXRGE004734', prix: 130000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Chateau du Lort – Bordeaux Supérieur 2018', ingredients: 'Bordeaux, Bordeaux Supérieur – Code AVIRGEBDXGEN005333', prix: 150000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Maison CASTEL, Médoc – Médoc 2022', ingredients: 'Bordeaux, Médoc – Code AVIRGE999999006008', prix: 150000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Cru de la Maqueline – Bordeaux 2023', ingredients: 'Bordeaux, Bordeaux – Code AVIRGEBDXRGE005351', prix: 160000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Maison CASTEL, Saint-Emilion – Saint-Emilion 2023', ingredients: 'Bordeaux, Saint-Emilion – Code AVIRGE999999006013', prix: 170000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Chateau Campet – 1ères Cotes de Bordeaux 2017', ingredients: 'Bordeaux, 1ères Cotes de Bordeaux – Code AVIRGEBDXGEN005332', prix: 210000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Château Tartuguière – Médoc 2023', ingredients: 'France, Médoc – Code AVIRGEBDXMED005339', prix: 200000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Chateau du Bousquet – Côtes de Bourg 2019', ingredients: 'Bordeaux, Côtes de Bourg – Code AVIRGEBDX99900533', prix: 240000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Clarence Dillon Wines SAS, Clarendelle – Bordeaux Rouge 2016', ingredients: 'Bordeaux, Bordeaux – Code AVIRGEBDX999007810', prix: 280000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Chateau d\'Arcins – Haut-Médoc 2023', ingredients: 'Bordeaux, Haut-Médoc – Code AVIBLCBDXHMD004728', prix: 310000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Château FERRANDE – Graves 2016', ingredients: 'Bordeaux, Graves – Code AVIRGEBDXGRA003249', prix: 400000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Clarence Dillon Wines SAS, Clarendelle – Médoc 2019', ingredients: 'Bordeaux, Médoc – Code AVIRGE999999007808', prix: 360000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Chateau Peyrat-Fourthon – Haut-Médoc 2007', ingredients: 'Bordeaux, Haut-Médoc – Code AVIRGEBDXHMD003808', prix: 370000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Tour Prignac, Grande Réserve – Médoc 2021', ingredients: 'Bordeaux, Médoc – Code AVIRGE999999006016', prix: 450000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Chateau La Croix Montlabert – Saint-Emilion Grand Cru 2021', ingredients: 'Bordeaux, Saint-Emilion Grand Cru – Code AVIRGEBDXEMI004743', prix: 460000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Chateau Montlabert – Saint-Emilion Grand Cru 2022', ingredients: 'Bordeaux, Saint-Emilion Grand Cru – Code AVIRGEBDXEMI005352', prix: 620000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Maison JEANTET, Côtes du Rhône – AOP Côtes du Rhône 2024', ingredients: 'Vallée du Rhône, AOP Côtes du Rhône – Code AVIRGECDR999005349', prix: 110000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Maison CASTEL, Syrah-Grenache – AOP Côtes du Rhône 2023', ingredients: 'Vallée du Rhône, AOP Côtes du Rhône – Code AVIRGECDRGEN004730', prix: 120000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Maison JEANTET, Châteauneuf du Pape – AOP Chateauneuf du Pape 2018', ingredients: 'Vallée du Rhône, AOP Chateauneuf du Pape – Code AVIRGRCDRCDP005350', prix: 600000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Maison CASTEL, Châteauneuf du Pape – AOP Chateauneuf du Pape 2022', ingredients: 'Vallée du Rhône, AOP Chateauneuf du Pape – Code AVIRGRE999999006010', prix: 630000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Château Canadel – Bandol 2017', ingredients: 'Provence, Bandol – Code AVIRGEPRO999008013', prix: 440000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Domaine Igay, Marques de Murrieta – Rioja 2011', ingredients: 'Espagne, Rioja – Code AVIRGEETRESP004845', prix: 300000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Chateau d\'Arcins (Magnum) – Haut-Médoc 2023', ingredients: 'Bordeaux, Haut-Médoc – Les Magnums – Code AVBIRGEBDXHMD005457', prix: 670000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
 
                 // =========================================================================
                 // NOUVEAUX VINS : VINS BLANCS
                 // =========================================================================
-                { nom: 'Vin de France', ingredients: 'Vieux Papes Chardonnay-Colombard', prix: 80000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
-                { nom: 'Vin de France', ingredients: 'Maison CASTEL, Chardonnay', prix: 100000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
-                { nom: 'Vallée de la Loire, Muscadet Sèvre-et-Maine', ingredients: 'Maison CASTEL', prix: 130000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
-                { nom: 'Vallée de la Loire, Touraine', ingredients: 'Maison Plessis-Duval', prix: 140000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
-                { nom: 'Bordeaux, Bordeaux', ingredients: 'Maison CASTEL, Bordeaux Sauvignon Blanc', prix: 150000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
-                { nom: 'Bordeaux, Bordeaux', ingredients: 'Clarence Dillon Wines SAS, Clarendelle', prix: 290000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
-                { nom: 'Sud-Ouest, IGP Côtes de Gascogne', ingredients: 'Maison CASTEL Sauvignon Blanc', prix: 110000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
-                { nom: 'Languedoc-Roussillon, IGP Pays d\'Oc', ingredients: 'La Roche Mazet, Chardonnay Blanc', prix: 100000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
-                { nom: 'Languedoc-Roussillon, IGP Pays d\'Hérault', ingredients: 'SAS Moulin de Gassac, Grenache Blanc-Colombard-Rolle', prix: 130000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
-                { nom: 'Languedoc-Roussillon, IGP Pays d\'Oc', ingredients: 'Maison CASTEL, Muscat Semi-Sweet', prix: 140000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
-                { nom: 'Bourgogne, Chablis', ingredients: 'Maison CASTEL', prix: 440000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
-                { nom: 'Alsace Riesling', ingredients: 'Maison DRESCHLER, Riesling', prix: 180000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
-                { nom: 'Alsace Gewurztraminer', ingredients: 'Maison DRESCHLER, Gewurztraminer', prix: 220000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Vieux Papes Chardonnay-Colombard – Vin de France', ingredients: 'Vin de France – Code AVIRGEVDFGEN010473', prix: 80000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Maison CASTEL, Chardonnay – Vin de France 2024', ingredients: 'Vin de France – Code AVIBLCVDFGEN004758', prix: 100000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Maison CASTEL – Muscadet Sèvre-et-Maine 2023', ingredients: 'Vallée de la Loire, Muscadet Sèvre-et-Maine – Code AVIBLCLOI0006009', prix: 130000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Maison Plessis-Duval – Touraine 2023', ingredients: 'Vallée de la Loire, Touraine – Code AVIBLCLOI999009642', prix: 140000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Maison CASTEL, Bordeaux Sauvignon Blanc – Bordeaux 2023', ingredients: 'Bordeaux, Bordeaux – Code AVIBLCBDX999007181', prix: 150000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Clarence Dillon Wines SAS, Clarendelle – Bordeaux Blanc 2023', ingredients: 'Bordeaux, Bordeaux – Code AVIBLCBDX999007369', prix: 290000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Maison CASTEL Sauvignon Blanc – IGP Côtes de Gascogne 2021', ingredients: 'Sud-Ouest, IGP Côtes de Gascogne – Code AVIBLCBDXGEN004746', prix: 110000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'La Roche Mazet, Chardonnay Blanc – IGP Pays d\'Oc 2024', ingredients: 'Languedoc-Roussillon, IGP Pays d\'Oc – Code AVIBLCSUDGEN010470', prix: 100000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'SAS Moulin de Gassac, Grenache Blanc-Colombard-Rolle – IGP Pays d\'Hérault 2024', ingredients: 'Languedoc-Roussillon, IGP Pays d\'Hérault – Code AVIRGELGCVOC009243', prix: 130000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Maison CASTEL, Muscat Semi-Sweet – IGP Pays d\'Oc 2023', ingredients: 'Languedoc-Roussillon, IGP Pays d\'Oc – Code AVIBLCSUDVOC008653', prix: 140000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Maison CASTEL – Chablis 2023', ingredients: 'Bourgogne, Chablis – Code AVIBLCBOUCBL009640', prix: 440000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Maison DRESCHLER, Riesling – Alsace 2022', ingredients: 'Alsace Riesling – Code AVIBLCALSGEW010471', prix: 180000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Maison DRESCHLER, Gewurztraminer – Alsace 2022', ingredients: 'Alsace Gewurztraminer – Code AVIBLC999999005464', prix: 220000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
 
                 // =========================================================================
                 // NOUVEAUX VINS : VINS ROSES
                 // =========================================================================
-                { nom: 'Vallée de la Loire, AOP Cabernet d\'Anjou', ingredients: 'Maison Plessis-Duval', prix: 130000, categorie: 'Vins roses', alcool: 1, stock: 10 },
-                { nom: 'Côtes de Provence, AOP Côtes de Provence', ingredients: 'Maison CASTEL', prix: 180000, categorie: 'Vins roses', alcool: 1, stock: 10 },
-                { nom: 'Côtes de Provence, AOP Côtes de Provence', ingredients: 'Maison CAVALIER, Marafiance', prix: 310000, categorie: 'Vins roses', alcool: 1, stock: 10 },
-                { nom: 'Languedoc-Roussillon, IGP Pays d\'Hérault', ingredients: 'SAS Moulin de Gassac, Grenache-Carignan-Cinsault', prix: 130000, categorie: 'Vins roses', alcool: 1, stock: 10 },
+                { nom: 'Maison Plessis-Duval – AOP Cabernet d\'Anjou 2023-2024', ingredients: 'Vallée de la Loire, AOP Cabernet d\'Anjou – Code AVIROSLOIANJ005465', prix: 130000, categorie: 'Vins roses', alcool: 1, stock: 10 },
+                { nom: 'Maison CASTEL – AOP Côtes de Provence 2024', ingredients: 'Côtes de Provence, AOP Côtes de Provence – Code AVIROSPRO999004735', prix: 180000, categorie: 'Vins roses', alcool: 1, stock: 10 },
+                { nom: 'Maison CAVALIER, Marafiance – AOP Côtes de Provence 2023', ingredients: 'Côtes de Provence, AOP Côtes de Provence – Code AVIROSPRO999006772', prix: 310000, categorie: 'Vins roses', alcool: 1, stock: 10 },
+                { nom: 'SAS Moulin de Gassac, Grenache-Carignan-Cinsault – IGP Pays d\'Hérault 2024', ingredients: 'Languedoc-Roussillon, IGP Pays d\'Hérault – Code AVIRGELGCVOC009243', prix: 130000, categorie: 'Vins roses', alcool: 1, stock: 10 },
 
                 // =========================================================================
                 // NOUVEAUX VINS : VINS EFFERVESCENTS
                 // =========================================================================
-                { nom: 'Languedoc-Roussillon, Vin Pétillant', ingredients: 'SAS Moulin de Gassac, Folie by Gassac', prix: 210000, categorie: 'Vins effervescents', alcool: 1, stock: 10 },
-                { nom: 'Vin de France, Mousseux 1/2 Sec', ingredients: 'Maison CASTEL, ICE Blanc', prix: 200000, categorie: 'Vins effervescents', alcool: 1, stock: 10 },
-                { nom: 'Vin de France, Mousseux 1/2 Sec', ingredients: 'Maison CASTEL, ICE Rosé', prix: 190000, categorie: 'Vins effervescents', alcool: 1, stock: 10 },
+                { nom: 'SAS Moulin de Gassac, Folie by Gassac – Vin Pétillant', ingredients: 'Languedoc-Roussillon, Vin Pétillant – Code AVIBLCLGCVOC009245', prix: 210000, categorie: 'Vins effervescents', alcool: 1, stock: 10 },
+                { nom: 'Maison CASTEL, ICE Blanc – Mousseux 1/2 Sec', ingredients: 'Vin de France, Mousseux 1/2 Sec – Code ACHVMBCAS999002994', prix: 200000, categorie: 'Vins effervescents', alcool: 1, stock: 10 },
+                { nom: 'Maison CASTEL, ICE Rosé – Mousseux 1/2 Sec', ingredients: 'Vin de France, Mousseux 1/2 Sec – Code ACHVMBCAS999002995', prix: 190000, categorie: 'Vins effervescents', alcool: 1, stock: 10 },
 
                 // =========================================================================
                 // NOUVEAUX VINS : BAGS IN BOX
                 // =========================================================================
-                { nom: 'Afrique du Sud', ingredients: 'L\'Incontournable Blanc (Format 5L)', prix: 170000, categorie: 'Bags in Box', alcool: 1, stock: 5 },
-                { nom: 'Afrique du Sud', ingredients: 'L\'Incontournable Rouge (Format 5L)', prix: 190000, categorie: 'Bags in Box', alcool: 1, stock: 5 },
+                { nom: 'L\'Incontournable Blanc (Format 5L)', ingredients: 'Afrique du Sud – Code AVIBLCSAF999005982', prix: 170000, categorie: 'Bags in Box', alcool: 1, stock: 5 },
+                { nom: 'L\'Incontournable Rouge (Format 5L)', ingredients: 'Afrique du Sud – Code AVIRGESAF999005981', prix: 190000, categorie: 'Bags in Box', alcool: 1, stock: 5 },
                 // =========================================================================
                 // CHAMPAGNE / VIN MOUSSEUX
                 // =========================================================================
@@ -216,18 +207,20 @@ class SeedQuintanaSkyDrinks {
                 { nom: 'Platinium Label', ingredients: 'Vin mousseux scintillant', prix: 100000, categorie: 'Champagne / Vin Mousseux', alcool: 1, stock: 10 },
 
                 // =========================================================================
-                // COCKTAILS
+                // COCKTAILS (sous-catégories de la carte : "Avec alcool" / "Sans alcool")
                 // =========================================================================
-                { nom: 'Spritz Aperol', ingredients: 'Cocktail pétillant', prix: 30000, categorie: 'Cocktails', alcool: 1, stock: 40 },
-                { nom: 'Spritz Campari', ingredients: 'Cocktail pétillant', prix: 30000, categorie: 'Cocktails', alcool: 1, stock: 40 },
-                { nom: 'Spritz Bucks Fizz', ingredients: 'Cocktail pétillant', prix: 30000, categorie: 'Cocktails', alcool: 1, stock: 40 },
-                { nom: 'Spritz Limoncello', ingredients: 'Cocktail pétillant', prix: 30000, categorie: 'Cocktails', alcool: 1, stock: 40 },
-                { nom: 'Margarita', ingredients: 'Cocktail standard avec alcool', prix: 20000, categorie: 'Cocktails', alcool: 1, stock: 50 },
-                { nom: 'Mojito', ingredients: 'Cocktail standard avec alcool', prix: 20000, categorie: 'Cocktails', alcool: 1, stock: 50 },
-                { nom: 'Piña Colada', ingredients: 'Cocktail standard avec alcool', prix: 20000, categorie: 'Cocktails', alcool: 1, stock: 50 },
-                { nom: 'Pink Panther', ingredients: 'Mocktail sans alcool', prix: 15000, categorie: 'Cocktails', alcool: 0, stock: 50 },
-                { nom: 'Bora Bora', ingredients: 'Mocktail sans alcool', prix: 15000, categorie: 'Cocktails', alcool: 0, stock: 50 },
-                { nom: 'Mojito Sans Alcool', ingredients: 'Mocktail sans alcool', prix: 15000, categorie: 'Cocktails', alcool: 0, stock: 50 },
+                // --- Avec alcool ---
+                { nom: 'Spritz Aperol', ingredients: 'Cocktail pétillant', prix: 30000, categorie: 'Cocktails > Avec alcool', alcool: 1, stock: 40 },
+                { nom: 'Spritz Campari', ingredients: 'Cocktail pétillant', prix: 30000, categorie: 'Cocktails > Avec alcool', alcool: 1, stock: 40 },
+                { nom: 'Spritz Bucks Fizz', ingredients: 'Cocktail pétillant', prix: 30000, categorie: 'Cocktails > Avec alcool', alcool: 1, stock: 40 },
+                { nom: 'Spritz Limoncello', ingredients: 'Cocktail pétillant', prix: 30000, categorie: 'Cocktails > Avec alcool', alcool: 1, stock: 40 },
+                { nom: 'Margarita', ingredients: 'Cocktail standard avec alcool', prix: 20000, categorie: 'Cocktails > Avec alcool', alcool: 1, stock: 50 },
+                { nom: 'Mojito', ingredients: 'Cocktail standard avec alcool', prix: 20000, categorie: 'Cocktails > Avec alcool', alcool: 1, stock: 50 },
+                { nom: 'Piña Colada', ingredients: 'Cocktail standard avec alcool', prix: 20000, categorie: 'Cocktails > Avec alcool', alcool: 1, stock: 50 },
+                // --- Sans alcool ---
+                { nom: 'Pink Panther', ingredients: 'Mocktail sans alcool', prix: 15000, categorie: 'Cocktails > Sans alcool', alcool: 0, stock: 50 },
+                { nom: 'Bora Bora', ingredients: 'Mocktail sans alcool', prix: 15000, categorie: 'Cocktails > Sans alcool', alcool: 0, stock: 50 },
+                { nom: 'Mojito Sans Alcool', ingredients: 'Mocktail sans alcool', prix: 15000, categorie: 'Cocktails > Sans alcool', alcool: 0, stock: 50 },
 
                 // =========================================================================
                 // RHUM - TEQUILA - VODKA (Bouteilles)
@@ -235,8 +228,7 @@ class SeedQuintanaSkyDrinks {
                 { nom: 'Tequila Victoria', ingredients: 'Tequila', prix: 90000, categorie: 'Rhum, Tequila & Vodka', alcool: 1, stock: 10 },
                 { nom: 'Vodka Locale', ingredients: 'Vodka', prix: 100000, categorie: 'Rhum, Tequila & Vodka', alcool: 1, stock: 10 },
                 { nom: 'Vodka Priskaia', ingredients: 'Vodka', prix: 100000, categorie: 'Rhum, Tequila & Vodka', alcool: 1, stock: 10 },
-                { nom: 'Casanove', ingredients: 'Alcool fort', prix: 100000, categorie: 'Rhum, Tequila & Vodka', alcool: 1, stock: 10 },
-                { nom: 'Cazanove 1 L', ingredients: 'Alcool fort 1L', prix: 100000, categorie: 'Rhum, Tequila & Vodka', alcool: 1, stock: 10 },
+                { nom: 'Cazanove 1L', alias: ['Casanove', 'Cazanove 1 L'], ingredients: 'Alcool fort 1L', prix: 100000, categorie: 'Rhum, Tequila & Vodka', alcool: 1, stock: 10 },
                 { nom: 'Mangustan', ingredients: 'Alcool fort', prix: 100000, categorie: 'Rhum, Tequila & Vodka', alcool: 1, stock: 10 },
                 { nom: 'Tequila Municion 70 CL', ingredients: 'Tequila 70cl', prix: 300000, categorie: 'Rhum, Tequila & Vodka', alcool: 1, stock: 8 },
                 { nom: 'Cuvee Blanche Dzama', ingredients: 'Rhum blanc Dzama', prix: 120000, categorie: 'Rhum, Tequila & Vodka', alcool: 1, stock: 10 },
@@ -245,17 +237,15 @@ class SeedQuintanaSkyDrinks {
                 { nom: 'Rhum Arrangé', ingredients: 'Bouteille de rhum arrangé', prix: 120000, categorie: 'Rhum, Tequila & Vodka', alcool: 1, stock: 15 },
                 { nom: 'Don Pedro', ingredients: 'Alcool fort', prix: 120000, categorie: 'Rhum, Tequila & Vodka', alcool: 1, stock: 10 },
                 { nom: 'Vodka Zubrowka', ingredients: 'Vodka polonaise', prix: 300000, categorie: 'Rhum, Tequila & Vodka', alcool: 1, stock: 8 },
-                { nom: 'Vodka Absolut', ingredients: 'Vodka premium', prix: 400000, categorie: 'Rhum, Tequila & Vodka', alcool: 1, stock: 8 },
 
                 // =========================================================================
                 // SPIRITUEUX
                 // =========================================================================
                 { nom: 'Martini Rouge', ingredients: 'Bouteille vermouth', prix: 375000, categorie: 'Spiritueux', alcool: 1, stock: 10 },
                 { nom: 'Martini Blanc', ingredients: 'Bouteille vermouth', prix: 375000, categorie: 'Spiritueux', alcool: 1, stock: 10 },
-                { nom: 'Bailey\'s', ingredients: 'Liqueur de crème', prix: 400000, categorie: 'Spiritueux', alcool: 1, stock: 10 },
-                { nom: 'Bayleys', ingredients: 'Liqueur de crème', prix: 400000, categorie: 'Spiritueux', alcool: 1, stock: 10 },
+                { nom: 'Bailey\'s', alias: ['Bayleys'], ingredients: 'Liqueur de crème', prix: 400000, categorie: 'Spiritueux', alcool: 1, stock: 10 },
                 { nom: 'Jagermeister', ingredients: 'Liqueur aux herbes', prix: 550000, categorie: 'Spiritueux', alcool: 1, stock: 10 },
-                { nom: 'Absolut Vodka Bleu', ingredients: 'Vodka Absolut Bleue', prix: 400000, categorie: 'Spiritueux', alcool: 1, stock: 10 },
+                { nom: 'Absolut Vodka Bleu', alias: ['Vodka Absolut'], ingredients: 'Vodka Absolut Bleue', prix: 400000, categorie: 'Spiritueux', alcool: 1, stock: 10 },
                 { nom: 'Absolut Vodka Citron', ingredients: 'Vodka Absolut Citron', prix: 400000, categorie: 'Spiritueux', alcool: 1, stock: 10 },
                 { nom: 'Luxardo Bitter', ingredients: 'Bitter Luxardo', prix: 350000, categorie: 'Spiritueux', alcool: 1, stock: 8 },
                 { nom: 'Ciroc', ingredients: 'Vodka Ciroc', prix: 550000, categorie: 'Spiritueux', alcool: 1, stock: 8 },
@@ -265,42 +255,29 @@ class SeedQuintanaSkyDrinks {
                 // WHISKY
                 // =========================================================================
                 { nom: 'John Peters (70cl)', ingredients: 'Whisky 70cl', prix: 160000, categorie: 'Whisky', alcool: 1, stock: 12 },
-                { nom: 'Clan Campbell', ingredients: 'Whisky écossais', prix: 300000, categorie: 'Whisky', alcool: 1, stock: 10 },
-                { nom: 'Clan Campblee', ingredients: 'Whisky écossais', prix: 300000, categorie: 'Whisky', alcool: 1, stock: 10 },
-                { nom: 'J&B (70cl)', ingredients: 'Whisky 70cl', prix: 300000, categorie: 'Whisky', alcool: 1, stock: 12 },
-                { nom: 'JB 70 CL', ingredients: 'Whisky 70cl', prix: 300000, categorie: 'Whisky', alcool: 1, stock: 12 },
-                { nom: 'J&B (1L)', ingredients: 'Whisky 1L', prix: 400000, categorie: 'Whisky', alcool: 1, stock: 12 },
-                { nom: 'JB 1L', ingredients: 'Whisky 1L', prix: 400000, categorie: 'Whisky', alcool: 1, stock: 12 },
+                { nom: 'Clan Campbell', alias: ['Clan Campblee'], ingredients: 'Whisky écossais', prix: 300000, categorie: 'Whisky', alcool: 1, stock: 10 },
+                { nom: 'J&B 70cl', alias: ['J&B (70cl)', 'JB 70 CL'], ingredients: 'Whisky 70cl', prix: 300000, categorie: 'Whisky', alcool: 1, stock: 12 },
+                { nom: 'J&B 1L', alias: ['J&B (1L)', 'JB 1L'], ingredients: 'Whisky 1L', prix: 400000, categorie: 'Whisky', alcool: 1, stock: 12 },
                 { nom: 'Grants (1L)', ingredients: 'Whisky 1L', prix: 400000, categorie: 'Whisky', alcool: 1, stock: 10 },
-                { nom: 'Red Label', ingredients: 'Whisky Red Label', prix: 400000, categorie: 'Whisky', alcool: 1, stock: 12 },
-                { nom: 'Red Label (1L)', ingredients: 'Whisky 1L', prix: 400000, categorie: 'Whisky', alcool: 1, stock: 12 },
+                { nom: 'Red Label 1L', alias: ['Red Label', 'Red Label (1L)'], ingredients: 'Whisky Red Label 1L', prix: 400000, categorie: 'Whisky', alcool: 1, stock: 12 },
                 { nom: 'Ballantine\'s (1L)', ingredients: 'Whisky 1L', prix: 400000, categorie: 'Whisky', alcool: 1, stock: 10 },
-                { nom: 'Black Label', ingredients: 'Whisky Black Label', prix: 580000, categorie: 'Whisky', alcool: 1, stock: 10 },
-                { nom: 'Black Label (1L)', ingredients: 'Whisky 1L', prix: 580000, categorie: 'Whisky', alcool: 1, stock: 10 },
-                { nom: 'Jack Daniel\'s (1L)', ingredients: 'Whisky Tennessee 1L', prix: 580000, categorie: 'Whisky', alcool: 1, stock: 10 },
-                { nom: 'Jack Daniels', ingredients: 'Whisky Tennessee', prix: 580000, categorie: 'Whisky', alcool: 1, stock: 10 },
-                { nom: 'Chivas Regal (1L)', ingredients: 'Whisky 1L', prix: 630000, categorie: 'Whisky', alcool: 1, stock: 10 },
-                { nom: 'Chivas 70 CL', ingredients: 'Whisky 70cl', prix: 550000, categorie: 'Whisky', alcool: 1, stock: 10 },
-                { nom: 'Chivas 1 L', ingredients: 'Whisky 1L', prix: 630000, categorie: 'Whisky', alcool: 1, stock: 10 },
+                { nom: 'Black Label 1L', alias: ['Black Label', 'Black Label (1L)'], ingredients: 'Whisky Black Label 1L', prix: 580000, categorie: 'Whisky', alcool: 1, stock: 10 },
+                { nom: 'Jack Daniel\'s 1L', alias: ['Jack Daniel\'s (1L)', 'Jack Daniels'], ingredients: 'Whisky Tennessee 1L', prix: 580000, categorie: 'Whisky', alcool: 1, stock: 10 },
+                { nom: 'Chivas Regal 70cl', alias: ['Chivas 70 CL'], ingredients: 'Whisky 70cl', prix: 550000, categorie: 'Whisky', alcool: 1, stock: 10 },
+                { nom: 'Chivas Regal 1L', alias: ['Chivas Regal (1L)', 'Chivas 1 L'], ingredients: 'Whisky 1L', prix: 630000, categorie: 'Whisky', alcool: 1, stock: 10 },
                 { nom: 'Double Black', ingredients: 'Whisky premium', prix: 680000, categorie: 'Whisky', alcool: 1, stock: 8 },
-                { nom: 'Gold Label (1L)', ingredients: 'Whisky de luxe 1L', prix: 850000, categorie: 'Whisky', alcool: 1, stock: 6 },
-                { nom: 'Gold Label', ingredients: 'Whisky de luxe', prix: 850000, categorie: 'Whisky', alcool: 1, stock: 6 },
-                { nom: 'Platinium', ingredients: 'Whisky platinium', prix: 1200000, categorie: 'Whisky', alcool: 1, stock: 5 },
+                { nom: 'Gold Label 1L', alias: ['Gold Label (1L)', 'Gold Label'], ingredients: 'Whisky de luxe 1L', prix: 850000, categorie: 'Whisky', alcool: 1, stock: 6 },
+                { nom: 'Platinum 1L', alias: ['Platinum (1L)', 'Platinium'], ingredients: 'Whisky Platinum 1L', prix: 1200000, categorie: 'Whisky', alcool: 1, stock: 5 },
                 { nom: 'Fuji', ingredients: 'Whisky japonais', prix: 950000, categorie: 'Whisky', alcool: 1, stock: 5 },
                 { nom: 'Toki', ingredients: 'Whisky japonais', prix: 1200000, categorie: 'Whisky', alcool: 1, stock: 5 },
                 { nom: 'Yoshi', ingredients: 'Whisky japonais', prix: 1200000, categorie: 'Whisky', alcool: 1, stock: 5 },
-                { nom: 'Platinum (1L)', ingredients: 'Whisky 1L', prix: 1200000, categorie: 'Whisky', alcool: 1, stock: 5 },
                 { nom: 'Nikka', ingredients: 'Whisky japonais', prix: 1200000, categorie: 'Whisky', alcool: 1, stock: 5 },
 
                 // =========================================================================
                 // GIN
                 // =========================================================================
-                { nom: 'Gordon\'s', ingredients: 'Gin', prix: 400000, categorie: 'Gin', alcool: 1, stock: 10 },
-                { nom: 'Gordons', ingredients: 'Gin', prix: 400000, categorie: 'Gin', alcool: 1, stock: 10 },
-                { nom: 'Gin Gordon\'s', ingredients: 'Gin Gordon\'s', prix: 400000, categorie: 'Gin', alcool: 1, stock: 10 },
-                { nom: 'Bombay', ingredients: 'Gin premium', prix: 530000, categorie: 'Gin', alcool: 1, stock: 10 },
-                { nom: 'Sapphire', ingredients: 'Gin Bombay Sapphire', prix: 530000, categorie: 'Gin', alcool: 1, stock: 10 },
-                { nom: 'Bombay Saphir', ingredients: 'Gin Bombay Sapphire', prix: 530000, categorie: 'Gin', alcool: 1, stock: 10 },
+                { nom: 'Gordon\'s', alias: ['Gordons', 'Gin Gordon\'s'], ingredients: 'Gin', prix: 400000, categorie: 'Gin', alcool: 1, stock: 10 },
+                { nom: 'Bombay Sapphire', alias: ['Bombay', 'Sapphire', 'Bombay Saphir'], ingredients: 'Gin Bombay Sapphire', prix: 530000, categorie: 'Gin', alcool: 1, stock: 10 },
                 { nom: 'Tanqueray', ingredients: 'Gin Tanqueray', prix: 480000, categorie: 'Gin', alcool: 1, stock: 10 },
 
                 // =========================================================================
@@ -407,14 +384,14 @@ class SeedQuintanaSkyDrinks {
                 { nom: 'VERSUS PENGVINO Sweet Red Sensation 13% 75Cl', ingredients: 'Vin rouge sud-africain', prix: 90000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 20 },
                 { nom: 'SEVEN CENTURIES Pierre Dumont 14.5% 2022/2023 75Cl', ingredients: 'Vin rouge sud-africain', prix: 140000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
                 { nom: 'GRENACHE LIMITED RELEASE CREDO Stellenbosch Vineyards 13.5% 75Cl (Bouchon)', ingredients: 'Vin rouge sud-africain', prix: 380000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 10 },
-                { nom: 'Marianne Craft Wines, Natana Red Blend', ingredients: 'Vin rouge sud-africain', prix: 96000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
-                { nom: 'Ken Forrester Wines, Petit Cabernet-Sauvignon', ingredients: 'Vin rouge sud-africain', prix: 160000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
-                { nom: 'Kanonkop Estate, Kadette Cape Blend', ingredients: 'Vin rouge sud-africain', prix: 170000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'Marianne Craft Wines, Natana Red Blend', ingredients: 'Vin rouge sud-africain', prix: 100000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'Ken Forrester Wines, Petit Cabernet-Sauvignon', ingredients: 'Vin rouge sud-africain', prix: 150000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'Kanonkop Estate, Kadette Cape Blend', ingredients: 'Vin rouge sud-africain', prix: 160000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
                 { nom: 'Kanonkop Estate, Kadette Pinotage', ingredients: 'Vin rouge sud-africain', prix: 180000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
                 { nom: 'A.A. Badenhorst, Secateurs Shiraz Blend', ingredients: 'Vin rouge sud-africain', prix: 190000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
                 { nom: 'Mullineux Wines, Kloof Street', ingredients: 'Vin rouge sud-africain', prix: 200000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
                 { nom: 'La Vierge Collection, Nymphomane', ingredients: 'Vin rouge sud-africain', prix: 270000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
-                { nom: 'La Vierge Collection, Pinot Noir', ingredients: 'Vin rouge sud-africain', prix: 440000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'La Vierge Collection, Pinot Noir', ingredients: 'Vin rouge sud-africain', prix: 430000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
 
                 // =========================================================================
                 // VINS ROSES Sud-Africains
@@ -466,7 +443,6 @@ class SeedQuintanaSkyDrinks {
                 { nom: 'CHABLIS Domaine Des Quatres Saisons 12,5% 2022 75Cl', ingredients: 'BOURGOGNE', prix: 480000, categorie: 'VINS BLANCS Français', alcool: 1, stock: 10 },
                 { nom: 'CHABLIS Vieilles Vignes Domaine L. Chatelaine 13% 2021 75Cl', ingredients: 'BOURGOGNE', prix: 540000, categorie: 'VINS BLANCS Français', alcool: 1, stock: 10 },
                 { nom: 'BOURGOGNE COTES de Beaune Domaine de la Juvinière 12,5% 2018 75Cl', ingredients: 'BOURGOGNE', prix: 570000, categorie: 'VINS BLANCS Français', alcool: 1, stock: 10 },
-                { nom: 'ANJOU Chenin Elysis Les Caves de la Loire 11,5% 2024 75cl', ingredients: 'LOIRE', prix: 180000, categorie: 'VINS BLANCS Français', alcool: 1, stock: 10 },
                 { nom: 'SAUVIGNON Val de Loire Les Anges 11% 2024 75Cl', ingredients: 'LOIRE', prix: 140000, categorie: 'VINS BLANCS Français', alcool: 1, stock: 10 },
                 { nom: 'TOURAINE Le Sauvignon Cht de Fontenay 13% 2022 75Cl', ingredients: 'LOIRE', prix: 300000, categorie: 'VINS BLANCS Français', alcool: 1, stock: 10 },
                 { nom: 'MUSCADET ACCOSTAGE Sèvre et Maine Ménard Gaborit 13% 2023 75Cl', ingredients: 'LOIRE', prix: 330000, categorie: 'VINS BLANCS Français', alcool: 1, stock: 10 },
@@ -597,13 +573,49 @@ class SeedQuintanaSkyDrinks {
             ];
 
             let insertedCount = 0;
+            let renamedCount = 0;
+            let removedCount = 0;
+            const keptDuplicates = [];
 
             for (const item of items) {
                 // Vérifier si le produit existe déjà dans bar_products
-                const [existing] = await pool.query(
+                let [existing] = await pool.query(
                     'SELECT id FROM bar_products WHERE nom = ?',
                     [item.nom]
                 );
+
+                const aliases = item.alias || [];
+                if (aliases.length > 0) {
+                    const [aliasRows] = await pool.query(
+                        'SELECT id, nom FROM bar_products WHERE nom IN (?) ORDER BY id',
+                        [aliases]
+                    );
+                    let duplicates = aliasRows;
+
+                    // Pas encore d'article sous le nouveau nom : on renomme l'ancien (son historique est conservé)
+                    if (existing.length === 0 && aliasRows.length > 0) {
+                        const [first, ...rest] = aliasRows;
+                        await pool.query('UPDATE bar_products SET nom = ? WHERE id = ?', [item.nom, first.id]);
+                        existing = [{ id: first.id }];
+                        duplicates = rest;
+                        renamedCount++;
+                    }
+
+                    // Doublons restants : supprimés s'ils n'ont aucune vente, sinon signalés
+                    for (const dup of duplicates) {
+                        const [[{ ventes }]] = await pool.query(
+                            'SELECT COUNT(*) AS ventes FROM bar_transactions WHERE product_id = ?',
+                            [dup.id]
+                        );
+                        if (Number(ventes) === 0) {
+                            await pool.query('DELETE FROM bar_stock WHERE product_id = ?', [dup.id]);
+                            await pool.query('DELETE FROM bar_products WHERE id = ?', [dup.id]);
+                            removedCount++;
+                        } else {
+                            keptDuplicates.push(`${dup.nom} (id ${dup.id}, ${ventes} vente(s)) → doublon de « ${item.nom} »`);
+                        }
+                    }
+                }
 
                 let productId;
 
@@ -643,6 +655,12 @@ class SeedQuintanaSkyDrinks {
 
             console.log(`\n📊 Résumé du seeder Bar Quintana Sky :`);
             console.log(`   ✅ ${insertedCount} nouvelle(s) boisson(s) / article(s) inséré(s) dans bar_products`);
+            console.log(`   ✏️  ${renamedCount} article(s) renommé(s) au nom unique`);
+            console.log(`   🧹 ${removedCount} doublon(s) sans vente supprimé(s)`);
+            if (keptDuplicates.length > 0) {
+                console.log(`   ⚠️  ${keptDuplicates.length} doublon(s) conservé(s) car déjà vendu(s), à vérifier :`);
+                keptDuplicates.forEach((line) => console.log(`      - ${line}`));
+            }
             console.log(`   📋 Total traité : ${items.length} articles`);
             console.log('✅ Seeder des boissons du bar terminé avec succès !\n');
 
