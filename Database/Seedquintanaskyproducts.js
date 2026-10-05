@@ -132,7 +132,7 @@ class SeedQuintanaSkyProducts {
                     // Si le produit existe déjà, on met à jour sa catégorie et ses infos (nettoyage automatique)
                     await pool.query(
                         `UPDATE products 
-                         SET category_id = ?, nom = ?, unite = ?, prix_achat = ?, prix_vente = ?, type_produit = ? 
+                         SET category_id = ?, nom = ?, unite = ?, prix_achat = ?, prix_vente = ?, type_produit = ?, source_module = 'RESTAURANT'
                          WHERE code = ?`,
                         [
                             item.category_id,
@@ -148,8 +148,8 @@ class SeedQuintanaSkyProducts {
                 } else {
                     // Sinon, on l'insère
                     await pool.query(
-                        `INSERT INTO products (category_id, code, nom, unite, prix_achat, prix_vente, actif, type_produit) 
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                        `INSERT INTO products (category_id, code, nom, unite, prix_achat, prix_vente, actif, type_produit, source_module)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'RESTAURANT')`,
                         [
                             item.category_id,
                             item.code,
