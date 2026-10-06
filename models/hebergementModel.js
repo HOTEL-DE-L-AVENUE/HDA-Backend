@@ -783,6 +783,60 @@ async function listReservationPayments(reservationId) {
   });
 }
 
+async function getReservationCollectionReport(startDate, endDate) {
+  const [paymentRows] = await pool.query(
+    `SELECT p.moyen_paiement, p.montant, p.details
+       FROM reservation_payments p
+       INNER JOIN reservations r ON r.id = p.reservation_id
+      WHERE p.created_at >= ?
+        AND p.created_at < DATE_ADD(?, INTERVAL 1 DAY)`,
+    [startDate, endDate]
+  );
+  let totalCollected = 0;
+  const paymentMethods = {
+    ESPECES: 0,
+    TPE: 0,
+    MVOLA: 0,
+    GRATUIT: 0,
+    VIREMENT: 0,
+    CREDIT: 0,
+    ORANGE_MONEY: 0,
+    CARTE: 0,
+  };
+
+  for (const payment of paymentRows) {
+    let details = payment.details;
+    if (typeof details === 'string') {
+      try {
+        details = JSON.parse(details);
+      } catch (error) {
+        throw new Error(`Détails invalides pour l'encaissement hôtel : ${error.message}`);
+      }
+    }
+
+    const methods = Array.isArray(details?.modes_paiement) && details.modes_paiement.length > 0
+      ? details.modes_paiement
+      : [{ moyen_paiement: payment.moyen_paiement, montant: payment.montant }];
+
+    for (const method of methods) {
+      const name = String(method?.moyen_paiement || '').trim().toUpperCase();
+      if (!Object.prototype.hasOwnProperty.call(paymentMethods, name)) continue;
+      const amount = Number(method.montant);
+      if (Number.isFinite(amount) && amount > 0) {
+        paymentMethods[name] += amount;
+        if (!['CREDIT', 'GRATUIT'].includes(name)) totalCollected += amount;
+      }
+    }
+  }
+
+  return {
+    startDate,
+    endDate,
+    totalCollected,
+    paymentMethods,
+  };
+}
+
 // Check-in : crée le séjour, passe la réservation en cours et prépare la
 // facture d'hébergement. Le règlement reste une étape distincte après
 // l'arrivée du client.
@@ -1430,8 +1484,7 @@ module.exports = {
   RoomTypes, Rooms, Equipments, RoomEquipments, RoomMaintenance, RoomMinibar,
   RoomStatusHistory, Reservations, ReservationGuests, Stays, HousekeepingTasks, MaintenanceWorkers,
   LostAndFound, MinibarConsumptions,
-  isRoomAvailable, createReservationWithGuests, validateReservationDiscount, recordReservationPayment,
-  createReservationPayment, applyReservationPaymentTransaction, listReservationPayments, checkIn, checkOut, availableRooms,
+  isRoomAvailable, createReservationWithGuests, validateReservationDiscount, recordReservationPayment, listReservationPayments, getReservationCollectionReport, checkIn, checkOut, availableRooms,
   updateMaintenanceStatus, getMaintenanceStats, getReservationStats,
   updateRoomStatus, getEquipmentByCode, getEquipmentCategories, getEquipmentStats,
   updateRoomEquipmentStatus, getRoomStats, saveMaintenance, saveHousekeepingTask,
