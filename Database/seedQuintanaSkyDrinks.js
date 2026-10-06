@@ -125,75 +125,75 @@ class SeedQuintanaSkyDrinks {
                 { nom: 'Medaillon Rose', ingredients: 'Vin rosé', prix: 75000, categorie: 'Vins - Bouteille', alcool: 1, stock: 10 },
 
                 // =========================================================================
-                // NOUVEAUX VINS : VINS ROUGES (Listing CHR Juin 2026 – nom = Référence – Appellation Millésime)
+                // NOUVEAUX VINS : VINS ROUGES
                 // =========================================================================
-                { nom: 'Vieux Papes – Vin de France', ingredients: 'Vin de France – Code AVIRGEVDFGEN007870', prix: 70000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Maison Plessis-Duval – Saumur-Champigny 2023', ingredients: 'Vallée de la Loire, Saumur-Champigny – Code AVIRGELOISMR005346', prix: 170000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Maison DRESCHLER, Pinot Noir – Alsace 2022', ingredients: 'Alsace Pinot Noir – Code AVIBLCALSGEW010472', prix: 180000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'SAS Moulin de Gassac, Grenache-Syrah – IGP Pays d\'Hérault 2023', ingredients: 'Languedoc-Roussillon, IGP Pays d\'Hérault – Code AVIRGELGCVOC009242', prix: 130000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Cercle des Epicuriens – Bordeaux 2023', ingredients: 'Bordeaux, Bordeaux – Code AVIRGEBDX999009643', prix: 70000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Baron de Lestac – Bordeaux 2023', ingredients: 'Bordeaux, Bordeaux – Code AVIBLCBDXGEN004724', prix: 120000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Maison CASTEL, Bordeaux Merlot – Bordeaux 2023', ingredients: 'Bordeaux, Bordeaux – Code AVIRGEBDXRGE004734', prix: 130000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Chateau du Lort – Bordeaux Supérieur 2018', ingredients: 'Bordeaux, Bordeaux Supérieur – Code AVIRGEBDXGEN005333', prix: 150000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Maison CASTEL, Médoc – Médoc 2022', ingredients: 'Bordeaux, Médoc – Code AVIRGE999999006008', prix: 150000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Cru de la Maqueline – Bordeaux 2023', ingredients: 'Bordeaux, Bordeaux – Code AVIRGEBDXRGE005351', prix: 160000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Maison CASTEL, Saint-Emilion – Saint-Emilion 2023', ingredients: 'Bordeaux, Saint-Emilion – Code AVIRGE999999006013', prix: 170000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Chateau Campet – 1ères Cotes de Bordeaux 2017', ingredients: 'Bordeaux, 1ères Cotes de Bordeaux – Code AVIRGEBDXGEN005332', prix: 210000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Château Tartuguière – Médoc 2023', ingredients: 'France, Médoc – Code AVIRGEBDXMED005339', prix: 200000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Chateau du Bousquet – Côtes de Bourg 2019', ingredients: 'Bordeaux, Côtes de Bourg – Code AVIRGEBDX99900533', prix: 240000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Clarence Dillon Wines SAS, Clarendelle – Bordeaux Rouge 2016', ingredients: 'Bordeaux, Bordeaux – Code AVIRGEBDX999007810', prix: 280000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Chateau d\'Arcins – Haut-Médoc 2023', ingredients: 'Bordeaux, Haut-Médoc – Code AVIBLCBDXHMD004728', prix: 310000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Château FERRANDE – Graves 2016', ingredients: 'Bordeaux, Graves – Code AVIRGEBDXGRA003249', prix: 400000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Clarence Dillon Wines SAS, Clarendelle – Médoc 2019', ingredients: 'Bordeaux, Médoc – Code AVIRGE999999007808', prix: 360000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Chateau Peyrat-Fourthon – Haut-Médoc 2007', ingredients: 'Bordeaux, Haut-Médoc – Code AVIRGEBDXHMD003808', prix: 370000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Tour Prignac, Grande Réserve – Médoc 2021', ingredients: 'Bordeaux, Médoc – Code AVIRGE999999006016', prix: 450000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Chateau La Croix Montlabert – Saint-Emilion Grand Cru 2021', ingredients: 'Bordeaux, Saint-Emilion Grand Cru – Code AVIRGEBDXEMI004743', prix: 460000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Chateau Montlabert – Saint-Emilion Grand Cru 2022', ingredients: 'Bordeaux, Saint-Emilion Grand Cru – Code AVIRGEBDXEMI005352', prix: 620000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Maison JEANTET, Côtes du Rhône – AOP Côtes du Rhône 2024', ingredients: 'Vallée du Rhône, AOP Côtes du Rhône – Code AVIRGECDR999005349', prix: 110000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Maison CASTEL, Syrah-Grenache – AOP Côtes du Rhône 2023', ingredients: 'Vallée du Rhône, AOP Côtes du Rhône – Code AVIRGECDRGEN004730', prix: 120000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Maison JEANTET, Châteauneuf du Pape – AOP Chateauneuf du Pape 2018', ingredients: 'Vallée du Rhône, AOP Chateauneuf du Pape – Code AVIRGRCDRCDP005350', prix: 600000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Maison CASTEL, Châteauneuf du Pape – AOP Chateauneuf du Pape 2022', ingredients: 'Vallée du Rhône, AOP Chateauneuf du Pape – Code AVIRGRE999999006010', prix: 630000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Château Canadel – Bandol 2017', ingredients: 'Provence, Bandol – Code AVIRGEPRO999008013', prix: 440000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Domaine Igay, Marques de Murrieta – Rioja 2011', ingredients: 'Espagne, Rioja – Code AVIRGEETRESP004845', prix: 300000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
-                { nom: 'Chateau d\'Arcins (Magnum) – Haut-Médoc 2023', ingredients: 'Bordeaux, Haut-Médoc – Les Magnums – Code AVBIRGEBDXHMD005457', prix: 670000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Vin de France (Vieux Papes Rouge)', ingredients: 'Vieux Papes', prix: 70000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Vallée de la Loire, Saumur-Champigny (Maison Plessis-Duval)', ingredients: 'Maison Plessis-Duval', prix: 170000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Alsace Pinot Noir (Maison DRESCHLER)', ingredients: 'Maison DRESCHLER, Pinot Noir', prix: 180000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Languedoc-Roussillon, IGP Pays d\'Hérault (Moulin de Gassac Rouge)', ingredients: 'SAS Moulin de Gassac, Grenache-Syrah', prix: 130000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux (Cercle des Epicuriens Rouge)', ingredients: 'Cercle des Epicuriens', prix: 70000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux (Baron de Lestac Rouge)', ingredients: 'Baron de Lestac', prix: 120000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux (Maison CASTEL Merlot Rouge)', ingredients: 'Maison CASTEL, Bordeaux Merlot', prix: 130000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux, Bordeaux Supérieur (Chateau du Lort)', ingredients: 'Chateau du Lort', prix: 150000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux, Médoc (Maison CASTEL Rouge)', ingredients: 'Maison CASTEL, Médoc', prix: 150000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux (Cru de la Maqueline Rouge)', ingredients: 'Cru de la Maqueline', prix: 160000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux, Saint-Emilion (Maison CASTEL)', ingredients: 'Maison CASTEL, Saint-Emilion', prix: 170000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux, 1ères Cotes de Bordeaux (Chateau Campet)', ingredients: 'Chateau Campet', prix: 210000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'France, Médoc (Château Tartuguière)', ingredients: 'Château Tartuguière', prix: 200000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux, Côtes de Bourg (Chateau du Bousquet)', ingredients: 'Chateau du Bousquet', prix: 240000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux (Clarendelle Clarence Dillon Rouge)', ingredients: 'Clarence Dillon Wines SAS, Clarendelle', prix: 280000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux, Haut-Médoc (Chateau d\'Arcins)', ingredients: 'Chateau d\'Arcins', prix: 310000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux, Graves (Château FERRANDE)', ingredients: 'Château FERRANDE', prix: 400000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux, Médoc (Clarendelle Clarence Dillon Rouge)', ingredients: 'Clarence Dillon Wines SAS, Clarendelle', prix: 360000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux, Haut-Médoc (Chateau Peyrat-Fourthon)', ingredients: 'Chateau Peyrat-Fourthon', prix: 370000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux, Médoc (Tour Prignac Grande Réserve)', ingredients: 'Tour Prignac, Grande Réserve', prix: 450000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux, Saint-Emilion Grand Cru (Chateau La Croix Montlabert)', ingredients: 'Chateau La Croix Montlabert, Saint Emilion Grand Cru', prix: 460000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux, Saint-Emilion Grand Cru (Chateau Montlabert)', ingredients: 'Chateau Montlabert, Saint Emilion Grand Cru', prix: 620000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Vallée du Rhône, AOP Côtes du Rhône (Maison JEANTET)', ingredients: 'Maison JEANTET, Côtes du Rhône', prix: 110000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Vallée du Rhône, AOP Côtes du Rhône (Maison CASTEL Syrah-Grenache)', ingredients: 'Maison CASTEL, Syrah-Grenache', prix: 120000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Vallée du Rhône, AOP Chateauneuf du Pape (Maison JEANTET)', ingredients: 'Maison JEANTET, Châteauneuf du Pape', prix: 600000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Vallée du Rhône, AOP Chateauneuf du Pape (Maison CASTEL)', ingredients: 'Maison CASTEL, Châteauneuf du Pape', prix: 630000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Provence, Bandol (Château Canadel)', ingredients: 'Château Canadel', prix: 440000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Espagne, Rioja (Marques de Murrieta)', ingredients: 'Domaine Igay, Marques de Murrieta', prix: 300000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux, Haut-Médoc (Chateau d\'Arcins Magnum)', ingredients: 'Chateau d\'Arcins (Magnum)', prix: 670000, categorie: 'Vins rouges', alcool: 1, stock: 10 },
 
                 // =========================================================================
                 // NOUVEAUX VINS : VINS BLANCS
                 // =========================================================================
-                { nom: 'Vieux Papes Chardonnay-Colombard – Vin de France', ingredients: 'Vin de France – Code AVIRGEVDFGEN010473', prix: 80000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
-                { nom: 'Maison CASTEL, Chardonnay – Vin de France 2024', ingredients: 'Vin de France – Code AVIBLCVDFGEN004758', prix: 100000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
-                { nom: 'Maison CASTEL – Muscadet Sèvre-et-Maine 2023', ingredients: 'Vallée de la Loire, Muscadet Sèvre-et-Maine – Code AVIBLCLOI0006009', prix: 130000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
-                { nom: 'Maison Plessis-Duval – Touraine 2023', ingredients: 'Vallée de la Loire, Touraine – Code AVIBLCLOI999009642', prix: 140000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
-                { nom: 'Maison CASTEL, Bordeaux Sauvignon Blanc – Bordeaux 2023', ingredients: 'Bordeaux, Bordeaux – Code AVIBLCBDX999007181', prix: 150000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
-                { nom: 'Clarence Dillon Wines SAS, Clarendelle – Bordeaux Blanc 2023', ingredients: 'Bordeaux, Bordeaux – Code AVIBLCBDX999007369', prix: 290000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
-                { nom: 'Maison CASTEL Sauvignon Blanc – IGP Côtes de Gascogne 2021', ingredients: 'Sud-Ouest, IGP Côtes de Gascogne – Code AVIBLCBDXGEN004746', prix: 110000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
-                { nom: 'La Roche Mazet, Chardonnay Blanc – IGP Pays d\'Oc 2024', ingredients: 'Languedoc-Roussillon, IGP Pays d\'Oc – Code AVIBLCSUDGEN010470', prix: 100000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
-                { nom: 'SAS Moulin de Gassac, Grenache Blanc-Colombard-Rolle – IGP Pays d\'Hérault 2024', ingredients: 'Languedoc-Roussillon, IGP Pays d\'Hérault – Code AVIRGELGCVOC009243', prix: 130000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
-                { nom: 'Maison CASTEL, Muscat Semi-Sweet – IGP Pays d\'Oc 2023', ingredients: 'Languedoc-Roussillon, IGP Pays d\'Oc – Code AVIBLCSUDVOC008653', prix: 140000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
-                { nom: 'Maison CASTEL – Chablis 2023', ingredients: 'Bourgogne, Chablis – Code AVIBLCBOUCBL009640', prix: 440000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
-                { nom: 'Maison DRESCHLER, Riesling – Alsace 2022', ingredients: 'Alsace Riesling – Code AVIBLCALSGEW010471', prix: 180000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
-                { nom: 'Maison DRESCHLER, Gewurztraminer – Alsace 2022', ingredients: 'Alsace Gewurztraminer – Code AVIBLC999999005464', prix: 220000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Vin de France (Vieux Papes Chardonnay-Colombard)', ingredients: 'Vieux Papes Chardonnay-Colombard', prix: 80000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Vin de France (Maison CASTEL Chardonnay)', ingredients: 'Maison CASTEL, Chardonnay', prix: 100000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Vallée de la Loire, Muscadet Sèvre-et-Maine (Maison CASTEL)', ingredients: 'Maison CASTEL', prix: 130000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Vallée de la Loire, Touraine (Maison Plessis-Duval)', ingredients: 'Maison Plessis-Duval', prix: 140000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux (Maison CASTEL Sauvignon Blanc)', ingredients: 'Maison CASTEL, Bordeaux Sauvignon Blanc', prix: 150000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Bordeaux (Clarendelle Clarence Dillon Blanc)', ingredients: 'Clarence Dillon Wines SAS, Clarendelle', prix: 290000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Sud-Ouest, IGP Côtes de Gascogne (Maison CASTEL)', ingredients: 'Maison CASTEL Sauvignon Blanc', prix: 110000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Languedoc-Roussillon, IGP Pays d\'Oc (La Roche Mazet Chardonnay)', ingredients: 'La Roche Mazet, Chardonnay Blanc', prix: 100000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Languedoc-Roussillon, IGP Pays d\'Hérault (Moulin de Gassac Blanc)', ingredients: 'SAS Moulin de Gassac, Grenache Blanc-Colombard-Rolle', prix: 130000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Languedoc-Roussillon, IGP Pays d\'Oc (Maison CASTEL Muscat)', ingredients: 'Maison CASTEL, Muscat Semi-Sweet', prix: 140000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Bourgogne, Chablis (Maison CASTEL)', ingredients: 'Maison CASTEL', prix: 440000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Alsace Riesling (Maison DRESCHLER)', ingredients: 'Maison DRESCHLER, Riesling', prix: 180000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
+                { nom: 'Alsace Gewurztraminer (Maison DRESCHLER)', ingredients: 'Maison DRESCHLER, Gewurztraminer', prix: 220000, categorie: 'Vins blancs', alcool: 1, stock: 10 },
 
                 // =========================================================================
                 // NOUVEAUX VINS : VINS ROSES
                 // =========================================================================
-                { nom: 'Maison Plessis-Duval – AOP Cabernet d\'Anjou 2023-2024', ingredients: 'Vallée de la Loire, AOP Cabernet d\'Anjou – Code AVIROSLOIANJ005465', prix: 130000, categorie: 'Vins roses', alcool: 1, stock: 10 },
-                { nom: 'Maison CASTEL – AOP Côtes de Provence 2024', ingredients: 'Côtes de Provence, AOP Côtes de Provence – Code AVIROSPRO999004735', prix: 180000, categorie: 'Vins roses', alcool: 1, stock: 10 },
-                { nom: 'Maison CAVALIER, Marafiance – AOP Côtes de Provence 2023', ingredients: 'Côtes de Provence, AOP Côtes de Provence – Code AVIROSPRO999006772', prix: 310000, categorie: 'Vins roses', alcool: 1, stock: 10 },
-                { nom: 'SAS Moulin de Gassac, Grenache-Carignan-Cinsault – IGP Pays d\'Hérault 2024', ingredients: 'Languedoc-Roussillon, IGP Pays d\'Hérault – Code AVIRGELGCVOC009243', prix: 130000, categorie: 'Vins roses', alcool: 1, stock: 10 },
+                { nom: 'Vallée de la Loire, AOP Cabernet d\'Anjou (Maison Plessis-Duval)', ingredients: 'Maison Plessis-Duval', prix: 130000, categorie: 'Vins roses', alcool: 1, stock: 10 },
+                { nom: 'Côtes de Provence, AOP Côtes de Provence (Maison CASTEL)', ingredients: 'Maison CASTEL', prix: 180000, categorie: 'Vins roses', alcool: 1, stock: 10 },
+                { nom: 'Côtes de Provence, AOP Côtes de Provence (Maison CAVALIER Marafiance)', ingredients: 'Maison CAVALIER, Marafiance', prix: 310000, categorie: 'Vins roses', alcool: 1, stock: 10 },
+                { nom: 'Languedoc-Roussillon, IGP Pays d\'Hérault (Moulin de Gassac Rosé)', ingredients: 'SAS Moulin de Gassac, Grenache-Carignan-Cinsault', prix: 130000, categorie: 'Vins roses', alcool: 1, stock: 10 },
 
                 // =========================================================================
                 // NOUVEAUX VINS : VINS EFFERVESCENTS
                 // =========================================================================
-                { nom: 'SAS Moulin de Gassac, Folie by Gassac – Vin Pétillant', ingredients: 'Languedoc-Roussillon, Vin Pétillant – Code AVIBLCLGCVOC009245', prix: 210000, categorie: 'Vins effervescents', alcool: 1, stock: 10 },
-                { nom: 'Maison CASTEL, ICE Blanc – Mousseux 1/2 Sec', ingredients: 'Vin de France, Mousseux 1/2 Sec – Code ACHVMBCAS999002994', prix: 200000, categorie: 'Vins effervescents', alcool: 1, stock: 10 },
-                { nom: 'Maison CASTEL, ICE Rosé – Mousseux 1/2 Sec', ingredients: 'Vin de France, Mousseux 1/2 Sec – Code ACHVMBCAS999002995', prix: 190000, categorie: 'Vins effervescents', alcool: 1, stock: 10 },
+                { nom: 'Languedoc-Roussillon, Vin Pétillant (Folie by Gassac)', ingredients: 'SAS Moulin de Gassac, Folie by Gassac', prix: 210000, categorie: 'Vins effervescents', alcool: 1, stock: 10 },
+                { nom: 'Vin de France, Mousseux 1/2 Sec (Maison CASTEL ICE Blanc)', ingredients: 'Maison CASTEL, ICE Blanc', prix: 200000, categorie: 'Vins effervescents', alcool: 1, stock: 10 },
+                { nom: 'Vin de France, Mousseux 1/2 Sec (Maison CASTEL ICE Rosé)', ingredients: 'Maison CASTEL, ICE Rosé', prix: 190000, categorie: 'Vins effervescents', alcool: 1, stock: 10 },
 
                 // =========================================================================
                 // NOUVEAUX VINS : BAGS IN BOX
                 // =========================================================================
-                { nom: 'L\'Incontournable Blanc (Format 5L)', ingredients: 'Afrique du Sud – Code AVIBLCSAF999005982', prix: 170000, categorie: 'Bags in Box', alcool: 1, stock: 5 },
-                { nom: 'L\'Incontournable Rouge (Format 5L)', ingredients: 'Afrique du Sud – Code AVIRGESAF999005981', prix: 190000, categorie: 'Bags in Box', alcool: 1, stock: 5 },
+                { nom: 'Afrique du Sud (L\'Incontournable Blanc 5L)', ingredients: 'L\'Incontournable Blanc (Format 5L)', prix: 170000, categorie: 'Bags in Box', alcool: 1, stock: 5 },
+                { nom: 'Afrique du Sud (L\'Incontournable Rouge 5L)', ingredients: 'L\'Incontournable Rouge (Format 5L)', prix: 190000, categorie: 'Bags in Box', alcool: 1, stock: 5 },
                 // =========================================================================
                 // CHAMPAGNE / VIN MOUSSEUX
                 // =========================================================================
@@ -234,16 +234,17 @@ class SeedQuintanaSkyDrinks {
                 { nom: 'Cuvee Blanche Dzama', ingredients: 'Rhum blanc Dzama', prix: 120000, categorie: 'Rhum, Tequila & Vodka', alcool: 1, stock: 10 },
                 { nom: 'Dzama Cuvee Prestige', ingredients: 'Rhum ambré Prestige', prix: 150000, categorie: 'Rhum, Tequila & Vodka', alcool: 1, stock: 10 },
                 { nom: 'Dzama Cuvee Noir', ingredients: 'Rhum noir Dzama', prix: 140000, categorie: 'Rhum, Tequila & Vodka', alcool: 1, stock: 10 },
-                { nom: 'Rhum Arrangé', ingredients: 'Bouteille de rhum arrangé', prix: 120000, categorie: 'Rhum, Tequila & Vodka', alcool: 1, stock: 15 },
+                { nom: 'Rhum Arrangé (Bouteille)', ingredients: 'Bouteille de rhum arrangé', prix: 120000, categorie: 'Rhum, Tequila & Vodka', alcool: 1, stock: 15 },
                 { nom: 'Don Pedro', ingredients: 'Alcool fort', prix: 120000, categorie: 'Rhum, Tequila & Vodka', alcool: 1, stock: 10 },
                 { nom: 'Vodka Zubrowka', ingredients: 'Vodka polonaise', prix: 300000, categorie: 'Rhum, Tequila & Vodka', alcool: 1, stock: 8 },
+                { nom: 'Vodka Absolut (Bouteille)', ingredients: 'Vodka premium', prix: 400000, categorie: 'Rhum, Tequila & Vodka', alcool: 1, stock: 8 },
 
                 // =========================================================================
                 // SPIRITUEUX
                 // =========================================================================
-                { nom: 'Martini Rouge', ingredients: 'Bouteille vermouth', prix: 375000, categorie: 'Spiritueux', alcool: 1, stock: 10 },
-                { nom: 'Martini Blanc', ingredients: 'Bouteille vermouth', prix: 375000, categorie: 'Spiritueux', alcool: 1, stock: 10 },
-                { nom: 'Bailey\'s', alias: ['Bayleys'], ingredients: 'Liqueur de crème', prix: 400000, categorie: 'Spiritueux', alcool: 1, stock: 10 },
+                { nom: 'Martini Rouge (Bouteille)', ingredients: 'Bouteille vermouth', prix: 375000, categorie: 'Spiritueux', alcool: 1, stock: 10 },
+                { nom: 'Martini Blanc (Bouteille)', ingredients: 'Bouteille vermouth', prix: 375000, categorie: 'Spiritueux', alcool: 1, stock: 10 },
+                { nom: 'Bailey\'s (Bouteille)', ingredients: 'Liqueur de crème', prix: 400000, categorie: 'Spiritueux', alcool: 1, stock: 10 },
                 { nom: 'Jagermeister', ingredients: 'Liqueur aux herbes', prix: 550000, categorie: 'Spiritueux', alcool: 1, stock: 10 },
                 { nom: 'Absolut Vodka Bleu', alias: ['Vodka Absolut'], ingredients: 'Vodka Absolut Bleue', prix: 400000, categorie: 'Spiritueux', alcool: 1, stock: 10 },
                 { nom: 'Absolut Vodka Citron', ingredients: 'Vodka Absolut Citron', prix: 400000, categorie: 'Spiritueux', alcool: 1, stock: 10 },
@@ -255,19 +256,21 @@ class SeedQuintanaSkyDrinks {
                 // WHISKY
                 // =========================================================================
                 { nom: 'John Peters (70cl)', ingredients: 'Whisky 70cl', prix: 160000, categorie: 'Whisky', alcool: 1, stock: 12 },
-                { nom: 'Clan Campbell', alias: ['Clan Campblee'], ingredients: 'Whisky écossais', prix: 300000, categorie: 'Whisky', alcool: 1, stock: 10 },
-                { nom: 'J&B 70cl', alias: ['J&B (70cl)', 'JB 70 CL'], ingredients: 'Whisky 70cl', prix: 300000, categorie: 'Whisky', alcool: 1, stock: 12 },
-                { nom: 'J&B 1L', alias: ['J&B (1L)', 'JB 1L'], ingredients: 'Whisky 1L', prix: 400000, categorie: 'Whisky', alcool: 1, stock: 12 },
+                { nom: 'Clan Campbell (70cl)', ingredients: 'Whisky écossais', prix: 300000, categorie: 'Whisky', alcool: 1, stock: 10 },
+                { nom: 'J&B (70cl)', ingredients: 'Whisky 70cl', prix: 300000, categorie: 'Whisky', alcool: 1, stock: 12 },
+                { nom: 'J&B (1L)', ingredients: 'Whisky 1L', prix: 400000, categorie: 'Whisky', alcool: 1, stock: 12 },
                 { nom: 'Grants (1L)', ingredients: 'Whisky 1L', prix: 400000, categorie: 'Whisky', alcool: 1, stock: 10 },
-                { nom: 'Red Label 1L', alias: ['Red Label', 'Red Label (1L)'], ingredients: 'Whisky Red Label 1L', prix: 400000, categorie: 'Whisky', alcool: 1, stock: 12 },
+                { nom: 'Red Label (70cl)', ingredients: 'Whisky Red Label 70cl', prix: 400000, categorie: 'Whisky', alcool: 1, stock: 12 },
+                { nom: 'Red Label (1L)', ingredients: 'Whisky 1L', prix: 400000, categorie: 'Whisky', alcool: 1, stock: 12 },
                 { nom: 'Ballantine\'s (1L)', ingredients: 'Whisky 1L', prix: 400000, categorie: 'Whisky', alcool: 1, stock: 10 },
-                { nom: 'Black Label 1L', alias: ['Black Label', 'Black Label (1L)'], ingredients: 'Whisky Black Label 1L', prix: 580000, categorie: 'Whisky', alcool: 1, stock: 10 },
-                { nom: 'Jack Daniel\'s 1L', alias: ['Jack Daniel\'s (1L)', 'Jack Daniels'], ingredients: 'Whisky Tennessee 1L', prix: 580000, categorie: 'Whisky', alcool: 1, stock: 10 },
-                { nom: 'Chivas Regal 70cl', alias: ['Chivas 70 CL'], ingredients: 'Whisky 70cl', prix: 550000, categorie: 'Whisky', alcool: 1, stock: 10 },
-                { nom: 'Chivas Regal 1L', alias: ['Chivas Regal (1L)', 'Chivas 1 L'], ingredients: 'Whisky 1L', prix: 630000, categorie: 'Whisky', alcool: 1, stock: 10 },
+                { nom: 'Black Label (70cl)', ingredients: 'Whisky Black Label 70cl', prix: 580000, categorie: 'Whisky', alcool: 1, stock: 10 },
+                { nom: 'Black Label (1L)', ingredients: 'Whisky 1L', prix: 580000, categorie: 'Whisky', alcool: 1, stock: 10 },
+                { nom: 'Jack Daniel\'s (1L)', ingredients: 'Whisky Tennessee 1L', prix: 580000, categorie: 'Whisky', alcool: 1, stock: 10 },
+                { nom: 'Chivas Regal (70cl)', ingredients: 'Whisky 70cl', prix: 550000, categorie: 'Whisky', alcool: 1, stock: 10 },
+                { nom: 'Chivas Regal (1L)', ingredients: 'Whisky 1L', prix: 630000, categorie: 'Whisky', alcool: 1, stock: 10 },
                 { nom: 'Double Black', ingredients: 'Whisky premium', prix: 680000, categorie: 'Whisky', alcool: 1, stock: 8 },
-                { nom: 'Gold Label 1L', alias: ['Gold Label (1L)', 'Gold Label'], ingredients: 'Whisky de luxe 1L', prix: 850000, categorie: 'Whisky', alcool: 1, stock: 6 },
-                { nom: 'Platinum 1L', alias: ['Platinum (1L)', 'Platinium'], ingredients: 'Whisky Platinum 1L', prix: 1200000, categorie: 'Whisky', alcool: 1, stock: 5 },
+                { nom: 'Gold Label (1L)', ingredients: 'Whisky de luxe 1L', prix: 850000, categorie: 'Whisky', alcool: 1, stock: 6 },
+                { nom: 'Platinium', ingredients: 'Whisky platinium', prix: 1200000, categorie: 'Whisky', alcool: 1, stock: 5 },
                 { nom: 'Fuji', ingredients: 'Whisky japonais', prix: 950000, categorie: 'Whisky', alcool: 1, stock: 5 },
                 { nom: 'Toki', ingredients: 'Whisky japonais', prix: 1200000, categorie: 'Whisky', alcool: 1, stock: 5 },
                 { nom: 'Yoshi', ingredients: 'Whisky japonais', prix: 1200000, categorie: 'Whisky', alcool: 1, stock: 5 },
@@ -276,8 +279,8 @@ class SeedQuintanaSkyDrinks {
                 // =========================================================================
                 // GIN
                 // =========================================================================
-                { nom: 'Gordon\'s', alias: ['Gordons', 'Gin Gordon\'s'], ingredients: 'Gin', prix: 400000, categorie: 'Gin', alcool: 1, stock: 10 },
-                { nom: 'Bombay Sapphire', alias: ['Bombay', 'Sapphire', 'Bombay Saphir'], ingredients: 'Gin Bombay Sapphire', prix: 530000, categorie: 'Gin', alcool: 1, stock: 10 },
+                { nom: 'Gordon\'s (Bouteille)', ingredients: 'Gin Gordon\'s', prix: 400000, categorie: 'Gin', alcool: 1, stock: 10 },
+                { nom: 'Bombay Sapphire (Bouteille)', ingredients: 'Gin Bombay Sapphire', prix: 530000, categorie: 'Gin', alcool: 1, stock: 10 },
                 { nom: 'Tanqueray', ingredients: 'Gin Tanqueray', prix: 480000, categorie: 'Gin', alcool: 1, stock: 10 },
 
                 // =========================================================================
