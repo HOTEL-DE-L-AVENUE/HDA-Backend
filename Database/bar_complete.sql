@@ -157,11 +157,7 @@ INSERT IGNORE INTO `bar_products` (`id`, `nom`, `ingredients`, `prix`, `categori
 (3, 'Piña Colada', 'Rhum, lait de coco, ananas', 40.00, 'Cocktails', 1, 'PRODUIT_FINI', 'BAR'),
 (4, 'Margarita', 'Tequila, triple sec, citron', 45.00, 'Cocktails', 1, 'PRODUIT_FINI', 'BAR'),
 (5, 'Daiquiri', 'Rhum blanc, citron frais, sucre', 38.00, 'Cocktails', 1, 'PRODUIT_FINI', 'BAR'),
-(6, 'Coca-Cola', 'Boisson gazeuse', 15.00, 'Boissons', 0, 'PRODUIT_FINI', 'BAR'),
-(7, 'Jus d''Orange', 'Jus frais', 12.00, 'Boissons', 0, 'PRODUIT_FINI', 'BAR'),
-(8, 'Bière Local', 'Bière blonde 33cl', 20.00, 'Bières', 1, 'PRODUIT_FINI', 'BAR'),
-(9, 'Cachaça', 'Rhum brésilien 50ml', 30.00, 'Alcools', 1, 'PRODUIT_FINI', 'BAR'),
-(10, 'Verre d''eau', 'Eau minérale', 5.00, 'Boissons', 0, 'PRODUIT_FINI', 'BAR');
+(9, 'Cachaça', 'Rhum brésilien 50ml', 30.00, 'Alcools', 1, 'PRODUIT_FINI', 'BAR');
 
 INSERT IGNORE INTO `bar_stock` (`product_id`, `quantite`, `seuil_minimum`, `unite`) VALUES
 (1, 50, 10, 'bouteilles'),
@@ -169,11 +165,7 @@ INSERT IGNORE INTO `bar_stock` (`product_id`, `quantite`, `seuil_minimum`, `unit
 (3, 75, 15, 'portions'),
 (4, 60, 15, 'portions'),
 (5, 80, 20, 'portions'),
-(6, 150, 30, 'bouteilles'),
-(7, 120, 25, 'verres'),
-(8, 200, 50, 'bouteilles'),
-(9, 100, 20, 'bouteilles'),
-(10, 500, 100, 'verres');
+(9, 100, 20, 'bouteilles');
 
 INSERT IGNORE INTO `bar_clients` (`id`, `nom`, `prenom`, `telephone`, `email`, `statut`) VALUES
 (1, 'Razafy', 'Jean', '+261 34 12 345 67', 'jean@example.com', 'ACTIF'),
