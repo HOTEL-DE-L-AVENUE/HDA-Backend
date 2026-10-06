@@ -1,7 +1,7 @@
 // controllers/clientController.js
 const {
   Clients, ClientAccounts, LoyaltyPoints,
-  createClient, updateClient,
+  createClient, updateClient, peekNextClientCode,
   findByClientId, search, adjustAccountBalance,
   findKycByClientId, upsertKyc,
 } = require('../models/clientModel');
@@ -21,13 +21,18 @@ const clientsCrud = createCrudController(Clients, {
 });
 
 // POST /api/clients — nom est le seul champ obligatoire ; code_client est
-// auto-généré s'il n'est pas fourni (voir clientModel.createClient).
+// toujours auto-généré au format CH<n>/<année> (voir clientModel.createClient).
 async function createClientHandler(req, res) {
   if (!req.body?.nom || !String(req.body.nom).trim()) {
     throw ApiError.badRequest('Le nom est requis');
   }
   const client = await createClient(req.body);
   return created(res, renderClient(client));
+}
+
+// GET /api/clients/next-code — aperçu du code qui sera attribué au prochain client
+async function nextCodeHandler(req, res) {
+  return ok(res, { code_client: await peekNextClientCode() });
 }
 
 // PUT /api/clients/:id — code_client ne peut plus être modifié une fois attribué
@@ -212,7 +217,7 @@ async function listClients(req, res) {
 }
 
 module.exports = {
-  clientsCrud, listClients, createClientHandler, updateClientHandler, deleteClientHandler,
+  clientsCrud, listClients, createClientHandler, nextCodeHandler, updateClientHandler, deleteClientHandler,
   getOneWithAccount, searchClients, getAccount, creditAccount, debitAccount, loyaltyHistory,
   getKyc, saveKyc, getKycSignature, getKycSignatureHistory, saveKycSignature,
   ClientAccountsCrud: createCrudController(ClientAccounts, { filterable: ['client_id'] }),

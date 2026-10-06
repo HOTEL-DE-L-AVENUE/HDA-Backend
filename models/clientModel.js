@@ -65,39 +65,60 @@ function pickClientFields(data = {}) {
   return out;
 }
 
+// Code client Hôtel : CH<numéro>/<année>, numéroté à partir de 1 chaque année
+// (CH1/2026, CH2/2026, ... puis CH1/2027). Les clients supprimés (soft delete)
+// gardent leur code : leur numéro n'est jamais réattribué.
+async function nextClientCode(conn, year) {
+  const [[row]] = await conn.query(
+    `SELECT COALESCE(MAX(CAST(SUBSTRING_INDEX(SUBSTRING(code_client, 3), '/', 1) AS UNSIGNED)), 0) AS last_number
+       FROM clients
+      WHERE code_client REGEXP ?`,
+    [`^CH[0-9]+/${year}$`]
+  );
+  return `CH${Number(row.last_number) + 1}/${year}`;
+}
+
+// Aperçu du prochain code, affiché dès l'ouverture du formulaire d'ajout.
+// Le code définitif reste attribué à l'enregistrement (createClient) : si un
+// autre poste a enregistré un client entre-temps, le client reçoit le suivant.
+async function peekNextClientCode() {
+  return nextClientCode(pool, new Date().getFullYear());
+}
+
 // Crée un client. `nom` est le seul champ obligatoire (validé côté contrôleur).
-// `code_client` : utilisé tel quel s'il est fourni, sinon auto-généré à partir de
-// l'id auto-incrémenté une fois la ligne créée (garantit l'unicité sans compteur
-// séparé à synchroniser).
+// `code_client` est toujours auto-généré (voir nextClientCode) ; la contrainte
+// UNIQUE sur code_client protège contre deux créations simultanées : en cas de
+// collision, on recalcule le numéro suivant.
 async function createClient(data = {}) {
   const fields = pickClientFields(data);
   return withTransaction(async (conn) => {
     const [ins] = await conn.query('INSERT INTO clients SET ?', [fields]);
     const id = ins.insertId;
 
-    const providedCode = data.code_client && String(data.code_client).trim();
-    const finalCode = providedCode || `CLI-${String(id).padStart(6, '0')}`;
-    await conn.query('UPDATE clients SET code_client = ? WHERE id = ?', [finalCode, id]);
+    const year = new Date().getFullYear();
+    for (let attempt = 0; ; attempt += 1) {
+      const code = await nextClientCode(conn, year);
+      try {
+        await conn.query('UPDATE clients SET code_client = ? WHERE id = ?', [code, id]);
+        break;
+      } catch (err) {
+        if (err?.code !== 'ER_DUP_ENTRY' || attempt >= 5) throw err;
+      }
+    }
 
     const [rows] = await conn.query('SELECT * FROM clients WHERE id = ?', [id]);
     return rows[0];
   });
 }
 
-// Met à jour un client. Le code_client est immuable une fois attribué : toute
-// valeur reçue dans data.code_client est ignorée si le client en a déjà un.
+// Met à jour un client. Le code_client est généré à la création et n'est jamais
+// modifiable : toute valeur reçue dans data.code_client est ignorée.
 // Retourne null si le client n'existe pas (le contrôleur transforme ça en 404).
 async function updateClient(id, data = {}) {
-  const [existingRows] = await pool.query('SELECT code_client FROM clients WHERE id = ?', [id]);
-  const existing = existingRows[0];
-  if (!existing) return null;
+  const [existingRows] = await pool.query('SELECT id FROM clients WHERE id = ?', [id]);
+  if (!existingRows[0]) return null;
 
   const payload = pickClientFields(data);
-
-  const providedCode = data.code_client && String(data.code_client).trim();
-  if (!existing.code_client && providedCode) {
-    payload.code_client = providedCode;
-  }
 
   if (Object.keys(payload).length > 0) {
     await pool.query('UPDATE clients SET ? WHERE id = ?', [payload, id]);
@@ -223,7 +244,7 @@ async function upsertKyc(clientId, data = {}) {
 
 module.exports = {
   Clients, ClientAccounts, LoyaltyPoints, ClientKyc,
-  createClient, updateClient,
+  createClient, updateClient, peekNextClientCode,
   findByClientId, search, adjustAccountBalance,
   findKycByClientId, upsertKyc,
 };
