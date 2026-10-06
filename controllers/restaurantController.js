@@ -752,9 +752,53 @@ async function historyTotalHandler(req, res) {
     [`${date_debut} 00:00:00`, date_fin]
   );
 
+  const [paymentRows] = await pool.query(
+    `SELECT p.id AS payment_id, p.date_paiement, p.montant, p.moyen_paiement,
+            o.id AS order_id, t.numero AS table_numero,
+            oi.id AS item_id, oi.quantite, oi.prix_unitaire,
+            pr.nom AS product_nom, c.nom AS category_nom
+     FROM payments p
+     INNER JOIN orders o ON o.id = p.order_id
+     LEFT JOIN tables_restaurant t ON t.id = o.table_id
+     LEFT JOIN order_items oi ON oi.order_id = o.id
+     LEFT JOIN products pr ON pr.id = oi.product_id
+     LEFT JOIN categories c ON c.id = pr.category_id
+     WHERE o.source_module = 'RESTAURANT'
+       AND p.date_paiement >= ?
+       AND p.date_paiement < DATE_ADD(?, INTERVAL 1 DAY)
+     ORDER BY p.date_paiement DESC, p.id DESC, oi.id`,
+    [`${date_debut} 00:00:00`, date_fin]
+  );
+  const paymentById = new Map();
+  for (const row of paymentRows) {
+    let payment = paymentById.get(row.payment_id);
+    if (!payment) {
+      payment = {
+        payment_id: row.payment_id,
+        order_id: row.order_id,
+        date_paiement: row.date_paiement,
+        montant: Number(row.montant || 0),
+        moyen_paiement: row.moyen_paiement,
+        table_numero: row.table_numero,
+        items: [],
+      };
+      paymentById.set(row.payment_id, payment);
+    }
+    if (row.item_id !== null) {
+      payment.items.push({
+        id: row.item_id,
+        quantite: Number(row.quantite || 0),
+        prix_unitaire: Number(row.prix_unitaire || 0),
+        product_nom: row.product_nom || `Article #${row.item_id}`,
+        category_nom: row.category_nom,
+      });
+    }
+  }
+
   return ok(res, {
     total_payments: Number(history.total_payments || 0),
     total_collected: Number(history.total_collected || 0),
+    paid_orders: Array.from(paymentById.values()),
   });
 }
 
