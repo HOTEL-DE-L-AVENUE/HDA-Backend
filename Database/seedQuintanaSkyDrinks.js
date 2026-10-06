@@ -11,25 +11,22 @@ class SeedQuintanaSkyDrinks {
                 // =========================================================================
                 // BIERES & SOFTS
                 // =========================================================================
-                { nom: 'THB (PM)', ingredients: 'Bière blonde locale', prix: 8000, categorie: 'Bières & Softs', alcool: 1, stock: 50 },
-                { nom: 'THB (GM)', ingredients: 'Bière blonde locale grand format', prix: 12000, categorie: 'Bières & Softs', alcool: 1, stock: 50 },
-                { nom: 'THB PM 33 cl', ingredients: 'Bière blonde locale 33cl', prix: 8000, categorie: 'Bières & Softs', alcool: 1, stock: 50 },
-                { nom: 'THB GM 65 cl', ingredients: 'Bière blonde locale 65cl', prix: 12000, categorie: 'Bières & Softs', alcool: 1, stock: 50 },
-                { nom: 'Gold Blanche (PM)', ingredients: 'Bière blanche', prix: 8000, categorie: 'Bières & Softs', alcool: 1, stock: 30 },
+                // "alias" = anciens noms du même article (doublons des versions précédentes du seed) :
+                // le seeder les renomme / fusionne pour ne garder qu'un seul article.
+                { nom: 'THB PM 33cl', alias: ['THB (PM)', 'THB PM 33 cl'], ingredients: 'Bière blonde locale 33cl', prix: 8000, categorie: 'Bières & Softs', alcool: 1, stock: 50 },
+                { nom: 'THB GM 65cl', alias: ['THB (GM)', 'THB GM 65 cl'], ingredients: 'Bière blonde locale 65cl', prix: 12000, categorie: 'Bières & Softs', alcool: 1, stock: 50 },
+                { nom: 'Gold Blanche PM 33cl', alias: ['Gold Blanche (PM)', 'Gold Blanche 33 cl'], ingredients: 'Bière blanche 33cl', prix: 8000, categorie: 'Bières & Softs', alcool: 1, stock: 30 },
                 { nom: 'Gold Blanche (GM)', ingredients: 'Bière blanche grand format', prix: 12000, categorie: 'Bières & Softs', alcool: 1, stock: 30 },
-                { nom: 'Gold Blanche 33 cl', ingredients: 'Bière blanche 33cl', prix: 8000, categorie: 'Bières & Softs', alcool: 1, stock: 30 },
                 { nom: 'Gold Blanche 50 cl', ingredients: 'Bière blanche 50cl', prix: 10000, categorie: 'Bières & Softs', alcool: 1, stock: 30 },
                 { nom: 'Gold Normale 50 cl', ingredients: 'Bière blonde 50cl', prix: 10000, categorie: 'Bières & Softs', alcool: 1, stock: 30 },
                 { nom: 'Gold Blonde (PM)', ingredients: 'Bière blonde', prix: 8000, categorie: 'Bières & Softs', alcool: 1, stock: 30 },
                 { nom: 'Gold Blonde (GM)', ingredients: 'Bière blonde grand format', prix: 12000, categorie: 'Bières & Softs', alcool: 1, stock: 30 },
-                { nom: 'Beaufort (PM)', ingredients: 'Bière', prix: 10000, categorie: 'Bières & Softs', alcool: 1, stock: 25 },
+                { nom: 'Beaufort PM 33cl', alias: ['Beaufort (PM)', 'Beaufort 33 CL'], ingredients: 'Bière 33cl', prix: 10000, categorie: 'Bières & Softs', alcool: 1, stock: 25 },
                 { nom: 'Beaufort (GM)', ingredients: 'Bière grand format', prix: 15000, categorie: 'Bières & Softs', alcool: 1, stock: 25 },
-                { nom: 'Beaufort 33 CL', ingredients: 'Bière 33cl', prix: 10000, categorie: 'Bières & Softs', alcool: 1, stock: 25 },
                 { nom: 'BBA PM', ingredients: 'Bière Beaufort PM', prix: 10000, categorie: 'Bières & Softs', alcool: 1, stock: 25 },
                 { nom: 'BBA GM 100 CL', ingredients: 'Bière Beaufort GM 100cl', prix: 20000, categorie: 'Bières & Softs', alcool: 1, stock: 25 },
-                { nom: 'Heineken (PM)', ingredients: 'Bière importée', prix: 16000, categorie: 'Bières & Softs', alcool: 1, stock: 20 },
+                { nom: 'Heineken PM 33cl', alias: ['Heineken (PM)', 'Heineken 33 CL'], ingredients: 'Bière importée 33cl', prix: 16000, categorie: 'Bières & Softs', alcool: 1, stock: 20 },
                 { nom: 'Heineken (GM)', ingredients: 'Bière importée grand format', prix: 22000, categorie: 'Bières & Softs', alcool: 1, stock: 20 },
-                { nom: 'Heineken 33 CL', ingredients: 'Bière importée 33cl', prix: 16000, categorie: 'Bières & Softs', alcool: 1, stock: 20 },
                 { nom: '1664 (bière blonde)', ingredients: 'Bière blonde', prix: 22000, categorie: 'Bières & Softs', alcool: 1, stock: 20 },
                 { nom: 'Bière Importée (50cl)', ingredients: 'Bière importée 50cl', prix: 25000, categorie: 'Bières & Softs', alcool: 1, stock: 15 },
                 { nom: 'Ranovisy 33 cl', ingredients: 'Boisson locale Ranovisy', prix: 6000, categorie: 'Bières & Softs', alcool: 1, stock: 30 },
@@ -38,14 +35,13 @@ class SeedQuintanaSkyDrinks {
                 { nom: 'Fanta (PM)', ingredients: 'Boisson gazeuse', prix: 6000, categorie: 'Bières & Softs', alcool: 0, stock: 40 },
                 { nom: 'World Cola (GM)', ingredients: 'Boisson gazeuse grand format', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 40 },
                 { nom: 'Fanta (GM)', ingredients: 'Boisson gazeuse grand format', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 40 },
-                { nom: 'Coca 30 cl', ingredients: 'Coca-Cola 30cl', prix: 8000, categorie: 'Bières & Softs', alcool: 0, stock: 40 },
-                { nom: 'Coca GM 100 CL', ingredients: 'Coca-Cola 100cl', prix: 20000, categorie: 'Bières & Softs', alcool: 0, stock: 40 },
+                { nom: 'Coca Cola PM 30cl', alias: ['Coca 30 cl', 'Coca Cola (PM)'], ingredients: 'Coca-Cola 30cl', prix: 8000, categorie: 'Bières & Softs', alcool: 0, stock: 40 },
+                { nom: 'Coca Cola GM 100cl', alias: ['Coca GM 100 CL', 'Coca Cola (GM)'], ingredients: 'Coca-Cola 100cl', prix: 20000, categorie: 'Bières & Softs', alcool: 0, stock: 40 },
                 { nom: 'Youzu (PM)', ingredients: 'Boisson fruitée', prix: 6000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
                 { nom: 'Caprice (PM)', ingredients: 'Boisson fruitée', prix: 6000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
                 { nom: 'Caprice Soda', ingredients: 'Boisson gazeuse fruitée', prix: 6000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
                 { nom: 'Caprice Grenadine', ingredients: 'Boisson fruitée grenadine', prix: 6000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
-                { nom: 'Youzu (GM)', ingredients: 'Boisson fruitée grand format', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
-                { nom: 'Youzou 100cl', ingredients: 'Boisson fruitée 100cl', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
+                { nom: 'Youzu GM 100cl', alias: ['Youzu (GM)', 'Youzou 100cl'], ingredients: 'Boisson fruitée 100cl', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
                 { nom: 'Caprice (GM)', ingredients: 'Boisson fruitée grand format', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
                 { nom: 'Bonbon Anglais (PM)', ingredients: 'Sodas', prix: 6000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
                 { nom: 'Bonbon Anglais (GM)', ingredients: 'Sodas grand format', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
@@ -61,16 +57,11 @@ class SeedQuintanaSkyDrinks {
                 { nom: 'XXL', ingredients: 'Boisson énergisante', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
                 { nom: 'Tonic PM', ingredients: 'Eau tonique', prix: 6000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
                 { nom: 'Tonic GM', ingredients: 'Eau tonique grand format', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
-                { nom: 'Eau Vive (PM)', ingredients: 'Eau plate 50cl', prix: 6000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
-                { nom: 'Eau Vive PM 50 cl', ingredients: 'Eau plate 50cl', prix: 6000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
-                { nom: 'Eau Vive GM 100 CL', ingredients: 'Eau plate 100cl', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
-                { nom: 'Eau Vive (GM)', ingredients: 'Eau tonique grand format', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
-                { nom: 'Cristal (50cl)', ingredients: 'Eau plate 50cl', prix: 8000, categorie: 'Bières & Softs', alcool: 0, stock: 50 },
-                { nom: 'Cristal PM 50 CL', ingredients: 'Eau plate 50cl', prix: 8000, categorie: 'Bières & Softs', alcool: 0, stock: 50 },
+                { nom: 'Eau Vive PM 50cl', alias: ['Eau Vive (PM)', 'Eau Vive PM 50 cl'], ingredients: 'Eau plate 50cl', prix: 6000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
+                { nom: 'Eau Vive GM 100cl', alias: ['Eau Vive GM 100 CL', 'Eau Vive (GM)'], ingredients: 'Eau plate 100cl', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 30 },
+                { nom: 'Cristal PM 50cl', alias: ['Cristal (50cl)', 'Cristal PM 50 CL'], ingredients: 'Eau plate 50cl', prix: 8000, categorie: 'Bières & Softs', alcool: 0, stock: 50 },
                 { nom: 'Cristal (1.5L)', ingredients: 'Eau plate 1.5L', prix: 15000, categorie: 'Bières & Softs', alcool: 0, stock: 50 },
-                { nom: 'Coca Cola (PM)', ingredients: 'Sodas', prix: 8000, categorie: 'Bières & Softs', alcool: 0, stock: 40 },
                 { nom: 'Sprite (PM)', ingredients: 'Sodas', prix: 8000, categorie: 'Bières & Softs', alcool: 0, stock: 40 },
-                { nom: 'Coca Cola (GM)', ingredients: 'Sodas grand format', prix: 20000, categorie: 'Bières & Softs', alcool: 0, stock: 40 },
                 { nom: 'Sprite (GM)', ingredients: 'Sodas grand format', prix: 20000, categorie: 'Bières & Softs', alcool: 0, stock: 40 },
                 { nom: 'Jus Naturel (PM)', ingredients: 'Jus de fruit frais', prix: 8000, categorie: 'Bières & Softs', alcool: 0, stock: 25 },
                 { nom: 'Jus Naturel (GM)', ingredients: 'Jus de fruit frais grand format', prix: 20000, categorie: 'Bières & Softs', alcool: 0, stock: 25 },
@@ -216,18 +207,20 @@ class SeedQuintanaSkyDrinks {
                 { nom: 'Platinium Label', ingredients: 'Vin mousseux scintillant', prix: 100000, categorie: 'Champagne / Vin Mousseux', alcool: 1, stock: 10 },
 
                 // =========================================================================
-                // COCKTAILS
+                // COCKTAILS (sous-catégories de la carte : "Avec alcool" / "Sans alcool")
                 // =========================================================================
-                { nom: 'Spritz Aperol', ingredients: 'Cocktail pétillant', prix: 30000, categorie: 'Cocktails', alcool: 1, stock: 40 },
-                { nom: 'Spritz Campari', ingredients: 'Cocktail pétillant', prix: 30000, categorie: 'Cocktails', alcool: 1, stock: 40 },
-                { nom: 'Spritz Bucks Fizz', ingredients: 'Cocktail pétillant', prix: 30000, categorie: 'Cocktails', alcool: 1, stock: 40 },
-                { nom: 'Spritz Limoncello', ingredients: 'Cocktail pétillant', prix: 30000, categorie: 'Cocktails', alcool: 1, stock: 40 },
-                { nom: 'Margarita', ingredients: 'Cocktail standard avec alcool', prix: 20000, categorie: 'Cocktails', alcool: 1, stock: 50 },
-                { nom: 'Mojito', ingredients: 'Cocktail standard avec alcool', prix: 20000, categorie: 'Cocktails', alcool: 1, stock: 50 },
-                { nom: 'Piña Colada', ingredients: 'Cocktail standard avec alcool', prix: 20000, categorie: 'Cocktails', alcool: 1, stock: 50 },
-                { nom: 'Pink Panther', ingredients: 'Mocktail sans alcool', prix: 15000, categorie: 'Cocktails', alcool: 0, stock: 50 },
-                { nom: 'Bora Bora', ingredients: 'Mocktail sans alcool', prix: 15000, categorie: 'Cocktails', alcool: 0, stock: 50 },
-                { nom: 'Mojito Sans Alcool', ingredients: 'Mocktail sans alcool', prix: 15000, categorie: 'Cocktails', alcool: 0, stock: 50 },
+                // --- Avec alcool ---
+                { nom: 'Spritz Aperol', ingredients: 'Cocktail pétillant', prix: 30000, categorie: 'Cocktails > Avec alcool', alcool: 1, stock: 40 },
+                { nom: 'Spritz Campari', ingredients: 'Cocktail pétillant', prix: 30000, categorie: 'Cocktails > Avec alcool', alcool: 1, stock: 40 },
+                { nom: 'Spritz Bucks Fizz', ingredients: 'Cocktail pétillant', prix: 30000, categorie: 'Cocktails > Avec alcool', alcool: 1, stock: 40 },
+                { nom: 'Spritz Limoncello', ingredients: 'Cocktail pétillant', prix: 30000, categorie: 'Cocktails > Avec alcool', alcool: 1, stock: 40 },
+                { nom: 'Margarita', ingredients: 'Cocktail standard avec alcool', prix: 20000, categorie: 'Cocktails > Avec alcool', alcool: 1, stock: 50 },
+                { nom: 'Mojito', ingredients: 'Cocktail standard avec alcool', prix: 20000, categorie: 'Cocktails > Avec alcool', alcool: 1, stock: 50 },
+                { nom: 'Piña Colada', ingredients: 'Cocktail standard avec alcool', prix: 20000, categorie: 'Cocktails > Avec alcool', alcool: 1, stock: 50 },
+                // --- Sans alcool ---
+                { nom: 'Pink Panther', ingredients: 'Mocktail sans alcool', prix: 15000, categorie: 'Cocktails > Sans alcool', alcool: 0, stock: 50 },
+                { nom: 'Bora Bora', ingredients: 'Mocktail sans alcool', prix: 15000, categorie: 'Cocktails > Sans alcool', alcool: 0, stock: 50 },
+                { nom: 'Mojito Sans Alcool', ingredients: 'Mocktail sans alcool', prix: 15000, categorie: 'Cocktails > Sans alcool', alcool: 0, stock: 50 },
 
                 // =========================================================================
                 // RHUM - TEQUILA - VODKA (Bouteilles)
@@ -235,8 +228,7 @@ class SeedQuintanaSkyDrinks {
                 { nom: 'Tequila Victoria', ingredients: 'Tequila', prix: 90000, categorie: 'Rhum, Tequila & Vodka', alcool: 1, stock: 10 },
                 { nom: 'Vodka Locale', ingredients: 'Vodka', prix: 100000, categorie: 'Rhum, Tequila & Vodka', alcool: 1, stock: 10 },
                 { nom: 'Vodka Priskaia', ingredients: 'Vodka', prix: 100000, categorie: 'Rhum, Tequila & Vodka', alcool: 1, stock: 10 },
-                { nom: 'Casanove', ingredients: 'Alcool fort', prix: 100000, categorie: 'Rhum, Tequila & Vodka', alcool: 1, stock: 10 },
-                { nom: 'Cazanove 1 L', ingredients: 'Alcool fort 1L', prix: 100000, categorie: 'Rhum, Tequila & Vodka', alcool: 1, stock: 10 },
+                { nom: 'Cazanove 1L', alias: ['Casanove', 'Cazanove 1 L'], ingredients: 'Alcool fort 1L', prix: 100000, categorie: 'Rhum, Tequila & Vodka', alcool: 1, stock: 10 },
                 { nom: 'Mangustan', ingredients: 'Alcool fort', prix: 100000, categorie: 'Rhum, Tequila & Vodka', alcool: 1, stock: 10 },
                 { nom: 'Tequila Municion 70 CL', ingredients: 'Tequila 70cl', prix: 300000, categorie: 'Rhum, Tequila & Vodka', alcool: 1, stock: 8 },
                 { nom: 'Cuvee Blanche Dzama', ingredients: 'Rhum blanc Dzama', prix: 120000, categorie: 'Rhum, Tequila & Vodka', alcool: 1, stock: 10 },
@@ -254,7 +246,7 @@ class SeedQuintanaSkyDrinks {
                 { nom: 'Martini Blanc (Bouteille)', ingredients: 'Bouteille vermouth', prix: 375000, categorie: 'Spiritueux', alcool: 1, stock: 10 },
                 { nom: 'Bailey\'s (Bouteille)', ingredients: 'Liqueur de crème', prix: 400000, categorie: 'Spiritueux', alcool: 1, stock: 10 },
                 { nom: 'Jagermeister', ingredients: 'Liqueur aux herbes', prix: 550000, categorie: 'Spiritueux', alcool: 1, stock: 10 },
-                { nom: 'Absolut Vodka Bleu', ingredients: 'Vodka Absolut Bleue', prix: 400000, categorie: 'Spiritueux', alcool: 1, stock: 10 },
+                { nom: 'Absolut Vodka Bleu', alias: ['Vodka Absolut'], ingredients: 'Vodka Absolut Bleue', prix: 400000, categorie: 'Spiritueux', alcool: 1, stock: 10 },
                 { nom: 'Absolut Vodka Citron', ingredients: 'Vodka Absolut Citron', prix: 400000, categorie: 'Spiritueux', alcool: 1, stock: 10 },
                 { nom: 'Luxardo Bitter', ingredients: 'Bitter Luxardo', prix: 350000, categorie: 'Spiritueux', alcool: 1, stock: 8 },
                 { nom: 'Ciroc', ingredients: 'Vodka Ciroc', prix: 550000, categorie: 'Spiritueux', alcool: 1, stock: 8 },
@@ -282,7 +274,6 @@ class SeedQuintanaSkyDrinks {
                 { nom: 'Fuji', ingredients: 'Whisky japonais', prix: 950000, categorie: 'Whisky', alcool: 1, stock: 5 },
                 { nom: 'Toki', ingredients: 'Whisky japonais', prix: 1200000, categorie: 'Whisky', alcool: 1, stock: 5 },
                 { nom: 'Yoshi', ingredients: 'Whisky japonais', prix: 1200000, categorie: 'Whisky', alcool: 1, stock: 5 },
-                { nom: 'Platinum (1L)', ingredients: 'Whisky 1L', prix: 1200000, categorie: 'Whisky', alcool: 1, stock: 5 },
                 { nom: 'Nikka', ingredients: 'Whisky japonais', prix: 1200000, categorie: 'Whisky', alcool: 1, stock: 5 },
 
                 // =========================================================================
@@ -396,14 +387,14 @@ class SeedQuintanaSkyDrinks {
                 { nom: 'VERSUS PENGVINO Sweet Red Sensation 13% 75Cl', ingredients: 'Vin rouge sud-africain', prix: 90000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 20 },
                 { nom: 'SEVEN CENTURIES Pierre Dumont 14.5% 2022/2023 75Cl', ingredients: 'Vin rouge sud-africain', prix: 140000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
                 { nom: 'GRENACHE LIMITED RELEASE CREDO Stellenbosch Vineyards 13.5% 75Cl (Bouchon)', ingredients: 'Vin rouge sud-africain', prix: 380000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 10 },
-                { nom: 'Marianne Craft Wines, Natana Red Blend', ingredients: 'Vin rouge sud-africain', prix: 96000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
-                { nom: 'Ken Forrester Wines, Petit Cabernet-Sauvignon', ingredients: 'Vin rouge sud-africain', prix: 160000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
-                { nom: 'Kanonkop Estate, Kadette Cape Blend', ingredients: 'Vin rouge sud-africain', prix: 170000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'Marianne Craft Wines, Natana Red Blend', ingredients: 'Vin rouge sud-africain', prix: 100000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'Ken Forrester Wines, Petit Cabernet-Sauvignon', ingredients: 'Vin rouge sud-africain', prix: 150000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'Kanonkop Estate, Kadette Cape Blend', ingredients: 'Vin rouge sud-africain', prix: 160000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
                 { nom: 'Kanonkop Estate, Kadette Pinotage', ingredients: 'Vin rouge sud-africain', prix: 180000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
                 { nom: 'A.A. Badenhorst, Secateurs Shiraz Blend', ingredients: 'Vin rouge sud-africain', prix: 190000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
                 { nom: 'Mullineux Wines, Kloof Street', ingredients: 'Vin rouge sud-africain', prix: 200000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
                 { nom: 'La Vierge Collection, Nymphomane', ingredients: 'Vin rouge sud-africain', prix: 270000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
-                { nom: 'La Vierge Collection, Pinot Noir', ingredients: 'Vin rouge sud-africain', prix: 440000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
+                { nom: 'La Vierge Collection, Pinot Noir', ingredients: 'Vin rouge sud-africain', prix: 430000, categorie: 'VINS ROUGES Sud-Africains', alcool: 1, stock: 15 },
 
                 // =========================================================================
                 // VINS ROSES Sud-Africains
@@ -585,13 +576,49 @@ class SeedQuintanaSkyDrinks {
             ];
 
             let insertedCount = 0;
+            let renamedCount = 0;
+            let removedCount = 0;
+            const keptDuplicates = [];
 
             for (const item of items) {
                 // Vérifier si le produit existe déjà dans bar_products
-                const [existing] = await pool.query(
+                let [existing] = await pool.query(
                     'SELECT id FROM bar_products WHERE nom = ?',
                     [item.nom]
                 );
+
+                const aliases = item.alias || [];
+                if (aliases.length > 0) {
+                    const [aliasRows] = await pool.query(
+                        'SELECT id, nom FROM bar_products WHERE nom IN (?) ORDER BY id',
+                        [aliases]
+                    );
+                    let duplicates = aliasRows;
+
+                    // Pas encore d'article sous le nouveau nom : on renomme l'ancien (son historique est conservé)
+                    if (existing.length === 0 && aliasRows.length > 0) {
+                        const [first, ...rest] = aliasRows;
+                        await pool.query('UPDATE bar_products SET nom = ? WHERE id = ?', [item.nom, first.id]);
+                        existing = [{ id: first.id }];
+                        duplicates = rest;
+                        renamedCount++;
+                    }
+
+                    // Doublons restants : supprimés s'ils n'ont aucune vente, sinon signalés
+                    for (const dup of duplicates) {
+                        const [[{ ventes }]] = await pool.query(
+                            'SELECT COUNT(*) AS ventes FROM bar_transactions WHERE product_id = ?',
+                            [dup.id]
+                        );
+                        if (Number(ventes) === 0) {
+                            await pool.query('DELETE FROM bar_stock WHERE product_id = ?', [dup.id]);
+                            await pool.query('DELETE FROM bar_products WHERE id = ?', [dup.id]);
+                            removedCount++;
+                        } else {
+                            keptDuplicates.push(`${dup.nom} (id ${dup.id}, ${ventes} vente(s)) → doublon de « ${item.nom} »`);
+                        }
+                    }
+                }
 
                 let productId;
 
@@ -631,6 +658,12 @@ class SeedQuintanaSkyDrinks {
 
             console.log(`\n📊 Résumé du seeder Bar Quintana Sky :`);
             console.log(`   ✅ ${insertedCount} nouvelle(s) boisson(s) / article(s) inséré(s) dans bar_products`);
+            console.log(`   ✏️  ${renamedCount} article(s) renommé(s) au nom unique`);
+            console.log(`   🧹 ${removedCount} doublon(s) sans vente supprimé(s)`);
+            if (keptDuplicates.length > 0) {
+                console.log(`   ⚠️  ${keptDuplicates.length} doublon(s) conservé(s) car déjà vendu(s), à vérifier :`);
+                keptDuplicates.forEach((line) => console.log(`      - ${line}`));
+            }
             console.log(`   📋 Total traité : ${items.length} articles`);
             console.log('✅ Seeder des boissons du bar terminé avec succès !\n');
 
