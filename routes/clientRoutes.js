@@ -7,6 +7,7 @@ const router = express.Router();
 
 // Routes spécifiques AVANT les routes génériques /:id pour éviter les conflits
 router.get('/search', ctrl.searchClients);              // GET /api/clients/search?q=
+router.get('/next-code', ctrl.nextCodeHandler);          // GET /api/clients/next-code (aperçu CH<n>/<année>)
 router.get('/:id/full', ctrl.getOneWithAccount);         // GET /api/clients/:id/full (client + solde + kyc)
 router.get('/:id/account', ctrl.getAccount);             // GET /api/clients/:id/account
 router.post('/:id/account/credit', ctrl.creditAccount);  // POST /api/clients/:id/account/credit

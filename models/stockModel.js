@@ -91,6 +91,24 @@ const PurchaseItems = createCrudModel({
 // Enregistre un mouvement de stock et met à jour la table `stocks` en conséquence.
 // type: 'ENTREE' | 'SORTIE' | 'AJUSTEMENT' (le signe de quantite peut aussi porter l'info)
 // New optional params: conn (use caller's transaction), motif, userId, allowNegative
+const HOTEL_LOCATION_ID = 5;
+
+async function recordHotelStockExpense(connection, { movementId, productId, quantite }) {
+  const [[product]] = await connection.query(
+    'SELECT nom, COALESCE(NULLIF(prix_achat, 0), prix_vente, 0) AS prix_unitaire FROM products WHERE id = ?',
+    [productId]
+  );
+  const montant = Math.abs(Number(quantite)) * Number(product?.prix_unitaire || 0);
+  if (!(montant > 0)) return;
+  await connection.query(
+    `INSERT IGNORE INTO financial_transactions
+       (module, type_flux, montant, reference_id, ref_flux_global, description, statut_sync, created_at)
+     VALUES ('HOTEL', 'SORTIE', ?, ?, ?, ?, 'SYNCED', NOW())`,
+    [montant, productId, `HOTEL-STOCK-ENTREE-${movementId}`,
+      `Achats - Approvisionnement stock : ${product?.nom || `produit #${productId}`} (x${Math.abs(Number(quantite))})`]
+  );
+}
+
 async function recordMovement({ productId, locationId, type, quantite, sourceModule, referenceId, conn = null, motif = null, userId = null, allowNegative = true }) {
   if (Number(locationId) === 5 && !Number.isInteger(Number(quantite))) {
     throw ApiError.badRequest('Les quantités du stock hôtel doivent être des nombres entiers');
@@ -131,6 +149,12 @@ async function recordMovement({ productId, locationId, type, quantite, sourceMod
        VALUES (?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?)`,
       [productId, locationId, type, quantite, sourceModule || null, referenceId || null, newQuantity, motif, userId]
     );
+    // Approvisionnement manuel du stock Hôtel : la valeur ajoutée est une dépense
+    // de la caisse Hôtel (SORTIE), valorisée au prix d'achat ou, à défaut, au prix du produit.
+    if (Number(locationId) === HOTEL_LOCATION_ID && type === 'ENTREE' && sourceModule === 'STOCK_MANUEL') {
+      await recordHotelStockExpense(connection, { movementId: mv.insertId, productId, quantite });
+    }
+
     const [row] = await connection.query('SELECT * FROM stock_movements WHERE id = ?', [mv.insertId]);
     return row[0];
   };
