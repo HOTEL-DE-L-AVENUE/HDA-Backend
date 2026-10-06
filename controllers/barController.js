@@ -6,6 +6,8 @@ const barProductModel = require('../models/barProduct.model');
 const { addTransaction } = require('../models/barTransaction.model');
 const { getBarReport, saveBarReport } = require('../models/barReport.model');
 const { listBarOrders, listBarHistory, createBarOrder, updateBarOrder, deleteBarOrder, updateBarOrderStatus, closeAllBarOrders } = require('../models/barOrder.model');
+const { getProductHistory } = require('../models/barProductHistory.model');
+const barEquipmentModel = require('../models/barEquipment.model');
 const { createCrudController } = require('./controllerFactory');
 const ApiError = require('../utils/ApiError');
 const { ok, created } = require('../utils/apiResponse');
@@ -19,8 +21,42 @@ const tablesCrud = {
 };
 const cashiersCrud = createCrudController(BarCashiers, { filterable: ['statut'] });
 const sessionsCrud = createCrudController(BarSessions, { filterable: ['cashier_id', 'user_id'] });
+const barEquipmentsBaseCrud = createCrudController(barEquipmentModel);
 
-// Surcharge de productsCrud pour forcer l'utilisation de getBarProductsWithStock
+function normalizeBarEquipment(body = {}, partial = false) {
+  const data = {};
+  if (!partial || body.nom !== undefined) {
+    data.nom = String(body.nom || '').trim();
+    if (!data.nom) throw ApiError.badRequest('Le nom de l’équipement est requis');
+  }
+  if (!partial || body.categorie !== undefined) data.categorie = String(body.categorie || 'Divers').trim() || 'Divers';
+  if (!partial || body.description !== undefined) data.description = String(body.description || '').trim();
+  if (!partial || body.quantite !== undefined) {
+    data.quantite = Number(body.quantite ?? 1);
+    if (!Number.isInteger(data.quantite) || data.quantite < 0) {
+      throw ApiError.badRequest('La quantité doit être un entier positif ou nul');
+    }
+  }
+  if (!partial || body.etat !== undefined) {
+    data.etat = String(body.etat || 'EN_SERVICE');
+    if (!['EN_SERVICE', 'A_REPARER', 'HORS_SERVICE'].includes(data.etat)) {
+      throw ApiError.badRequest('État d’équipement invalide');
+    }
+  }
+  return data;
+}
+
+const barEquipmentsCrud = {
+  ...barEquipmentsBaseCrud,
+  list: async (req, res) => ok(res, await barEquipmentModel.findAll({ orderBy: '`nom` ASC' })),
+  create: async (req, res) => created(res, await barEquipmentModel.create(normalizeBarEquipment(req.body))),
+  update: async (req, res) => {
+    const { id } = req.params;
+    if (!await barEquipmentModel.findById(id)) throw ApiError.notFound(`Équipement bar #${id} introuvable`);
+    return ok(res, await barEquipmentModel.update(id, normalizeBarEquipment(req.body, true)));
+  },
+};
+
 const productsCrud = {
   ...createCrudController(barProductModel.barProducts, { filterable: ['categorie', 'alcool'] }),
   list: async (req, res) => {
@@ -185,6 +221,12 @@ async function saveBarReportHandler(req, res) {
   return ok(res, report);
 }
 
+async function getProductHistoryHandler(req, res) {
+  const { dateFrom, dateTo, productName } = req.query;
+  const history = await getProductHistory({ dateFrom, dateTo, productName });
+  return ok(res, history);
+}
+
 function normalizeBarOrderRequest(body = {}) {
   const { client, table, nombre_personnes, moyen_paiement, observation, items, hotel_reservation_id, room_id, room_guest_name, room_account_paid } = body;
   const safeTableValue = Number(table);
@@ -293,12 +335,14 @@ async function closeAllBarOrdersHandler(req, res) {
 }
 
 module.exports = {
-  tablesCrud, cashiersCrud, sessionsCrud, productsCrud,
+  tablesCrud, cashiersCrud, sessionsCrud, productsCrud, barEquipmentsCrud,
   tablesStatsHandler, openCashierHandler, closeCashierHandler,
   cashierStatusHandler, openSessionsHandler, sessionStatsHandler,
   currentSessionHandler, getBarStockHandler,
   addBarStockHandler, updateBarStockHandler, deleteBarStockHandler,
   addTransactionHandler, latestTransactionsByProductHandler, listTransactionsHandler,
-  listBarOrdersHandler, listBarHistoryHandler, getBarReportHandler, saveBarReportHandler, createBarOrderHandler, updateBarOrderHandler, deleteBarOrderHandler, updateBarOrderStatusHandler, closeAllBarOrdersHandler,
+  listBarOrdersHandler, listBarHistoryHandler, getBarReportHandler, saveBarReportHandler,
+  getProductHistoryHandler,
+  createBarOrderHandler, updateBarOrderHandler, deleteBarOrderHandler, updateBarOrderStatusHandler, closeAllBarOrdersHandler,
   normalizeBarOrderRequest,
 };

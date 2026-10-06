@@ -7,6 +7,7 @@ const { pool, withTransaction } = require('../config/db');
 const stock = require('../models/stockModel');
 const PDFDocument = require('pdfkit');
 const { getRestaurantReport, saveRestaurantReport } = require('../models/restaurantReport.model');
+const { getProductHistory } = require('../models/restaurantProductHistory.model');
 
 // Simple HTML escaper for values interpolated into the invoice template
 function escapeHtml(input) {
@@ -36,6 +37,13 @@ async function saveRestaurantReportHandler(req, res) {
     createdBy: req.user?.id_admin ?? null,
   }));
 }
+
+async function getProductHistoryHandler(req, res) {
+  const { dateFrom, dateTo, productName } = req.query;
+  const history = await getProductHistory({ dateFrom, dateTo, productName });
+  return ok(res, history);
+}
+
 const orderItemsCrud = createCrudController(resto.OrderItems, { filterable: ['order_id', 'product_id'] });
 // Recipes removed: feature deprecated
 const cashiersCrud = createCrudController(resto.RestaurantCashiers, { filterable: ['statut'] });
@@ -46,22 +54,22 @@ const productsCrud = {
   ...createCrudController(stock.Products, { filterable: ['category_id', 'subcategory_id', 'actif'] }),
   list: async (req, res) => {
     const { category_id, subcategory_id, actif } = req.query;
-    let whereSql = 'WHERE type_produit = "PRODUIT_FINI"';
+    let whereSql = "WHERE p.type_produit = 'PRODUIT_FINI' AND p.source_module = 'RESTAURANT'";
     const params = [];
-    
+
     if (category_id) {
-      whereSql += ' AND category_id = ?';
+      whereSql += ' AND p.category_id = ?';
       params.push(category_id);
     }
     if (subcategory_id) {
-      whereSql += ' AND subcategory_id = ?';
+      whereSql += ' AND p.subcategory_id = ?';
       params.push(subcategory_id);
     }
     if (actif !== undefined) {
-      whereSql += ' AND actif = ?';
+      whereSql += ' AND p.actif = ?';
       params.push(actif);
     }
-    
+
     const [rows] = await pool.query(
       `SELECT p.*, c.nom AS category_nom, sc.nom AS subcategory_nom 
        FROM products p 
@@ -72,16 +80,40 @@ const productsCrud = {
       params
     );
     return ok(res, rows);
+  },
+  getOne: async (req, res) => {
+    const product = await stock.Products.findById(req.params.id);
+    if (!product || product.source_module !== 'RESTAURANT') {
+      throw ApiError.notFound(`Produit restaurant #${req.params.id} introuvable`);
+    }
+    return ok(res, product);
+  },
+  create: async (req, res) => {
+    const product = await stock.Products.create({ ...req.body, source_module: 'RESTAURANT' });
+    return created(res, product);
+  },
+  update: async (req, res) => {
+    const product = await stock.Products.findById(req.params.id);
+    if (!product || product.source_module !== 'RESTAURANT') {
+      throw ApiError.notFound(`Produit restaurant #${req.params.id} introuvable`);
+    }
+    return ok(res, await stock.Products.update(req.params.id, { ...req.body, source_module: 'RESTAURANT' }));
+  },
+  remove: async (req, res) => {
+    const product = await stock.Products.findById(req.params.id);
+    if (!product || product.source_module !== 'RESTAURANT') {
+      throw ApiError.notFound(`Produit restaurant #${req.params.id} introuvable`);
+    }
+    await stock.Products.remove(req.params.id);
+    return noContent(res);
   }
 };
 
 async function createOrderHandler(req, res) {
-  // Debug: log incoming payload to help diagnose 400 errors from frontend
   console.debug('[restaurant] createOrderHandler body:', JSON.stringify(req.body));
   const { client_id, table_id, items, notes, location_type, special_person_name } = req.body;
   if (!items || !items.length) throw ApiError.badRequest('items requis (au moins une ligne)');
 
-  // Validate referenced entities to return clearer 400 errors instead of DB foreign-key messages
   try {
     if (client_id) {
       const [[client]] = await pool.query('SELECT id FROM clients WHERE id = ? LIMIT 1', [client_id]);
@@ -101,9 +133,7 @@ async function createOrderHandler(req, res) {
     const missing = productIds.filter((id) => !foundIds.has(id));
     if (missing.length) throw ApiError.badRequest(`product_id introuvable: ${missing.join(',')}`);
   } catch (err) {
-    // If it's an ApiError, rethrow so middleware returns the proper 400
     if (err instanceof ApiError) throw err;
-    // Log unexpected SQL errors and return a generic bad request
     console.error('[restaurant] validation error', err);
     throw ApiError.badRequest('Données de référence invalides');
   }
@@ -142,7 +172,6 @@ async function orderDetailHandler(req, res) {
   return ok(res, order);
 }
 
-// Return a simple printable HTML invoice for an order
 async function orderInvoiceHandler(req, res) {
   const order = await resto.orderWithItems(req.params.id);
   if (!order) throw ApiError.notFound(`Commande #${req.params.id} introuvable`);
@@ -159,7 +188,6 @@ async function orderInvoiceHandler(req, res) {
   const date = order.created_at ? new Date(order.created_at).toLocaleString() : '';
   const tableNum = order.table_numero || '';
 
-  // Build a compact, table-focused HTML invoice (Bar-style)
   const rowsHtml = rows
     .map((r, idx) => {
       const qty = Number(r.quantite || 0);
@@ -241,7 +269,6 @@ async function orderInvoiceHandler(req, res) {
   return res.send(html);
 }
 
-// Generate and return PDF invoice for an order (attachment)
 async function orderInvoicePdfHandler(req, res) {
   const order = await resto.orderWithItems(req.params.id);
   if (!order) throw ApiError.notFound(`Commande #${req.params.id} introuvable`);
@@ -262,23 +289,18 @@ async function orderInvoicePdfHandler(req, res) {
   res.setHeader('Content-Disposition', `attachment; filename="facture_commande_${order.id}.pdf"`);
   doc.pipe(res);
 
-  // Simple layout constants
   const left = doc.page.margins.left;
   const right = doc.page.width - doc.page.margins.right;
   let y = 40;
 
-  // Header - company
   doc.font('Helvetica-Bold').fontSize(14).text("Hotel de L'avenue", left, y);
-  // Invoice meta on the right
   doc.fontSize(10).fillColor('#000').text(`Facture #${order.id}`, right - 150, y, { width: 150, align: 'right' });
   doc.fontSize(9).fillColor('#444').text(`${date}`, right - 150, y + 16, { width: 150, align: 'right' });
   y += 36;
 
-  // Draw a thin separator
   doc.moveTo(left, y).lineTo(right, y).lineWidth(0.5).strokeColor('#cccccc').stroke();
   y += 8;
 
-  // Client block
   if (client) {
     doc.font('Helvetica-Bold').fontSize(10).fillColor('#000').text('Client:', left, y);
     doc.font('Helvetica').fontSize(9).fillColor('#000').text(`${client.nom || client.name || ''} ${client.prenom || ''}`, left + 50, y);
@@ -287,19 +309,16 @@ async function orderInvoicePdfHandler(req, res) {
   } else {
     doc.font('Helvetica').fontSize(9).fillColor('#000').text('Client: (non renseigné)', left, y);
   }
-  // Order status on right of client block
   doc.font('Helvetica-Bold').fontSize(9).fillColor('#000').text('Statut:', right - 150, y);
   doc.font('Helvetica').fontSize(9).fillColor('#000').text(`${order.statut || ''}`, right - 90, y);
   y += 40;
 
-  // Notes block if present
   if (order.notes) {
     doc.font('Helvetica-Bold').fontSize(9).fillColor('#000').text('Notes:', left, y);
     doc.font('Helvetica').fontSize(9).fillColor('#000').text(order.notes, left + 50, y, { width: right - left - 50 });
     y += 24;
   }
 
-  // Table header
   const col = {
     no: left + 2,
     desc: left + 40,
@@ -309,7 +328,6 @@ async function orderInvoicePdfHandler(req, res) {
   };
   const rowHeight = 20;
 
-  // Header background
   doc.rect(left, y - 4, right - left, rowHeight).fill('#f3f4f6').fillColor('#000');
   doc.font('Helvetica-Bold').fontSize(9).fillColor('#000');
   doc.text('#', col.no, y, { width: 30, align: 'left' });
@@ -320,14 +338,12 @@ async function orderInvoicePdfHandler(req, res) {
   y += rowHeight + 2;
 
   doc.font('Helvetica').fontSize(9).fillColor('#000');
-  // Rows with separators
   rows.forEach((r, idx) => {
     const qty = Number(r.quantite || 0);
     const pu = Number(r.prix_unitaire || 0);
     const lineTotal = (qty * pu).toFixed(2);
     const cuisson = r.cuisson ? ` (${r.cuisson})` : '';
 
-    // Check for page break
     if (y > doc.page.height - 80) {
       doc.addPage();
       y = 40;
@@ -339,13 +355,11 @@ async function orderInvoicePdfHandler(req, res) {
     doc.text(pu.toFixed(2), col.pu, y, { width: 60, align: 'right' });
     doc.text(lineTotal, col.amount, y, { width: 80, align: 'right' });
 
-    // separator line
     y += rowHeight - 4;
     doc.moveTo(left, y).lineTo(right, y).lineWidth(0.4).strokeColor('#e2e8f0').stroke();
     y += 6;
   });
 
-  // Totals box (right aligned)
   if (y > doc.page.height - 120) {
     doc.addPage();
     y = 40;
@@ -367,8 +381,6 @@ async function ordersInProgressHandler(req, res) {
   const rows = await resto.ordersByTable(req.query.statut || 'EN_COURS');
   return ok(res, rows);
 }
-
-// Recipe handlers removed
 
 async function restaurantStockHandler(req, res) {
   const [rows] = await pool.query(
@@ -431,8 +443,6 @@ async function adjustRestaurantStockHandler(req, res) {
   return ok(res, { newQty: Number(rows[0].quantite) });
 }
 
-// Supprime une ligne de stock pour le restaurant. Accepte soit `id` (stocks.id),
-// soit `product_id` + `location_id` pour supprimer la ligne correspondante.
 async function removeRestaurantStockHandler(req, res) {
   const { id } = req.query || {};
   const productId = req.query && req.query.product_id ? Number(req.query.product_id) : null;
@@ -553,7 +563,7 @@ async function menuHandler(req, res) {
     `SELECT p.*, c.nom AS category_nom 
      FROM products p 
      LEFT JOIN categories c ON c.id = p.category_id 
-     WHERE p.actif = 1 AND p.type_produit = 'PRODUIT_FINI' 
+    WHERE p.actif = 1 AND p.type_produit = 'PRODUIT_FINI' AND p.source_module = 'RESTAURANT'
      ORDER BY c.nom, p.nom`
   );
   return ok(res, rows);
@@ -563,13 +573,13 @@ async function updateOrderStatusHandler(req, res) {
   console.debug('[restaurant] updateOrderStatusHandler params:', req.params, 'body:', JSON.stringify(req.body));
   const { statut } = req.body;
   if (!statut) throw ApiError.badRequest('statut est requis');
-  
+
   const [result] = await pool.query(
     'UPDATE orders SET statut = ? WHERE id = ?',
     [statut, req.params.id]
   );
   if (result.affectedRows === 0) throw ApiError.notFound(`Commande #${req.params.id} introuvable`);
-  
+
   const [[order]] = await pool.query('SELECT * FROM orders WHERE id = ?', [req.params.id]);
   return ok(res, order);
 }
@@ -579,18 +589,18 @@ async function openCashierHandler(req, res) {
   if (!nom || !user_id || fond_initial === undefined) {
     throw ApiError.badRequest('nom, user_id et fond_initial sont requis');
   }
-  
+
   const [cashierResult] = await pool.query(
     'INSERT INTO restaurant_cashiers (nom, statut) VALUES (?, "OUVERT")',
     [nom]
   );
   const cashierId = cashierResult.insertId;
-  
+
   const [sessionResult] = await pool.query(
     'INSERT INTO restaurant_sessions (cashier_id, user_id, fond_initial, ouverture_at) VALUES (?, ?, ?, NOW())',
     [cashierId, user_id, fond_initial]
   );
-  
+
   return created(res, { cashier_id: cashierId, session_id: sessionResult.insertId });
 }
 
@@ -599,18 +609,18 @@ async function closeCashierHandler(req, res) {
   if (!session_id || fond_final === undefined) {
     throw ApiError.badRequest('session_id et fond_final sont requis');
   }
-  
+
   const [result] = await pool.query(
     'UPDATE restaurant_sessions SET fond_final = ?, fermeture_at = NOW() WHERE id = ? AND fermeture_at IS NULL',
     [fond_final, session_id]
   );
   if (result.affectedRows === 0) throw ApiError.notFound('Session non trouvée ou déjà fermée');
-  
+
   await pool.query(
     'UPDATE restaurant_cashiers SET statut = "FERME" WHERE id = (SELECT cashier_id FROM restaurant_sessions WHERE id = ?)',
     [session_id]
   );
-  
+
   return ok(res, { message: 'Session fermée' });
 }
 
@@ -640,7 +650,6 @@ async function processPaymentHandler(req, res) {
     );
     if (!orderRow) throw ApiError.notFound(`Commande #${order_id} introuvable`);
 
-    // A retry or a double click must not create a second payment for one order.
     const [[existingPayment]] = await conn.query(
       'SELECT id, montant FROM payments WHERE order_id = ? ORDER BY id DESC LIMIT 1',
       [order_id]
@@ -682,7 +691,7 @@ async function billToRoomHandler(req, res) {
   if (!order_id || !room_id) {
     throw ApiError.badRequest('order_id et room_id sont requis');
   }
-  
+
   const [result] = await pool.query(
     `INSERT INTO invoices (client_id, montant_total, statut) VALUES (
       (SELECT r.client_id FROM stays s JOIN reservations r ON r.id = s.reservation_id WHERE r.room_id = ? AND s.checkout_at IS NULL LIMIT 1),
@@ -691,12 +700,12 @@ async function billToRoomHandler(req, res) {
     )`,
     [room_id, order_id]
   );
-  
+
   await pool.query(
     'UPDATE orders SET statut = "FACTURE" WHERE id = ?',
     [order_id]
   );
-  
+
   return created(res, { invoice_id: result.insertId });
 }
 
@@ -705,21 +714,21 @@ async function statsHandler(req, res) {
   if (!date_debut || !date_fin) {
     throw ApiError.badRequest('date_debut et date_fin sont requis');
   }
-  
+
   const [[ordersStats]] = await pool.query(
     `SELECT COUNT(*) as total_orders, SUM(montant_total) as total_revenue
      FROM orders
      WHERE created_at BETWEEN ? AND ?`,
     [date_debut, date_fin]
   );
-  
+
   const [[paymentsStats]] = await pool.query(
     `SELECT COUNT(*) as total_payments, SUM(montant) as total_collected 
      FROM payments 
      WHERE date_paiement BETWEEN ? AND ?`,
     [date_debut, date_fin]
   );
-  
+
   return ok(res, {
     orders: ordersStats,
     payments: paymentsStats
@@ -790,6 +799,7 @@ const restaurantPurchaseDetailHandler = getRestaurantPurchaseByIdHandler;
 
 module.exports = {
   getRestaurantReportHandler, saveRestaurantReportHandler,
+  getProductHistoryHandler,
   tablesCrud, ordersCrud, orderItemsCrud, cashiersCrud, sessionsCrud, productsCrud,
   createOrderHandler, updateOrderHandler, orderDetailHandler, orderInvoiceHandler, ordersInProgressHandler,
   orderInvoicePdfHandler, closeAllRestaurantOrdersHandler,

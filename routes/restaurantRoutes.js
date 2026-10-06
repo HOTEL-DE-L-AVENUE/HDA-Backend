@@ -9,7 +9,7 @@ const router = express.Router();
 router.get('/reports/:date', requireAuth, ctrl.getRestaurantReportHandler);
 router.post('/reports', requireAuth, requireRole('admin', 'manager', 'caisse', 'caissier'), ctrl.saveRestaurantReportHandler);
 router.delete('/orders/:id', requireAuth, requireRole('admin'), ctrl.ordersCrud.remove);
-
+router.get('/product-history', requireAuth, requireRole('admin'), ctrl.getProductHistoryHandler);
 // Stock restaurant - same data as stock module, with labels needed for the interface.
 router.get('/stock', ctrl.restaurantStockHandler);
 router.get('/stock/movements', ctrl.restaurantStockMovementsHandler);

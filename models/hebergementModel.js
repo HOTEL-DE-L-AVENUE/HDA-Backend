@@ -2,6 +2,8 @@
 const { pool, withTransaction } = require('../config/db');
 const { createCrudModel } = require('./crudFactory');
 const stockModel = require('./stockModel');
+const crypto = require('crypto');
+const { validateHotelPayment, getHotelPaymentStatus, roundMoney, isIdempotentReplay } = require('../utils/hotelPaymentRules');
 
 const RoomTypes = createCrudModel({
   table: 'room_types', pk: 'id', fields: ['nom', 'description', 'prix_base'], sortable: ['id', 'nom', 'prix_base'],
@@ -30,7 +32,7 @@ const RoomMaintenance = createCrudModel({
   fields: ['room_id', 'equipment_id', 'type_intervention', 'description', 'statut',
     'date_declaration', 'date_resolution', 'cout', 'created_by', 'location',
     'equipment_label', 'worker_id', 'execution_date', 'finish_date',
-    'materials_cost', 'labor_cost', 'total_cost'],
+    'materials_cost', 'labor_cost', 'total_cost', 'materials_used'],
   sortable: ['id', 'statut', 'date_declaration'],
 });
 
@@ -76,13 +78,16 @@ async function findReservationWithDetails(id) {
     query = `SELECT r.*, c.nom AS client_nom, c.prenom AS client_prenom, room.numero AS room_numero,
             creator.nom AS created_by_nom, creator.prenom AS created_by_prenom,
             modifier.nom AS modified_by_nom, modifier.prenom AS modified_by_prenom,
-            EXISTS(
-              SELECT 1 FROM financial_transactions ft
-              WHERE ft.ref_flux_global IN (
-                CONCAT('HEBERGEMENT-RESERVATION-', r.id),
-                CONCAT('HOTEL-RESERVATION-', r.id)
-              )
-            ) AS est_payee
+            (COALESCE(r.montant_paye, 0) >= COALESCE(r.montant_total, 0)) AS est_payee,
+            CASE
+              WHEN GREATEST(COALESCE(r.montant_total, 0) - COALESCE(r.montant_paye, 0), 0) <= 0
+                THEN CASE WHEN COALESCE(r.montant_gratuit, 0) > 0 THEN 'GRATUIT' ELSE 'PAYE' END
+              WHEN COALESCE(r.montant_credit, 0) > 0 THEN 'CREDIT'
+              WHEN COALESCE(r.montant_gratuit, 0) > 0 THEN 'GRATUIT'
+              WHEN COALESCE(r.montant_paye, 0) > 0 THEN 'PARTIELLEMENT_PAYE'
+              ELSE 'IMPAYE'
+            END AS statut_paiement,
+            GREATEST(COALESCE(r.montant_total, 0) - COALESCE(r.montant_paye, 0), 0) AS montant_restant
      FROM reservations r
      LEFT JOIN clients c ON c.id = r.client_id
      LEFT JOIN rooms room ON room.id = r.room_id
@@ -92,13 +97,16 @@ async function findReservationWithDetails(id) {
     params = [id];
   } else {
     query = `SELECT r.*, c.nom AS client_nom, c.prenom AS client_prenom, room.numero AS room_numero,
-            EXISTS(
-              SELECT 1 FROM financial_transactions ft
-              WHERE ft.ref_flux_global IN (
-                CONCAT('HEBERGEMENT-RESERVATION-', r.id),
-                CONCAT('HOTEL-RESERVATION-', r.id)
-              )
-            ) AS est_payee
+            (COALESCE(r.montant_paye, 0) >= COALESCE(r.montant_total, 0)) AS est_payee,
+            CASE
+              WHEN GREATEST(COALESCE(r.montant_total, 0) - COALESCE(r.montant_paye, 0), 0) <= 0
+                THEN CASE WHEN COALESCE(r.montant_gratuit, 0) > 0 THEN 'GRATUIT' ELSE 'PAYE' END
+              WHEN COALESCE(r.montant_credit, 0) > 0 THEN 'CREDIT'
+              WHEN COALESCE(r.montant_gratuit, 0) > 0 THEN 'GRATUIT'
+              WHEN COALESCE(r.montant_paye, 0) > 0 THEN 'PARTIELLEMENT_PAYE'
+              ELSE 'IMPAYE'
+            END AS statut_paiement,
+            GREATEST(COALESCE(r.montant_total, 0) - COALESCE(r.montant_paye, 0), 0) AS montant_restant
      FROM reservations r
      LEFT JOIN clients c ON c.id = r.client_id
      LEFT JOIN rooms room ON room.id = r.room_id
@@ -235,7 +243,10 @@ Reservations.update = async function (id, data, modifiedBy = null) {
   // Depuis la page Hôtel, « encaisser » met directement la réservation à
   // TERMINEE. On encaisse alors ce qui reste dû dans la caisse Hôtel.
   if (isPaymentRequest) {
-    await recordReservationPayment(id, 'HOTEL', { createdBy: modifiedBy });
+    const payment = await recordReservationPayment(id, 'HOTEL', { createdBy: modifiedBy });
+    if (!payment.est_payee && !wasCompleted) {
+      await pool.query('UPDATE reservations SET statut = ? WHERE id = ?', [before.statut, id]);
+    }
   }
   return findReservationWithDetails(id);
 };
@@ -302,7 +313,7 @@ const Stays = createCrudModel({
 
 const HousekeepingTasks = createCrudModel({
   table: 'housekeeping_tasks', pk: 'id',
-  fields: ['room_id', 'assigned_user_id', 'type_tache', 'statut', 'commentaire', 'planned_at', 'completed_at'],
+  fields: ['room_id', 'assigned_user_id', 'type_tache', 'statut', 'commentaire', 'planned_at', 'completed_at', 'products_used'],
   sortable: ['id', 'statut', 'planned_at'],
 });
 
@@ -521,6 +532,136 @@ async function validateReservationDiscount(id, validatedBy) {
   return findReservationWithDetails(id);
 }
 
+async function applyReservationPaymentTransaction(conn, reservationId, {
+  amount, methods, idempotencyKey, createdBy = null, canAuthorizeFree = false,
+} = {}) {
+  const key = String(idempotencyKey || '').trim();
+  if (!key || key.length > 80) throw new Error('Une clé d’idempotence valide est requise.');
+  const requestHash = crypto.createHash('sha256')
+    .update(JSON.stringify({ amount: roundMoney(amount), methods }))
+    .digest('hex');
+
+    const [[reservation]] = await conn.query(
+      `SELECT id, client_id, montant_total, montant_paye, montant_encaisse, montant_credit,
+              montant_gratuit, statut, laundry_included, laundry_price, services_extras,
+              services_extras_total
+         FROM reservations WHERE id = ? FOR UPDATE`,
+      [reservationId]
+    );
+    if (!reservation) throw new Error(`Réservation #${reservationId} introuvable.`);
+    if (String(reservation.statut || '').toUpperCase() === 'ANNULEE') {
+      throw new Error('Cette réservation ne peut plus être encaissée.');
+    }
+
+    const [[previous]] = await conn.query(
+      'SELECT id, montant, details FROM reservation_payments WHERE reservation_id = ? AND idempotency_key = ? LIMIT 1',
+      [reservation.id, key]
+    );
+    if (previous) {
+      isIdempotentReplay(previous.details, requestHash);
+      return {
+        reservation_id: reservation.id,
+        payment_id: previous.id,
+        montant: Number(previous.montant),
+        duplicate: true,
+      };
+    }
+
+    const due = roundMoney(Number(reservation.montant_total || 0) - Number(reservation.montant_paye || 0));
+    if (!(Number(reservation.montant_total) > 0)) throw new Error('Montant de réservation invalide.');
+    const payment = validateHotelPayment({
+      amount,
+      balanceDue: due,
+      currentCredit: Number(reservation.montant_credit || 0),
+      methods,
+      canAuthorizeFree,
+    });
+
+    let extras = [];
+    try {
+      extras = typeof reservation.services_extras === 'string'
+        ? JSON.parse(reservation.services_extras || '[]')
+        : reservation.services_extras || [];
+    } catch { extras = []; }
+    if (!Array.isArray(extras)) extras = [];
+
+    const [[{ count }]] = await conn.query(
+      'SELECT COUNT(*) AS count FROM reservation_payments WHERE reservation_id = ?',
+      [reservation.id]
+    );
+    const sequence = Number(count) + 1;
+    const baseRef = `HOTEL-RESERVATION-${reservation.id}-R${sequence}`;
+    const paymentStatus = getHotelPaymentStatus({
+      total: reservation.montant_total,
+      covered: Number(reservation.montant_paye || 0) + payment.amountCollected + payment.amountFree,
+      credit: payment.creditBalance,
+      free: Number(reservation.montant_gratuit || 0) + payment.amountFree,
+    });
+    const methodsForStorage = payment.methods.map(({ moyen_paiement, montant }) => ({ moyen_paiement, montant }));
+    const details = {
+      montant_total: Number(reservation.montant_total),
+      laundry_price: reservation.laundry_included ? Number(reservation.laundry_price || 0) : 0,
+      services_extras: extras,
+      modes_paiement: methodsForStorage,
+      montant_cible: payment.amount,
+      request_hash: requestHash,
+      statut_paiement_apres_operation: paymentStatus,
+    };
+    const primaryMethod = payment.methods.length === 1 ? payment.methods[0].moyen_paiement : 'MULTI';
+    const [inserted] = await conn.query(
+      `INSERT INTO reservation_payments
+         (reservation_id, montant, montant_encaisse, montant_credit, montant_gratuit,
+          moyen_paiement, statut, details, ref_flux_global, idempotency_key, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, 'ENREGISTRE', ?, ?, ?, ?)`,
+      [reservation.id, payment.amount, payment.amountCollected, payment.amountCredit, payment.amountFree,
+        primaryMethod, JSON.stringify(details), baseRef, key, createdBy]
+    );
+    const paymentId = inserted.insertId;
+
+    for (const method of payment.methods) {
+      if (['CREDIT', 'GRATUIT'].includes(method.moyen_paiement)) continue;
+      const methodRef = `${baseRef}-${method.moyen_paiement}`;
+      await conn.query(
+        `INSERT INTO financial_transactions
+           (client_id, module, type_flux, montant, moyen_paiement, reference_id, ref_flux_global,
+            description, statut_sync, created_at)
+         VALUES (?, 'HOTEL', 'ENTREE', ?, ?, ?, ?, ?, 'SYNCED', NOW())`,
+        [reservation.client_id, method.montant, method.moyen_paiement, reservation.id, methodRef,
+          `Encaissement réservation HOTEL #${reservation.id} (opération ${paymentId})`]
+      );
+    }
+
+    const covered = roundMoney(payment.amountCollected + payment.amountFree);
+    const nextCredit = roundMoney(payment.creditBalance);
+    await conn.query(
+      `UPDATE reservations
+          SET montant_paye = montant_paye + ?,
+              montant_encaisse = montant_encaisse + ?,
+              montant_gratuit = montant_gratuit + ?,
+              montant_credit = ?,
+              statut = CASE WHEN ? <= 0 AND statut IN ('CHECKED_IN', 'EN_COURS') THEN 'TERMINEE' ELSE statut END
+        WHERE id = ?`,
+      [covered, payment.amountCollected, payment.amountFree, nextCredit, payment.remainingDue, reservation.id]
+    );
+
+    return {
+      reservation_id: reservation.id,
+      payment_id: paymentId,
+      montant: payment.amount,
+      montant_encaisse: payment.amountCollected,
+      montant_credit: payment.amountCredit,
+      montant_gratuit: payment.amountFree,
+      montant_restant: payment.remainingDue,
+      statut_paiement: paymentStatus,
+      duplicate: false,
+    };
+}
+
+async function createReservationPayment(reservationId, options = {}) {
+  const result = await withTransaction((conn) => applyReservationPaymentTransaction(conn, reservationId, options));
+  return { ...result, reservation: await findReservationWithDetails(reservationId) };
+}
+
 // Encaisse ce qui reste dû sur une réservation (montant_total - montant_paye).
 // Premier encaissement : réservation complète. Encaissements suivants : uniquement
 // les rectifications ajoutées après coup (blanchisserie, transfert, excursion...).
@@ -529,7 +670,7 @@ async function validateReservationDiscount(id, validatedBy) {
 async function recordReservationPayment(reservationId, module = 'HEBERGEMENT', { createdBy = null } = {}) {
   return withTransaction(async (conn) => {
     const [[reservation]] = await conn.query(
-      `SELECT id, client_id, montant_total, montant_paye, statut, moyen_paiement,
+      `SELECT id, client_id, montant_total, montant_paye, montant_credit, statut, moyen_paiement,
               laundry_included, laundry_price, services_extras, services_extras_total
          FROM reservations WHERE id = ? FOR UPDATE`,
       [reservationId]
@@ -561,14 +702,22 @@ async function recordReservationPayment(reservationId, module = 'HEBERGEMENT', {
     }
 
     const isRectification = Number(reservation.montant_paye || 0) > 0;
-    const moyenPaiement = reservation.moyen_paiement || 'ESPECES';
-    await conn.query(
-      `INSERT INTO financial_transactions
-         (client_id, module, type_flux, montant, moyen_paiement, reference_id, ref_flux_global, description, statut_sync, created_at)
-       VALUES (?, ?, 'ENTREE', ?, ?, ?, ?, ?, 'SYNCED', NOW())`,
-      [reservation.client_id, financialModule, due, moyenPaiement, reservation.id, ref,
-      `${isRectification ? 'Rectification' : 'Encaissement'} réservation ${financialModule.toLowerCase()} #${reservation.id}`]
-    );
+    const moyenPaiement = String(reservation.moyen_paiement || 'ESPECES').toUpperCase();
+    if (moyenPaiement === 'CREDIT' && Number(reservation.montant_credit || 0) > 0) {
+      return { reservation_id: reservation.id, montant: 0, est_payee: false, duplicate: true };
+    }
+    const amountCredit = moyenPaiement === 'CREDIT' ? due : 0;
+    const amountFree = moyenPaiement === 'GRATUIT' ? due : 0;
+    const amountCollected = amountCredit || amountFree ? 0 : due;
+    if (amountCollected > 0) {
+      await conn.query(
+        `INSERT INTO financial_transactions
+           (client_id, module, type_flux, montant, moyen_paiement, reference_id, ref_flux_global, description, statut_sync, created_at)
+         VALUES (?, ?, 'ENTREE', ?, ?, ?, ?, ?, 'SYNCED', NOW())`,
+        [reservation.client_id, financialModule, amountCollected, moyenPaiement, reservation.id, ref,
+          `${isRectification ? 'Rectification' : 'Encaissement'} réservation ${financialModule.toLowerCase()} #${reservation.id}`]
+      );
+    }
 
     let extras = [];
     try { extras = JSON.parse(reservation.services_extras || '[]'); } catch { extras = []; }
@@ -576,15 +725,35 @@ async function recordReservationPayment(reservationId, module = 'HEBERGEMENT', {
       montant_total: Number(reservation.montant_total),
       laundry_price: reservation.laundry_included ? Number(reservation.laundry_price || 0) : 0,
       services_extras: Array.isArray(extras) ? extras : [],
+      modes_paiement: [{ moyen_paiement: moyenPaiement, montant: due }],
     };
     await conn.query(
-      `INSERT INTO reservation_payments (reservation_id, montant, moyen_paiement, details, ref_flux_global, created_by)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [reservation.id, due, moyenPaiement, JSON.stringify(details), ref, createdBy]
+      `INSERT INTO reservation_payments
+         (reservation_id, montant, montant_encaisse, montant_credit, montant_gratuit,
+          moyen_paiement, statut, details, ref_flux_global, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, 'ENREGISTRE', ?, ?, ?)`,
+      [reservation.id, due, amountCollected, amountCredit, amountFree, moyenPaiement,
+        JSON.stringify(details), ref, createdBy]
     );
-    await conn.query('UPDATE reservations SET montant_paye = montant_paye + ? WHERE id = ?', [due, reservation.id]);
+    const covered = amountCollected + amountFree;
+    await conn.query(
+      `UPDATE reservations
+          SET montant_paye = montant_paye + ?,
+              montant_encaisse = montant_encaisse + ?,
+              montant_gratuit = montant_gratuit + ?,
+              montant_credit = GREATEST(montant_credit - ?, 0) + ?
+        WHERE id = ?`,
+      [covered, amountCollected, amountFree, covered, amountCredit, reservation.id]
+    );
 
-    return { reservation_id: reservation.id, montant: due, est_payee: true };
+    return {
+      reservation_id: reservation.id,
+      montant: due,
+      montant_encaisse: amountCollected,
+      montant_credit: amountCredit,
+      montant_gratuit: amountFree,
+      est_payee: amountCredit === 0,
+    };
   });
 }
 
@@ -603,7 +772,14 @@ async function listReservationPayments(reservationId) {
     if (details && typeof details.services_extras === 'string') {
       try { details.services_extras = JSON.parse(details.services_extras); } catch { details.services_extras = []; }
     }
-    return { ...row, montant: Number(row.montant), details };
+    return {
+      ...row,
+      montant: Number(row.montant),
+      montant_encaisse: Number(row.montant_encaisse || 0),
+      montant_credit: Number(row.montant_credit || 0),
+      montant_gratuit: Number(row.montant_gratuit || 0),
+      details,
+    };
   });
 }
 
@@ -757,26 +933,184 @@ async function checkOut(stayId) {
   });
 }
 
-// Met à jour uniquement le statut d'une maintenance.
-async function updateMaintenanceStatus(id, statut) {
-  const [existing] = await pool.query('SELECT * FROM room_maintenance WHERE id = ?', [id]);
-  if (!existing[0]) throw new Error(`Maintenance #${id} introuvable`);
+function normalizeUsedProducts(value) {
+  let items = value;
+  if (typeof items === 'string') {
+    try { items = JSON.parse(items || '[]'); } catch { items = []; }
+  }
+  if (!Array.isArray(items)) return [];
+  const normalized = items.map((item) => ({
+    product_id: Number(item?.product_id),
+    quantity: Number(item?.quantity),
+  }));
+  if (normalized.some((item) => !Number.isInteger(item.product_id) || item.product_id <= 0 || !Number.isFinite(item.quantity) || item.quantity <= 0)) {
+    throw new Error('Chaque produit utilisé doit avoir un identifiant valide et une quantité positive');
+  }
+  return normalized;
+}
 
-  const shouldCloseNow = ['TERMINE', 'ANNULE'].includes(statut) && !existing[0].date_resolution;
-  if (shouldCloseNow) {
-    await pool.query(
-      'UPDATE room_maintenance SET statut = ?, date_resolution = NOW() WHERE id = ?',
-      [statut, id]
+async function refreshRoomOperationalStatus(conn, roomId) {
+  if (!roomId) return;
+  const [[maintenance]] = await conn.query(
+    "SELECT COUNT(*) AS total FROM room_maintenance WHERE room_id = ? AND statut IN ('OUVERT','EN_COURS')",
+    [roomId]
+  );
+  const [[stay]] = await conn.query(
+    `SELECT COUNT(*) AS total FROM stays s
+     JOIN reservations r ON r.id = s.reservation_id
+     WHERE r.room_id = ? AND s.checkout_at IS NULL AND r.statut IN ('CHECKED_IN','EN_COURS')`,
+    [roomId]
+  );
+  const [[housekeeping]] = await conn.query(
+    "SELECT COUNT(*) AS total FROM housekeeping_tasks WHERE room_id = ? AND statut = 'EN_COURS'",
+    [roomId]
+  );
+  const [[room]] = await conn.query('SELECT statut FROM rooms WHERE id = ? FOR UPDATE', [roomId]);
+  const nextStatus = Number(stay.total) > 0
+    ? 'OCCUPEE'
+    : room?.statut === 'RESERVEE'
+      ? 'RESERVEE'
+      : Number(maintenance.total) > 0
+        ? 'MAINTENANCE'
+        : Number(housekeeping.total) > 0
+          ? 'NETTOYAGE'
+          : 'LIBRE';
+  if (room && room.statut !== nextStatus) {
+    await conn.query('UPDATE rooms SET statut = ? WHERE id = ?', [nextStatus, roomId]);
+    await conn.query(
+      'INSERT INTO room_status_history (room_id, ancien_statut, nouveau_statut, changed_at) VALUES (?, ?, ?, NOW())',
+      [roomId, room.statut, nextStatus]
     );
-  } else {
-    await pool.query('UPDATE room_maintenance SET statut = ? WHERE id = ?', [statut, id]);
   }
+}
 
-  const [updated] = await pool.query('SELECT * FROM room_maintenance WHERE id = ?', [id]);
-  if (['TERMINE', 'ANNULE'].includes(statut) && existing[0].room_id) {
-    await pool.query('UPDATE rooms SET statut = "LIBRE" WHERE id = ? AND statut = "MAINTENANCE"', [existing[0].room_id]);
-  }
-  return updated[0];
+async function saveOperationalRecord({ table, fields, id = null, data, stockField, sourceModule, referenceLabel, statusField }) {
+  return withTransaction(async (conn) => {
+    let existing = null;
+    if (id) {
+      const [rows] = await conn.query(`SELECT * FROM ${table} WHERE id = ? FOR UPDATE`, [id]);
+      existing = rows[0];
+      if (!existing) throw new Error(`${table} #${id} introuvable`);
+    }
+
+    const payload = { ...data };
+    const usedSupplied = Object.prototype.hasOwnProperty.call(payload, stockField);
+    const usedProducts = normalizeUsedProducts(usedSupplied ? payload[stockField] : existing?.[stockField]);
+    if (usedSupplied) payload[stockField] = usedProducts;
+    if (statusField === 'statut' && payload.statut === 'TERMINE' && !existing) {
+      payload.completed_at = new Date();
+    }
+    if (statusField === 'statut' && payload.statut === 'TERMINE' && existing && table === 'room_maintenance') {
+      payload.date_resolution = existing.date_resolution || new Date();
+    }
+    if (statusField === 'statut' && payload.statut === 'TERMINE' && existing && table === 'housekeeping_tasks') {
+      payload.completed_at = existing.completed_at || new Date();
+    }
+
+    const columns = fields.filter((field) => payload[field] !== undefined);
+    const values = columns.map((field) => {
+      const value = payload[field];
+      if (field === stockField && Array.isArray(value)) return JSON.stringify(value);
+      if (value instanceof Date) return value;
+      if (value === '') return null;
+      return value;
+    });
+    let recordId = id;
+    if (existing) {
+      if (columns.length) {
+        await conn.query(
+          `UPDATE ${table} SET ${columns.map((field) => `\`${field}\` = ?`).join(', ')} WHERE id = ?`,
+          [...values, id]
+        );
+      }
+    } else {
+      if (!columns.length) throw new Error(`Aucun champ valide fourni pour ${table}`);
+      const [inserted] = await conn.query(
+        `INSERT INTO ${table} (${columns.map((field) => `\`${field}\``).join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
+        values
+      );
+      recordId = inserted.insertId;
+    }
+
+    const [currentRows] = await conn.query(`SELECT * FROM ${table} WHERE id = ?`, [recordId]);
+    const current = currentRows[0];
+    const completing = current?.statut === 'TERMINE' && !existing?.stock_deducted_at;
+    if (completing && usedProducts.length) {
+      for (const item of usedProducts) {
+        await stockModel.recordMovement({
+          productId: item.product_id,
+          locationId: 5,
+          type: 'SORTIE',
+          quantite: item.quantity,
+          sourceModule,
+          referenceId: recordId,
+          motif: `${referenceLabel} - ${current.type_tache || current.type_intervention || 'tâche'}`,
+          allowNegative: false,
+          conn,
+        });
+      }
+      await conn.query(`UPDATE ${table} SET stock_deducted_at = NOW() WHERE id = ?`, [recordId]);
+    }
+    if (existing?.stock_deducted_at && usedSupplied) {
+      const prior = normalizeUsedProducts(existing[stockField]);
+      if (JSON.stringify(prior) !== JSON.stringify(usedProducts)) {
+        throw new Error('Les produits ne peuvent plus être modifiés après leur déduction du stock');
+      }
+    }
+
+    await refreshRoomOperationalStatus(conn, current.room_id);
+    const [savedRows] = await conn.query(`SELECT * FROM ${table} WHERE id = ?`, [recordId]);
+    return savedRows[0];
+  });
+}
+
+async function saveMaintenance(id, data) {
+  return saveOperationalRecord({
+    table: 'room_maintenance',
+    fields: RoomMaintenance.fields,
+    id,
+    data,
+    stockField: 'materials_used',
+    sourceModule: 'MAINTENANCE',
+    referenceLabel: 'Maintenance',
+    statusField: 'statut',
+  });
+}
+
+async function saveHousekeepingTask(id, data) {
+  return saveOperationalRecord({
+    table: 'housekeeping_tasks',
+    fields: [...HousekeepingTasks.fields, 'exceptional_details'],
+    id,
+    data,
+    stockField: 'products_used',
+    sourceModule: 'MENAGE',
+    referenceLabel: 'Ménage',
+    statusField: 'statut',
+  });
+}
+
+async function deleteOperationalRecord(table, id) {
+  return withTransaction(async (conn) => {
+    const [rows] = await conn.query(`SELECT room_id FROM ${table} WHERE id = ? FOR UPDATE`, [id]);
+    if (!rows[0]) throw new Error(`${table} #${id} introuvable`);
+    await conn.query(`DELETE FROM ${table} WHERE id = ?`, [id]);
+    await refreshRoomOperationalStatus(conn, rows[0].room_id);
+    return true;
+  });
+}
+
+async function deleteMaintenance(id) {
+  return deleteOperationalRecord('room_maintenance', id);
+}
+
+async function deleteHousekeepingTask(id) {
+  return deleteOperationalRecord('housekeeping_tasks', id);
+}
+
+// Les statuts et déductions sont traités comme une seule opération atomique.
+async function updateMaintenanceStatus(id, statut, materialsUsed = undefined) {
+  return saveMaintenance(id, { statut, ...(materialsUsed === undefined ? {} : { materials_used: materialsUsed }) });
 }
 
 // Statistiques agrégées des maintenances
@@ -815,7 +1149,8 @@ async function getReservationStats() {
          CONCAT('HEBERGEMENT-RESERVATION-', r.id),
          CONCAT('HOTEL-RESERVATION-', r.id)
        ) OR ft.ref_flux_global LIKE CONCAT('%RESERVATION-', r.id, '-R%'))
-     WHERE ft.type_flux = 'ENTREE'`
+     WHERE ft.type_flux = 'ENTREE'
+       AND UPPER(COALESCE(ft.moyen_paiement, '')) NOT IN ('CREDIT', 'GRATUIT')`
   );
   const [parStatut] = await pool.query(
     `SELECT statut, COUNT(*) AS total, COALESCE(SUM(montant_total), 0) AS montant_total
@@ -886,7 +1221,9 @@ async function getEquipmentStats() {
 async function updateRoomEquipmentStatus(id, statut) {
   const [existing] = await pool.query('SELECT * FROM room_equipments WHERE id = ?', [id]);
   if (!existing[0]) throw new Error(`Équipement de chambre #${id} introuvable`);
+  
   await pool.query('UPDATE room_equipments SET statut = ? WHERE id = ?', [statut, id]);
+  
   const [updated] = await pool.query('SELECT * FROM room_equipments WHERE id = ?', [id]);
   return updated[0];
 }
@@ -912,22 +1249,11 @@ async function getRoomStats() {
 }
 
 // Met à jour uniquement le statut d'une tâche de housekeeping
-async function updateHousekeepingStatus(id, statut) {
-  const [existing] = await pool.query('SELECT * FROM housekeeping_tasks WHERE id = ?', [id]);
-  if (!existing[0]) throw new Error(`Tâche de housekeeping #${id} introuvable`);
-
-  const shouldCompleteNow = statut === 'TERMINE' && !existing[0].completed_at;
-  if (shouldCompleteNow) {
-    await pool.query(
-      'UPDATE housekeeping_tasks SET statut = ?, completed_at = NOW() WHERE id = ?',
-      [statut, id]
-    );
-  } else {
-    await pool.query('UPDATE housekeeping_tasks SET statut = ? WHERE id = ?', [statut, id]);
-  }
-
-  const [updated] = await pool.query('SELECT * FROM housekeeping_tasks WHERE id = ?', [id]);
-  return updated[0];
+async function updateHousekeepingStatus(id, statut, productsUsed = null) {
+  return saveHousekeepingTask(id, {
+    statut,
+    ...(productsUsed === null ? {} : { products_used: productsUsed }),
+  });
 }
 
 // Statistiques agrégées des tâches de housekeeping
@@ -961,6 +1287,9 @@ async function availableRooms({ typeId } = {}) {
 
 // Transfer stock from source location (restaurant/bar) to hotel minibar location
 async function transferStockToMinibar({ productId, sourceLocationId, quantity, roomId, userId }) {
+  if (!Number.isInteger(Number(quantity)) || Number(quantity) <= 0) {
+    throw new Error('La quantité transférée doit être un nombre entier positif');
+  }
   return withTransaction(async (conn) => {
     // Check if there's enough stock in source location
     const [sourceStock] = await conn.query(
@@ -1016,6 +1345,9 @@ async function transferStockToMinibar({ productId, sourceLocationId, quantity, r
 
 // Handle minibar consumption with stock movement tracking
 async function handleMinibarConsumption({ roomId, productId, quantity, clientId, price }) {
+  if (!Number.isInteger(Number(quantity)) || Number(quantity) <= 0) {
+    throw new Error('La quantité consommée doit être un nombre entier positif');
+  }
   return withTransaction(async (conn) => {
     // Check if product exists in room minibar
     const [minibarItem] = await conn.query(
@@ -1099,6 +1431,9 @@ async function getLowStockMinibarItems() {
 
 // Restock minibar from hotel stock location
 async function restockMinibar({ roomId, productId, quantity, userId }) {
+  if (!Number.isInteger(Number(quantity)) || Number(quantity) <= 0) {
+    throw new Error('La quantité réapprovisionnée doit être un nombre entier positif');
+  }
   return withTransaction(async (conn) => {
     // Check hotel stock
     const [hotelStock] = await conn.query(
@@ -1152,7 +1487,8 @@ module.exports = {
   isRoomAvailable, createReservationWithGuests, validateReservationDiscount, recordReservationPayment, listReservationPayments, getReservationCollectionReport, checkIn, checkOut, availableRooms,
   updateMaintenanceStatus, getMaintenanceStats, getReservationStats,
   updateRoomStatus, getEquipmentByCode, getEquipmentCategories, getEquipmentStats,
-  updateRoomEquipmentStatus, getRoomStats, updateHousekeepingStatus, getHousekeepingStats,
+  updateRoomEquipmentStatus, getRoomStats, saveMaintenance, saveHousekeepingTask,
+  deleteMaintenance, deleteHousekeepingTask, updateHousekeepingStatus, getHousekeepingStats,
   transferStockToMinibar, handleMinibarConsumption, getMinibarWithAlerts, getLowStockMinibarItems, restockMinibar,
   findReservationsWithUserDetails,
 };

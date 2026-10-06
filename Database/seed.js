@@ -6,6 +6,7 @@ const SeedUnit = require('./seedUnit');
 const SeedProductType = require('./seedProductType');
 const SeedProducts = require('./seedProducts');
 const SeedQuintanaSkyDrinks = require('./seedQuintanaSkyDrinks');
+const SeedQuintanaSkyProducts = require('./Seedquintanaskyproducts');
 const SeedBillardExtras = require('./seedBillardExtras');
 const SeedBottleExtras = require('./seedBottleExtras');
 const SeedRestaurantIngredients = require('./seedRestaurantIngredients');
@@ -41,17 +42,21 @@ async function runAllSeeders() {
     const seedProducts = new SeedProducts();
     await seedProducts.run();
 
-    // 7. Seeder des boissons Quintana Sky
+    // 7. Seeder des boissons Quintana Sky (Bar)
     const seedBarProducts = new SeedQuintanaSkyDrinks();
     await seedBarProducts.run();
 
-    // 8. Seeder des extras Billard
+    // 8. Seeder des produits Quintana Sky (Restaurant)
+    const seedRestaurantProducts = new SeedQuintanaSkyProducts();
+    await seedRestaurantProducts.run();
+
+    // 9. Seeder des extras Billard
     await SeedBillardExtras();
 
-    // 9. Seeder des extras Bouteille
+    // 10. Seeder des extras Bouteille
     await SeedBottleExtras();
 
-    // 10. Seeder des ingrédients du restaurant (Correction ici : c'est une classe)
+    // 11. Seeder des ingrédients du restaurant
     const seedIngredients = new SeedRestaurantIngredients();
     await seedIngredients.run();
 

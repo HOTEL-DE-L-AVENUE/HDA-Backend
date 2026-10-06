@@ -2,9 +2,10 @@
 const heb = require('../models/hebergementModel');
 const hotelReservationReport = require('../models/hotelReservationReport.model');
 const stock = require('../models/stockModel');
+const { withTransaction, pool } = require('../config/db');
 const { createCrudController } = require('./controllerFactory');
 const ApiError = require('../utils/ApiError');
-const { ok, created } = require('../utils/apiResponse');
+const { ok, created, noContent } = require('../utils/apiResponse');
 
 function isAdmin(req) {
   return String(req.user?.role || '').toLowerCase() === 'admin';
@@ -12,39 +13,296 @@ function isAdmin(req) {
 
 const roomTypesCrud = createCrudController(heb.RoomTypes, {});
 const roomsCrud = createCrudController(heb.Rooms, { filterable: ['statut', 'room_type_id'] });
+
+// Custom delete handler for equipment to handle foreign key constraints
 const equipmentsCrud = createCrudController(heb.Equipments, { filterable: ['categorie'] });
+equipmentsCrud.remove = async function(req, res, next) {
+  const id = req.params.id;
+
+  try {
+    const result = await withTransaction(async (conn) => {
+      const [maintenanceRows] = await conn.query(
+        'SELECT COUNT(*) AS count FROM room_maintenance WHERE equipment_id = ?',
+        [id]
+      );
+      if (Number(maintenanceRows[0].count) > 0) {
+        throw ApiError.conflict('Cet équipement est utilisé dans des maintenances. Veuillez d\'abord supprimer ou modifier les maintenances associées.');
+      }
+
+      const [equipmentRows] = await conn.query(
+        'SELECT id, product_id, nom FROM equipments WHERE id = ? FOR UPDATE',
+        [id]
+      );
+      const equipment = equipmentRows[0];
+      if (!equipment) throw ApiError.notFound('Équipement introuvable');
+
+      const [roomRows] = await conn.query(
+        'SELECT id, quantite FROM room_equipments WHERE equipment_id = ? FOR UPDATE',
+        [id]
+      );
+      const assignedQuantity = roomRows.reduce((total, row) => total + Number(row.quantite || 0), 0);
+
+      if (equipment.product_id && assignedQuantity > 0) {
+        await stock.recordMovement({
+          productId: equipment.product_id,
+          locationId: 5,
+          type: 'ENTREE',
+          quantite: assignedQuantity,
+          sourceModule: 'EQUIPEMENT_CHAMBRE',
+          referenceId: id,
+          motif: `Retour de l'équipement "${equipment.nom}" au stock hôtel`,
+          userId: req.user?.id_admin || req.user?.id,
+          conn,
+        });
+      }
+
+      await conn.query('DELETE FROM room_equipments WHERE equipment_id = ?', [id]);
+      const [result] = await conn.query('DELETE FROM equipments WHERE id = ?', [id]);
+      if (result.affectedRows === 0) throw ApiError.notFound('Équipement introuvable');
+      return true;
+    });
+
+    return result ? noContent(res) : undefined;
+  } catch (error) {
+    return next(error);
+  }
+};
 
 async function createEquipmentHandler(req, res) {
   const data = { ...req.body };
-  const equipment = await heb.Equipments.create(data);
-  
-  // If equipment is consumable, automatically add to stock
-  if (data.is_consumable) {
-    try {
-      // Create a product in the products table for this equipment
-      const { pool } = require('../config/db');
-      const [productResult] = await pool.query(
-        `INSERT INTO products (nom, code, categorie, type_produit, prix_vente, actif) 
-         VALUES (?, ?, ?, 'CONSOMMABLE', 0, TRUE)`,
-        [data.nom, data.code || `EQ-${equipment.id}`, data.categorie || 'Équipement']
-      );
-      
-      // Add to hotel stock location (location_id = 5)
-      await pool.query(
-        `INSERT INTO stocks (product_id, location_id, quantite) 
-         VALUES (?, 5, ?) 
-         ON DUPLICATE KEY UPDATE quantite = quantite + VALUES(quantite)`,
-        [productResult.insertId, data.quantite || 1]
-      );
-    } catch (error) {
-      console.error('Error adding equipment to stock:', error);
-      // Don't fail the equipment creation if stock addition fails
-    }
+  const quantity = Number(data.quantite ?? 1);
+  if (!String(data.nom || '').trim() || !Number.isInteger(quantity) || quantity <= 0) {
+    throw ApiError.badRequest('Le nom et une quantité entière positive sont requis');
   }
-  
+  const equipment = await withTransaction(async (conn) => {
+    const equipmentFields = ['code', 'nom', 'categorie', 'description', 'zone', 'quantite', 'is_consumable'];
+    const values = equipmentFields.filter((field) => data[field] !== undefined).map((field) => data[field]);
+    const columns = equipmentFields.filter((field) => data[field] !== undefined);
+    const [createdEquipment] = await conn.query(
+      `INSERT INTO equipments (${columns.map((field) => `\`${field}\``).join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
+      values
+    );
+    const equipmentId = createdEquipment.insertId;
+    const equipmentCode = data.code || `EQ-${equipmentId}`;
+    let productId = data.product_id ? Number(data.product_id) : null;
+    if (productId) {
+      const [linkedProducts] = await conn.query('SELECT id FROM products WHERE id = ? LIMIT 1', [productId]);
+      if (!linkedProducts[0]) throw ApiError.badRequest('Le produit associé est introuvable');
+    } else {
+      const [matchingProducts] = await conn.query('SELECT id FROM products WHERE code = ? ORDER BY id LIMIT 1', [equipmentCode]);
+      productId = matchingProducts[0]?.id;
+      if (!productId) {
+        const [product] = await conn.query(
+          `INSERT INTO products (nom, code, unite, type_produit, prix_vente, actif, source_module)
+           VALUES (?, ?, 'unités', ?, 0, 1, 'HOTEL')`,
+          [data.nom, equipmentCode, data.is_consumable ? 'CONSOMMABLE' : 'PRODUIT_FINI']
+        );
+        productId = product.insertId;
+      }
+    }
+    await conn.query('UPDATE equipments SET product_id = ? WHERE id = ?', [productId, equipmentId]);
+    await stock.recordMovement({
+      productId,
+      locationId: 5,
+      type: 'ENTREE',
+      quantite: quantity,
+      sourceModule: 'EQUIPEMENT',
+      referenceId: equipmentId,
+      motif: `Création équipement: ${data.nom}`,
+      userId: req.user?.id_admin || req.user?.id,
+      conn,
+    });
+    const [rows] = await conn.query('SELECT * FROM equipments WHERE id = ?', [equipmentId]);
+    return rows[0];
+  });
   return created(res, equipment);
 }
+
+async function updateEquipmentHandler(req, res) {
+  const id = req.params.id;
+  const data = { ...req.body };
+  if (data.quantite !== undefined && (!Number.isInteger(Number(data.quantite)) || Number(data.quantite) < 0)) {
+    throw ApiError.badRequest('La quantité doit être un nombre entier positif ou nul');
+  }
+  const updatedEquipment = await withTransaction(async (conn) => {
+    const [rows] = await conn.query('SELECT * FROM equipments WHERE id = ? FOR UPDATE', [id]);
+    const existing = rows[0];
+    if (!existing) throw ApiError.notFound('Équipement introuvable');
+    if (data.quantite !== undefined) {
+      const [[assigned]] = await conn.query(
+        'SELECT COALESCE(SUM(quantite), 0) AS total FROM room_equipments WHERE equipment_id = ?',
+        [id]
+      );
+      if (Number(data.quantite) < Number(assigned.total || 0)) {
+        throw ApiError.conflict(`Quantité minimale requise : ${assigned.total} déjà assigné(s) à des chambres`);
+      }
+    }
+    const fields = ['code', 'nom', 'categorie', 'description', 'zone', 'quantite', 'is_consumable'];
+    const columns = fields.filter((field) => data[field] !== undefined);
+    if (columns.length) {
+      await conn.query(
+        `UPDATE equipments SET ${columns.map((field) => `\`${field}\` = ?`).join(', ')} WHERE id = ?`,
+        [...columns.map((field) => data[field]), id]
+      );
+    }
+    const quantityDiff = data.quantite === undefined ? 0 : Number(data.quantite) - Number(existing.quantite || 0);
+    if (quantityDiff !== 0 && existing.product_id) {
+      await stock.recordMovement({
+        productId: existing.product_id,
+        locationId: 5,
+        type: quantityDiff > 0 ? 'ENTREE' : 'SORTIE',
+        quantite: Math.abs(quantityDiff),
+        sourceModule: 'EQUIPEMENT',
+        referenceId: id,
+        motif: 'Modification équipement',
+        userId: req.user?.id_admin || req.user?.id,
+        allowNegative: false,
+        conn,
+      });
+    }
+    const [updated] = await conn.query('SELECT * FROM equipments WHERE id = ?', [id]);
+    return updated[0];
+  });
+  return ok(res, updatedEquipment);
+}
+
 const roomEquipmentsCrud = createCrudController(heb.RoomEquipments, { filterable: ['room_id', 'statut'] });
+async function persistRoomEquipment(data, id = null, userId = null) {
+  return withTransaction(async (conn) => {
+    let existing = null;
+    if (id) {
+      const [rows] = await conn.query('SELECT * FROM room_equipments WHERE id = ? FOR UPDATE', [id]);
+      existing = rows[0];
+      if (!existing) throw ApiError.notFound(`Équipement de chambre #${id} introuvable`);
+    }
+    const roomId = Number(data.room_id ?? existing?.room_id);
+    const equipmentId = Number(data.equipment_id ?? existing?.equipment_id);
+    const quantity = Number(data.quantite ?? existing?.quantite ?? 1);
+    const zone = data.zone ?? existing?.zone ?? 'CHAMBRE';
+    if (!roomId || !equipmentId || !Number.isInteger(quantity) || quantity <= 0) {
+      throw ApiError.badRequest('room_id, equipment_id et une quantité entière positive sont requis');
+    }
+    const [roomRows] = await conn.query('SELECT id FROM rooms WHERE id = ? LIMIT 1', [roomId]);
+    if (!roomRows[0]) throw ApiError.notFound('Chambre introuvable');
+
+    const [equipmentRows] = await conn.query('SELECT * FROM equipments WHERE id = ? FOR UPDATE', [equipmentId]);
+    const equipment = equipmentRows[0];
+    if (!equipment) throw ApiError.notFound('Équipement introuvable');
+    if (!equipment.product_id) {
+      throw ApiError.conflict('Cet équipement n’est pas lié au stock hôtel. Reliez-le à un produit avant de l’assigner.');
+    }
+    const [assignedRows] = await conn.query(
+      'SELECT COALESCE(SUM(quantite), 0) AS total FROM room_equipments WHERE equipment_id = ? AND id <> ?',
+      [equipmentId, id || 0]
+    );
+    const proposedTotal = Number(assignedRows[0].total || 0) + quantity;
+    if (proposedTotal > Number(equipment.quantite || 0)) {
+      throw ApiError.conflict(`Quantité insuffisante : ${Math.max(0, Number(equipment.quantite || 0) - Number(assignedRows[0].total || 0))} disponible`);
+    }
+
+    let assignmentId = id;
+    let movementQuantity = quantity;
+    if (existing && Number(existing.equipment_id) === equipmentId) {
+      movementQuantity = quantity - Number(existing.quantite || 0);
+      const [duplicates] = await conn.query(
+        'SELECT id FROM room_equipments WHERE room_id = ? AND equipment_id = ? AND COALESCE(zone, \'CHAMBRE\') = ? AND id <> ? LIMIT 1 FOR UPDATE',
+        [roomId, equipmentId, zone, id]
+      );
+      if (duplicates[0]) {
+        assignmentId = duplicates[0].id;
+        await conn.query('UPDATE room_equipments SET quantite = quantite + ? WHERE id = ?', [quantity, assignmentId]);
+        await conn.query('DELETE FROM room_equipments WHERE id = ?', [id]);
+      } else {
+        const fields = ['room_id', 'equipment_id', 'quantite', 'statut', 'zone'];
+        const payload = { ...existing, ...data, room_id: roomId, equipment_id: equipmentId, quantite: quantity, zone };
+        const columns = fields.filter((field) => payload[field] !== undefined);
+        await conn.query(
+          `UPDATE room_equipments SET ${columns.map((field) => `\`${field}\` = ?`).join(', ')} WHERE id = ?`,
+          [...columns.map((field) => payload[field]), id]
+        );
+      }
+    } else {
+      if (existing) {
+        const [oldEquipmentRows] = await conn.query('SELECT product_id FROM equipments WHERE id = ?', [existing.equipment_id]);
+        if (oldEquipmentRows[0]?.product_id) {
+          await stock.recordMovement({
+            productId: oldEquipmentRows[0].product_id,
+            locationId: 5,
+            type: 'ENTREE',
+            quantite: existing.quantite,
+            sourceModule: 'EQUIPEMENT_CHAMBRE',
+            referenceId: existing.id,
+            motif: 'Retrait équipement de chambre',
+            userId,
+            conn,
+          });
+        }
+        await conn.query('DELETE FROM room_equipments WHERE id = ?', [id]);
+      }
+      const [duplicates] = await conn.query(
+        'SELECT * FROM room_equipments WHERE room_id = ? AND equipment_id = ? AND COALESCE(zone, \'CHAMBRE\') = ? FOR UPDATE',
+        [roomId, equipmentId, zone]
+      );
+      if (duplicates[0]) {
+        assignmentId = duplicates[0].id;
+        await conn.query('UPDATE room_equipments SET quantite = quantite + ? WHERE id = ?', [quantity, assignmentId]);
+      } else {
+        const [inserted] = await conn.query(
+          'INSERT INTO room_equipments (room_id, equipment_id, quantite, statut, zone) VALUES (?, ?, ?, ?, ?)',
+          [roomId, equipmentId, quantity, data.statut || 'BON', zone]
+        );
+        assignmentId = inserted.insertId;
+      }
+    }
+
+    if (movementQuantity !== 0) {
+      await stock.recordMovement({
+        productId: equipment.product_id,
+        locationId: 5,
+        type: movementQuantity > 0 ? 'SORTIE' : 'ENTREE',
+        quantite: Math.abs(movementQuantity),
+        sourceModule: 'EQUIPEMENT_CHAMBRE',
+        referenceId: assignmentId,
+        motif: movementQuantity > 0 ? 'Affectation équipement à une chambre' : 'Retour équipement au stock hôtel',
+        userId,
+        allowNegative: movementQuantity > 0 ? false : true,
+        conn,
+      });
+    }
+    const [savedRows] = await conn.query('SELECT * FROM room_equipments WHERE id = ?', [assignmentId]);
+    return savedRows[0];
+  });
+}
+roomEquipmentsCrud.create = async function(req, res) {
+  return created(res, await persistRoomEquipment(req.body, null, req.user?.id_admin || req.user?.id));
+};
+roomEquipmentsCrud.update = async function(req, res) {
+  return ok(res, await persistRoomEquipment(req.body, req.params.id, req.user?.id_admin || req.user?.id));
+};
+roomEquipmentsCrud.remove = async function(req, res) {
+  const result = await withTransaction(async (conn) => {
+    const [rows] = await conn.query('SELECT * FROM room_equipments WHERE id = ? FOR UPDATE', [req.params.id]);
+    const assignment = rows[0];
+    if (!assignment) throw ApiError.notFound(`room_equipments #${req.params.id} introuvable`);
+    const [products] = await conn.query('SELECT product_id FROM equipments WHERE id = ?', [assignment.equipment_id]);
+    if (products[0]?.product_id && Number(assignment.quantite) > 0) {
+      await stock.recordMovement({
+        productId: products[0].product_id,
+        locationId: 5,
+        type: 'ENTREE',
+        quantite: assignment.quantite,
+        sourceModule: 'EQUIPEMENT_CHAMBRE',
+        referenceId: assignment.id,
+        motif: 'Retour équipement au stock hôtel',
+        userId: req.user?.id_admin || req.user?.id,
+        conn,
+      });
+    }
+    await conn.query('DELETE FROM room_equipments WHERE id = ?', [assignment.id]);
+    return true;
+  });
+  return result ? ok(res, { message: 'Équipement retiré de la chambre et retourné au stock' }) : undefined;
+};
 const roomMaintenanceCrud = createCrudController(heb.RoomMaintenance, { filterable: ['room_id', 'statut', 'type_intervention'] });
 const maintenanceWorkersCrud = createCrudController(heb.MaintenanceWorkers, { filterable: ['statut', 'specialite'] });
 const roomMinibarCrud = createCrudController(heb.RoomMinibar, { filterable: ['room_id'] });
@@ -80,6 +338,15 @@ reservationsCrud.update = async function(req, res) {
   const id = req.params.id || req.params.reservationId;
   const modifiedBy = req.user?.id_admin || req.user?.id;
   const body = { ...req.body };
+  const role = String(req.user?.role || '').toLowerCase();
+  if (String(body.moyen_paiement || '').toUpperCase() === 'GRATUIT'
+      || String(body.statut || '').toUpperCase() === 'TERMINEE') {
+    const existing = await heb.Reservations.findById(id);
+    const effectiveMethod = String(body.moyen_paiement || existing?.moyen_paiement || '').toUpperCase();
+    if (effectiveMethod === 'GRATUIT' && !['admin', 'manager'].includes(role)) {
+      throw ApiError.forbidden('Seule la direction peut autoriser une gratuité.');
+    }
+  }
   if (Object.prototype.hasOwnProperty.call(body, 'services_extras')) {
     const extras = normalizeServicesExtras(body.services_extras);
     body.services_extras = extras.json;
@@ -91,6 +358,30 @@ reservationsCrud.update = async function(req, res) {
 const reservationGuestsCrud = createCrudController(heb.ReservationGuests, { filterable: ['reservation_id'] });
 const staysCrud = createCrudController(heb.Stays, { filterable: ['reservation_id'] });
 const housekeepingCrud = createCrudController(heb.HousekeepingTasks, { filterable: ['room_id', 'statut', 'assigned_user_id'] });
+housekeepingCrud.create = async function(req, res) {
+  const row = await heb.saveHousekeepingTask(null, req.body);
+  return created(res, row);
+};
+housekeepingCrud.update = async function(req, res) {
+  const row = await heb.saveHousekeepingTask(req.params.id, req.body);
+  return ok(res, row);
+};
+housekeepingCrud.remove = async function(req, res) {
+  await heb.deleteHousekeepingTask(req.params.id);
+  return ok(res, { message: 'Tâche supprimée' });
+};
+roomMaintenanceCrud.create = async function(req, res) {
+  const row = await heb.saveMaintenance(null, { ...req.body, created_by: req.user?.id_admin || req.user?.id });
+  return created(res, row);
+};
+roomMaintenanceCrud.update = async function(req, res) {
+  const row = await heb.saveMaintenance(req.params.id, req.body);
+  return ok(res, row);
+};
+roomMaintenanceCrud.remove = async function(req, res) {
+  await heb.deleteMaintenance(req.params.id);
+  return ok(res, { message: 'Maintenance supprimée' });
+};
 const lostAndFoundCrud = createCrudController(heb.LostAndFound, { filterable: ['room_id', 'statut'] });
 const minibarConsumptionsCrud = createCrudController(heb.MinibarConsumptions, { filterable: ['room_id', 'client_id', 'facturee'] });
 
@@ -99,12 +390,11 @@ async function createMaintenanceHandler(req, res) {
   data.room_id = data.room_id ? Number(data.room_id) : null;
   data.equipment_id = data.equipment_id ? Number(data.equipment_id) : null;
   data.worker_id = data.worker_id ? Number(data.worker_id) : null;
-  delete data.date_declaration;
   data.total_cost = Number(data.materials_cost || 0) + Number(data.labor_cost || 0);
   data.cout = data.total_cost;
-  if (!data.location || !data.type_intervention) throw ApiError.badRequest('Le lieu et le type d’intervention sont requis');
-  const row = await heb.RoomMaintenance.create(data);
-  if (data.room_id) await heb.updateRoomStatus(data.room_id, 'MAINTENANCE');
+  if (!data.location || !data.type_intervention) throw ApiError.badRequest('Le lieu et le type d\'intervention sont requis');
+  data.created_by = req.user?.id_admin || req.user?.id;
+  const row = await heb.saveMaintenance(null, data);
   return created(res, row);
 }
 
@@ -207,6 +497,32 @@ async function reservationPaymentsHandler(req, res) {
   return ok(res, rows);
 }
 
+async function createReservationPaymentHandler(req, res) {
+  const role = String(req.user?.role || '').toLowerCase();
+  const canAuthorizeFree = ['admin', 'manager'].includes(role);
+  if (Array.isArray(req.body?.modes_paiement)
+      && req.body.modes_paiement.some((mode) => String(mode?.moyen_paiement || '').toUpperCase() === 'GRATUIT')
+      && !canAuthorizeFree) {
+    throw ApiError.forbidden('Seule la direction peut autoriser une gratuité.');
+  }
+  try {
+    const result = await heb.createReservationPayment(req.params.id, {
+      amount: req.body?.montant,
+      methods: req.body?.modes_paiement,
+      idempotencyKey: req.body?.idempotency_key,
+      createdBy: req.user?.id_admin || req.user?.id,
+      canAuthorizeFree,
+    });
+    return result.duplicate ? ok(res, result) : created(res, result);
+  } catch (err) {
+    if (err?.code === 'ER_DUP_ENTRY') throw ApiError.conflict('Cette opération de paiement a déjà été enregistrée.');
+    if (err?.statusCode === 403) throw ApiError.forbidden(err.message);
+    if (err?.statusCode === 404) throw ApiError.notFound(err.message);
+    if (err?.code && String(err.code).startsWith('ER_')) throw err;
+    throw ApiError.badRequest(err.message || 'Paiement invalide.');
+  }
+}
+
 async function validateReservationDiscountHandler(req, res) {
   const role = String(req.user?.role || '').toLowerCase();
   if (!['admin', 'manager'].includes(role)) {
@@ -236,10 +552,10 @@ async function checkOutHandler(req, res) {
 }
 
 async function updateMaintenanceStatusHandler(req, res) {
-  const { statut } = req.body;
+  const { statut, materials_used } = req.body;
   if (!statut) throw ApiError.badRequest('statut est requis');
   try {
-    const maintenance = await heb.updateMaintenanceStatus(req.params.id, statut);
+    const maintenance = await heb.updateMaintenanceStatus(req.params.id, statut, materials_used);
     return ok(res, maintenance);
   } catch (err) {
     throw ApiError.badRequest(err.message);
@@ -355,10 +671,10 @@ async function roomStatsHandler(req, res) {
 }
 
 async function updateHousekeepingStatusHandler(req, res) {
-  const { statut } = req.body;
+  const { statut, products_used } = req.body;
   if (!statut) throw ApiError.badRequest('statut est requis');
   try {
-    const task = await heb.updateHousekeepingStatus(req.params.id, statut);
+    const task = await heb.updateHousekeepingStatus(req.params.id, statut, products_used);
     return ok(res, task);
   } catch (err) {
     throw ApiError.badRequest(err.message);
@@ -482,186 +798,231 @@ async function getUsersHandler(req, res) {
 // --- Accommodation Stock Management Handlers ---
 
 async function getHebergementStockHandler(req, res) {
-  try {
-    const { pool } = require('../config/db');
-    const [rows] = await pool.query(`
-      SELECT hp.*, hs.quantite, hs.seuil_minimum, hs.unite
-      FROM hebergement_products hp
-      LEFT JOIN hebergement_stock hs ON hs.product_id = hp.id
-      ORDER BY hp.id DESC
-    `);
-    return ok(res, rows);
-  } catch (err) {
-    throw ApiError.internalError('Erreur lors de la récupération du stock hébergement');
-  }
+  const rows = await stock.getProductsWithStock(5);
+  return ok(res, rows.map((row) => ({
+    ...row,
+    nom: row.product_nom,
+    categorie: row.category_name || 'Stock',
+    prix: row.prix_vente,
+    unite: row.product_unite,
+  })));
 }
 
 async function addHebergementStockHandler(req, res) {
-  try {
-    const { nom, categorie, quantite, prix, unite, seuil_minimum } = req.body;
-    const { withTransaction } = require('../config/db');
-    
-    if (!nom || !categorie) {
-      throw ApiError.badRequest('nom et categorie sont requis');
-    }
-
-    const result = await withTransaction(async (conn) => {
-      const [productResult] = await conn.query(
-        'INSERT INTO hebergement_products (nom, categorie, prix, source_module) VALUES (?, ?, ?, ?)',
-        [nom, categorie, prix || 0, 'HEBERGEMENT']
-      );
-      const productId = productResult.insertId;
-      
-      await conn.query(
-        'INSERT INTO hebergement_stock (product_id, quantite, seuil_minimum, unite) VALUES (?, ?, ?, ?)',
-        [productId, quantite || 0, seuil_minimum || 5, unite || 'unités']
-      );
-      
-      // Record financial transaction for stock addition (outflow)
-      const totalValue = Number(prix || 0) * Number(quantite || 0);
-      if (totalValue > 0) {
-        await conn.query(
-          `INSERT INTO financial_transactions
-             (module, type_flux, montant, reference_id, ref_flux_global, description, statut_sync, created_at)
-           VALUES (?, 'SORTIE', ?, ?, ?, ?, 'SYNCED', NOW())`,
-          ['HEBERGEMENT', totalValue, productId,
-            `HEBERGEMENT-STOCK-ADD-${productId}`,
-            `Achat stock hébergement: ${nom} (${quantite || 0} ${unite || 'unités'})`
-          ]
-        );
-      }
-      
-      return {
-        id: productId,
-        nom,
-        categorie,
-        prix: prix || 0,
-        quantite: quantite || 0,
-        seuil_minimum: seuil_minimum || 5,
-        unite: unite || 'unités'
-      };
-    });
-    
-    return created(res, result);
-  } catch (err) {
-    throw ApiError.internalError('Erreur lors de la création du stock hébergement: ' + err.message);
-  }
+  const { nom, categorie, quantite, prix, unite, seuil_minimum } = req.body;
+  req.body = {
+    ...req.body,
+    categorie,
+    prix_vente: prix ?? req.body.prix_vente,
+    unite: unite || 'unités',
+    quantite: quantite ?? 0,
+    seuil_minimum: seuil_minimum ?? 5,
+    location_id: 5,
+  };
+  return require('./stockController').createProductWithStockHandler(req, res);
 }
 
 async function updateHebergementStockHandler(req, res) {
-  try {
-    const { id } = req.params;
-    const { nom, categorie, quantite, prix, unite, seuil_minimum } = req.body;
-    const { withTransaction } = require('../config/db');
-
-    const result = await withTransaction(async (conn) => {
-      // Get current stock and product info
-      const [currentProduct] = await conn.query(
-        'SELECT * FROM hebergement_products WHERE id = ?',
-        [id]
-      );
-      const [currentStock] = await conn.query(
-        'SELECT * FROM hebergement_stock WHERE product_id = ?',
-        [id]
-      );
-      
-      // Update product
-      await conn.query(
-        'UPDATE hebergement_products SET nom=?, categorie=?, prix=? WHERE id=?',
-        [nom, categorie, prix || 0, id]
-      );
-      
-      // Update stock - try update first, then insert if needed
-      const [updateResult] = await conn.query(
-        'UPDATE hebergement_stock SET quantite=?, seuil_minimum=?, unite=? WHERE product_id=?',
-        [quantite || 0, seuil_minimum || 5, unite || 'unités', id]
-      );
-      
-      if (updateResult.affectedRows === 0) {
-        await conn.query(
-          'INSERT INTO hebergement_stock (product_id, quantite, seuil_minimum, unite) VALUES (?, ?, ?, ?)',
-          [id, quantite || 0, seuil_minimum || 5, unite || 'unités']
-        );
-      }
-      
-      // Record financial transaction for stock increase (outflow)
-      const oldQuantity = currentStock[0] ? Number(currentStock[0].quantite || 0) : 0;
-      const newQuantity = Number(quantite || 0);
-      const quantityIncrease = newQuantity - oldQuantity;
-      
-      if (quantityIncrease > 0) {
-        const totalValue = Number(prix || 0) * quantityIncrease;
-        if (totalValue > 0) {
-          await conn.query(
-            `INSERT INTO financial_transactions
-               (module, type_flux, montant, reference_id, ref_flux_global, description, statut_sync, created_at)
-             VALUES (?, 'SORTIE', ?, ?, ?, ?, 'SYNCED', NOW())`,
-            ['HEBERGEMENT', totalValue, id,
-              `HEBERGEMENT-STOCK-UPDATE-${id}`,
-              `Achat stock hébergement: ${nom} (+${quantityIncrease} ${unite || 'unités'})`
-            ]
-          );
-        }
-      }
-      
-      return {
-        id,
-        nom,
-        categorie,
-        prix: prix || 0,
-        quantite: quantite || 0,
-        seuil_minimum: seuil_minimum || 5,
-        unite: unite || 'unités'
-      };
-    });
-    
-    return ok(res, result);
-  } catch (err) {
-    console.error('Update stock error:', err);
-    throw ApiError.internalError('Erreur lors de la mise à jour du stock hébergement: ' + err.message);
+  const { id } = req.params;
+  const { nom, categorie, quantite, prix, unite, seuil_minimum } = req.body;
+  if (quantite !== undefined && (!Number.isFinite(Number(quantite)) || Number(quantite) < 0)) {
+    throw ApiError.badRequest('La quantité doit être positive ou nulle');
   }
+  if (quantite !== undefined && !Number.isInteger(Number(quantite))) {
+    throw ApiError.badRequest('La quantité du stock hôtel doit être un nombre entier');
+  }
+  if (prix !== undefined && (!Number.isFinite(Number(prix)) || Number(prix) < 0)) {
+    throw ApiError.badRequest('Le prix doit être positif ou nul');
+  }
+  if (seuil_minimum !== undefined && (!Number.isFinite(Number(seuil_minimum)) || Number(seuil_minimum) < 0)) {
+    throw ApiError.badRequest('Le seuil minimum doit être positif ou nul');
+  }
+  if (seuil_minimum !== undefined && !Number.isInteger(Number(seuil_minimum))) {
+    throw ApiError.badRequest('Le seuil minimum doit être un nombre entier');
+  }
+  const result = await withTransaction(async (conn) => {
+    const [rows] = await conn.query(
+      `SELECT s.*, p.nom AS product_nom, p.unite AS product_unite, p.prix_vente, p.category_id
+       FROM stocks s JOIN products p ON p.id = s.product_id
+       WHERE s.id = ? AND s.location_id = 5 FOR UPDATE`,
+      [id]
+    );
+    const existing = rows[0];
+    if (!existing) throw ApiError.notFound(`Stock hôtel #${id} introuvable`);
+
+    const productUpdates = [];
+    const productValues = [];
+    if (nom !== undefined) { productUpdates.push('nom = ?'); productValues.push(String(nom).trim()); }
+    if (unite !== undefined) { productUpdates.push('unite = ?'); productValues.push(unite); }
+    if (prix !== undefined) { productUpdates.push('prix_vente = ?'); productValues.push(Number(prix)); }
+    if (categorie !== undefined) {
+      const [categoryRows] = await conn.query(
+        'SELECT id FROM categories WHERE nom COLLATE utf8mb4_unicode_ci = ? COLLATE utf8mb4_unicode_ci ORDER BY id LIMIT 1',
+        [categorie]
+      );
+      let categoryId = categoryRows[0]?.id;
+      if (!categoryId) {
+        const [insertedCategory] = await conn.query('INSERT INTO categories (nom) VALUES (?)', [categorie]);
+        categoryId = insertedCategory.insertId;
+      }
+      productUpdates.push('category_id = ?');
+      productValues.push(categoryId);
+    }
+    if (productUpdates.length) {
+      await conn.query(`UPDATE products SET ${productUpdates.join(', ')} WHERE id = ?`, [...productValues, existing.product_id]);
+    }
+    if (quantite !== undefined) {
+      const difference = Number(quantite) - Number(existing.quantite || 0);
+      if (difference !== 0) {
+        await stock.recordMovement({
+          productId: existing.product_id,
+          locationId: 5,
+          type: difference > 0 ? 'ENTREE' : 'SORTIE',
+          quantite: Math.abs(difference),
+          sourceModule: 'STOCK_MANUEL',
+          motif: 'Modification manuelle du stock hôtel',
+          userId: req.user?.id_admin || req.user?.id,
+          conn,
+        });
+      }
+    }
+    if (seuil_minimum !== undefined) {
+      await conn.query('UPDATE stocks SET seuil_minimum = ? WHERE id = ?', [Number(seuil_minimum), id]);
+    }
+    const [updated] = await conn.query(
+      `SELECT s.*, p.nom AS nom, p.unite AS unite, p.prix_vente AS prix, c.nom AS categorie
+       FROM stocks s JOIN products p ON p.id = s.product_id
+       LEFT JOIN categories c ON c.id = p.category_id WHERE s.id = ?`,
+      [id]
+    );
+    return updated[0];
+  });
+  return ok(res, result);
 }
 
 async function deleteHebergementStockHandler(req, res) {
-  try {
-    const { id } = req.params;
-    const { withTransaction } = require('../config/db');
-    
-    await withTransaction(async (conn) => {
-      // Get product info before deletion for financial transaction
-      const [product] = await conn.query(
-        'SELECT * FROM hebergement_products WHERE id = ?',
-        [id]
-      );
-      const [stock] = await conn.query(
-        'SELECT * FROM hebergement_stock WHERE product_id = ?',
-        [id]
-      );
-      
-      if (product[0] && stock[0]) {
-        const totalValue = Number(product[0].prix || 0) * Number(stock[0].quantite || 0);
-        
-        // Create financial transaction for stock removal (refund/return)
-        if (totalValue > 0) {
-          await conn.query(
-            `INSERT INTO financial_transactions
-               (module, type_flux, montant, reference_id, ref_flux_global, description, statut_sync, created_at)
-             VALUES (?, 'ENTREE', ?, ?, ?, ?, 'SYNCED', NOW())`,
-            ['HEBERGEMENT', totalValue, id,
-              `HEBERGEMENT-STOCK-DELETE-${id}`,
-              `Remboursement stock hébergement: ${product[0].nom} (${stock[0].quantite} ${stock[0].unite || 'unités'})`]
-          );
-        }
-      }
-      
-      await conn.query('DELETE FROM hebergement_stock WHERE product_id = ?', [id]);
-      await conn.query('DELETE FROM hebergement_products WHERE id = ?', [id]);
-    });
-    
-    return ok(res, { message: 'Stock supprimé avec succès' });
-  } catch (err) {
-    throw ApiError.internalError('Erreur lors de la suppression du stock hébergement: ' + err.message);
+  return require('./stockController').deleteStockHandler(req, res);
+}
+
+// --- Rapport journalier Hotel (situation des chambres durant la nuitee) ---
+
+async function getHotelDailyReportHandler(req, res) {
+  return ok(res, await hotelReport.getHotelReport(req.params.date));
+}
+
+async function listHotelDailyReportsHandler(req, res) {
+  const { start_date, end_date, limit } = req.query || {};
+  const reports = await hotelReport.listHotelReports({
+    startDate: start_date,
+    endDate: end_date,
+    limit,
+  });
+  return ok(res, reports);
+}
+
+async function saveHotelDailyReportHandler(req, res) {
+  const { reportDate, heureDebut, heureFin, receptionniste, rooms, observations, metrics, autoState } = req.body || {};
+  const report = await hotelReport.saveHotelReport({
+    reportDate,
+    heureDebut,
+    heureFin,
+    receptionniste,
+    rooms,
+    observations,
+    metrics,
+    autoState,
+    createdBy: req.user?.id_admin ?? null,
+  });
+  return ok(res, report);
+}
+
+async function deleteHotelDailyReportHandler(req, res) {
+  if (!isAdmin(req)) {
+    throw ApiError.forbidden('Seul un administrateur peut supprimer un rapport journalier.');
   }
+  return ok(res, await hotelReport.deleteHotelReport(req.params.date));
+}
+
+async function getHotelProductHistoryHandler(req, res) {
+  const { dateFrom, dateTo, productName, locationId } = req.query;
+  const history = await getHotelProductHistory({ dateFrom, dateTo, productName, locationId });
+  return ok(res, history);
+}
+
+// --- Envoi WhatsApp du rapport de nuitee ---
+
+async function hotelReportWhatsappStatusHandler(req, res) {
+  const reportDate = req.query?.date || dispatcher.getCurrentNightDate();
+  const [destinataires, dernier, decision] = await Promise.all([
+    whatsappModel.listRecipients(),
+    whatsappModel.getLastSend(reportDate),
+    dispatcher.evaluate(reportDate).catch((error) => ({ envoyer: false, raison: error.message })),
+  ]);
+  return ok(res, {
+    reportDate,
+    actif: dispatcher.isEnabled(),
+    configure: transport.isConfigured(),
+    transport: transport.getTransportName(),
+    intervalleMinutes: Math.round(dispatcher.getMinIntervalMs() / 60000),
+    destinataires,
+    dernierEnvoi: dernier,
+    prochaineDecision: decision?.raison || null,
+    envoiPossible: Boolean(decision?.envoyer),
+  });
+}
+
+async function hotelReportWhatsappHistoryHandler(req, res) {
+  const reportDate = req.query?.date || dispatcher.getCurrentNightDate();
+  return ok(res, await whatsappModel.listSends(reportDate, req.query?.limit));
+}
+
+async function addHotelReportWhatsappRecipientHandler(req, res) {
+  const { numero, nom, type } = req.body || {};
+  const recipient = await whatsappModel.addRecipient({ numero, nom, type, createdBy: req.user?.id_admin ?? null });
+  return created(res, recipient);
+}
+
+// --- Session WhatsApp Web (transport non officiel) ---
+
+async function hotelReportWhatsappSessionHandler(req, res) {
+  if (!transport.isWeb()) {
+    return ok(res, { transport: transport.getTransportName(), statut: 'INACTIF' });
+  }
+  return ok(res, { transport: 'web', ...transport.web.getState() });
+}
+
+async function connectHotelReportWhatsappSessionHandler(req, res) {
+  if (!transport.isWeb()) {
+    throw ApiError.badRequest('Le transport WhatsApp Web n’est pas actif (WHATSAPP_TRANSPORT doit valoir « web »).');
+  }
+  return ok(res, await transport.web.ensureStarted());
+}
+
+async function disconnectHotelReportWhatsappSessionHandler(req, res) {
+  if (!isAdmin(req)) {
+    throw ApiError.forbidden('Seul un administrateur peut délier le compte WhatsApp.');
+  }
+  return ok(res, await transport.web.stop({ logout: req.query?.logout === 'true' }));
+}
+
+async function hotelReportWhatsappGroupsHandler(req, res) {
+  if (!transport.isWeb()) return ok(res, []);
+  return ok(res, await transport.web.listGroups());
+}
+
+async function updateHotelReportWhatsappRecipientHandler(req, res) {
+  return ok(res, await whatsappModel.setRecipientActive(req.params.id, req.body?.actif));
+}
+
+async function deleteHotelReportWhatsappRecipientHandler(req, res) {
+  return ok(res, await whatsappModel.removeRecipient(req.params.id));
+}
+
+async function sendHotelReportWhatsappHandler(req, res) {
+  const reportDate = req.body?.date || dispatcher.getCurrentNightDate();
+  const result = await dispatcher.dispatch(reportDate, { force: true, declencheur: 'MANUEL' });
+  if (!result.envoye) throw ApiError.badRequest(result.raison);
+  return ok(res, result);
 }
 
 module.exports = {
@@ -673,7 +1034,13 @@ module.exports = {
   updateRoomStatusHandler, equipmentByCodeHandler, equipmentCategoriesHandler, createEquipmentHandler,
   equipmentStatsHandler, updateRoomEquipmentStatusHandler,
   roomStatsHandler, updateHousekeepingStatusHandler, housekeepingStatsHandler,
+  getHotelProductHistoryHandler,
   transferStockToMinibarHandler, handleMinibarConsumptionHandler, getMinibarWithAlertsHandler, restockMinibarHandler, getLowStockMinibarHandler,
   getHebergementStockHandler, addHebergementStockHandler, updateHebergementStockHandler, deleteHebergementStockHandler,
   getHotelHistoryHandler, getUsersHandler,
+  getHotelDailyReportHandler, listHotelDailyReportsHandler, saveHotelDailyReportHandler, deleteHotelDailyReportHandler,
+  hotelReportWhatsappStatusHandler, hotelReportWhatsappHistoryHandler, addHotelReportWhatsappRecipientHandler,
+  updateHotelReportWhatsappRecipientHandler, deleteHotelReportWhatsappRecipientHandler, sendHotelReportWhatsappHandler,
+  hotelReportWhatsappSessionHandler, connectHotelReportWhatsappSessionHandler,
+  disconnectHotelReportWhatsappSessionHandler, hotelReportWhatsappGroupsHandler,
 };

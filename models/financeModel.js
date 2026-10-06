@@ -165,6 +165,7 @@ async function financialSummary() {
     `SELECT UPPER(module) AS module, type_flux, COALESCE(SUM(montant), 0) AS montant
      FROM financial_transactions
      WHERE UPPER(module) IN ('HEBERGEMENT', 'HOTEL')
+       AND (UPPER(module) NOT IN ('HEBERGEMENT', 'HOTEL') OR UPPER(COALESCE(moyen_paiement, '')) NOT IN ('CREDIT', 'GRATUIT'))
        AND COALESCE(ref_flux_global, '') NOT LIKE 'HEBERGEMENT-STOCK-ADD-%'
      GROUP BY UPPER(module), type_flux`
   );
@@ -205,6 +206,9 @@ async function financialSummary() {
     `SELECT COALESCE(SUM(r.montant_total), 0) AS montant
        FROM reservations r
       WHERE UPPER(COALESCE(r.statut, '')) = 'TERMINEE'
+        AND NOT EXISTS (
+          SELECT 1 FROM reservation_payments rp WHERE rp.reservation_id = r.id
+        )
         AND NOT EXISTS (
           SELECT 1
             FROM financial_transactions ft
@@ -309,9 +313,22 @@ async function financialSummary() {
   };
 }
 
+// Clôture de caisse d'un module : les transactions clôturées disparaissent de la caisse
+// du jour (GET /transactions les exclut par défaut) mais restent en base pour l'historique.
+async function closeFinancialTransactions({ module, ids = [] }) {
+  const cleanIds = [...new Set(ids.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))];
+  if (cleanIds.length === 0) return { closed_transactions: 0 };
+  const [res] = await pool.query(
+    `UPDATE financial_transactions SET cloturee = 1, cloture_at = NOW()
+      WHERE id IN (?) AND UPPER(COALESCE(module, '')) = ? AND (cloturee = 0 OR cloturee IS NULL)`,
+    [cleanIds, module]
+  );
+  return { closed_transactions: res.affectedRows };
+}
+
 module.exports = {
   Invoices, InvoiceItems, Payments, FinancialTransactions,
-  findFinancialTransactionsWithDetails,
+  findFinancialTransactionsWithDetails, closeFinancialTransactions,
   createInvoiceWithItems, recordPayment, invoiceWithItemsAndPayments, clientFinancialStatement, financialSummary,
   DEPARTMENTS, normaliseModule,
 };

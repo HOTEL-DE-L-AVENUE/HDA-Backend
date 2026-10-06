@@ -17,17 +17,6 @@ INSERT INTO bar_products (nom, ingredients, prix, categorie, alcool, type_produi
 ('Margarita', 'Tequila, triple sec, jus de citron', 3000, 'Cocktails', 1, 'PRODUIT_FINI', 'BAR'),
 ('Daiquiri', 'Rhum blanc, jus de citron, sucre', 3000, 'Cocktails', 1, 'PRODUIT_FINI', 'BAR');
 
--- Bières
-INSERT INTO bar_products (nom, ingredients, prix, categorie, alcool, type_produit, source_module) VALUES
-('Bière Local', 'Houblon, malt frais', 1500, 'Bières', 1, 'PRODUIT_FINI', 'BAR'),
-('Heineken', 'Houblon, malt classique', 2000, 'Bières', 1, 'PRODUIT_FINI', 'BAR');
-
--- Boissons
-INSERT INTO bar_products (nom, ingredients, prix, categorie, alcool, type_produit, source_module) VALUES
-('Coca-Cola', 'Sirop de cola, eau gazeuse', 1000, 'Boissons', 0, 'PRODUIT_FINI', 'BAR'),
-('Jus d''Orange', 'Jus d''orange frais pressé', 1500, 'Boissons', 0, 'PRODUIT_FINI', 'BAR'),
-('Eau Minérale', 'Eau minérale pure', 500, 'Boissons', 0, 'PRODUIT_FINI', 'BAR');
-
 -- Ajouter le stock
 INSERT INTO bar_stock (product_id, quantite, seuil_minimum, unite) 
 SELECT id, 100, 5, 'bouteilles' FROM bar_products;

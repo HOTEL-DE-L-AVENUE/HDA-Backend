@@ -5,7 +5,7 @@ const items = [
     nom: 'Verre cassé',
     ingredients: 'Dommage matériel',
     prix: 7000,
-    categorie: 'Bouteille',
+    categorie: 'Accessoires',
     alcool: 0,
     stock: 9999,
     unite: 'unité',
@@ -14,7 +14,7 @@ const items = [
     nom: 'Consignation de bouteille',
     ingredients: 'Consignation bouteille',
     prix: 1000,
-    categorie: 'Bouteille',
+    categorie: 'Accessoires',
     alcool: 0,
     stock: 9999,
     unite: 'bouteille',
@@ -68,7 +68,7 @@ async function seedBottleExtras() {
       console.log(`✅ ${item.nom} prêt (${productId})`);
     }
 
-    console.log('\n✅ Les articles Bouteille ont été ajoutés dans la base de données.');
+    console.log('\n✅ Les articles Accessoires ont été ajoutés dans la base de données.');
   } catch (error) {
     console.error('Erreur seed bottle extras:', error);
     throw error;
