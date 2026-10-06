@@ -9,7 +9,7 @@ const stock = require('../models/stockModel');
 const { withTransaction, pool } = require('../config/db');
 const { createCrudController } = require('./controllerFactory');
 const ApiError = require('../utils/ApiError');
-const { ok, created } = require('../utils/apiResponse');
+const { ok, created, noContent } = require('../utils/apiResponse');
 
 function isAdmin(req) {
   return String(req.user?.role || '').toLowerCase() === 'admin';
@@ -20,30 +20,56 @@ const roomsCrud = createCrudController(heb.Rooms, { filterable: ['statut', 'room
 
 // Custom delete handler for equipment to handle foreign key constraints
 const equipmentsCrud = createCrudController(heb.Equipments, { filterable: ['categorie'] });
-const equipmentsCrudRemove = equipmentsCrud.remove;
 equipmentsCrud.remove = async function(req, res, next) {
-  const { pool } = require('../config/db');
   const id = req.params.id;
-  
-  // Check if equipment is referenced in room_maintenance
-  const [maintenanceRows] = await pool.query(
-    'SELECT COUNT(*) as count FROM room_maintenance WHERE equipment_id = ?',
-    [id]
-  );
-  
-  if (maintenanceRows[0].count > 0) {
-    return next(ApiError.conflict('Cet équipement est utilisé dans des maintenances. Veuillez d\'abord supprimer ou modifier les maintenances associées.'));
+
+  try {
+    const result = await withTransaction(async (conn) => {
+      const [maintenanceRows] = await conn.query(
+        'SELECT COUNT(*) AS count FROM room_maintenance WHERE equipment_id = ?',
+        [id]
+      );
+      if (Number(maintenanceRows[0].count) > 0) {
+        throw ApiError.conflict('Cet équipement est utilisé dans des maintenances. Veuillez d\'abord supprimer ou modifier les maintenances associées.');
+      }
+
+      const [equipmentRows] = await conn.query(
+        'SELECT id, product_id, nom FROM equipments WHERE id = ? FOR UPDATE',
+        [id]
+      );
+      const equipment = equipmentRows[0];
+      if (!equipment) throw ApiError.notFound('Équipement introuvable');
+
+      const [roomRows] = await conn.query(
+        'SELECT id, quantite FROM room_equipments WHERE equipment_id = ? FOR UPDATE',
+        [id]
+      );
+      const assignedQuantity = roomRows.reduce((total, row) => total + Number(row.quantite || 0), 0);
+
+      if (equipment.product_id && assignedQuantity > 0) {
+        await stock.recordMovement({
+          productId: equipment.product_id,
+          locationId: 5,
+          type: 'ENTREE',
+          quantite: assignedQuantity,
+          sourceModule: 'EQUIPEMENT_CHAMBRE',
+          referenceId: id,
+          motif: `Retour de l'équipement "${equipment.nom}" au stock hôtel`,
+          userId: req.user?.id_admin || req.user?.id,
+          conn,
+        });
+      }
+
+      await conn.query('DELETE FROM room_equipments WHERE equipment_id = ?', [id]);
+      const [result] = await conn.query('DELETE FROM equipments WHERE id = ?', [id]);
+      if (result.affectedRows === 0) throw ApiError.notFound('Équipement introuvable');
+      return true;
+    });
+
+    return result ? noContent(res) : undefined;
+  } catch (error) {
+    return next(error);
   }
-  const [roomRows] = await pool.query(
-    'SELECT COUNT(*) AS count FROM room_equipments WHERE equipment_id = ?',
-    [id]
-  );
-  if (roomRows[0].count > 0) {
-    return next(ApiError.conflict('Cet équipement est encore assigné à une chambre. Retirez-le des chambres avant de le supprimer.'));
-  }
-  
-  // Proceed with normal delete
-  return await equipmentsCrudRemove(req, res, next);
 };
 
 async function createEquipmentHandler(req, res) {
