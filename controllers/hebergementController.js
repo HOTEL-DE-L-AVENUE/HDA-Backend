@@ -1,6 +1,11 @@
 // controllers/hebergementController.js
 const heb = require('../models/hebergementModel');
+const hotelReport = require('../models/hotelReport.model');
 const hotelReservationReport = require('../models/hotelReservationReport.model');
+const whatsappModel = require('../models/hotelReportWhatsapp.model');
+const dispatcher = require('../services/hotelReportDispatcher');
+const transport = require('../utils/whatsappTransport');
+const { getHotelProductHistory } = require('../models/hotelProductHistory.model');
 const stock = require('../models/stockModel');
 const { withTransaction, pool } = require('../config/db');
 const { createCrudController } = require('./controllerFactory');
@@ -1029,8 +1034,14 @@ module.exports = {
   roomTypesCrud, roomsCrud, equipmentsCrud, roomEquipmentsCrud, roomMaintenanceCrud, maintenanceWorkersCrud,
   roomMinibarCrud, roomStatusHistoryCrud, reservationsCrud, reservationGuestsCrud,
   staysCrud, housekeepingCrud, lostAndFoundCrud, minibarConsumptionsCrud,
+<<<<<<< HEAD
   availabilityHandler, availableRoomsHandler, updateRoomHandler, updateRoomTypeHandler, createReservationHandler, validateReservationDiscountHandler, createReservationPaymentHandler, reservationPaymentsHandler, createMaintenanceHandler, checkInHandler, checkOutHandler,
   updateMaintenanceStatusHandler, maintenanceStatsHandler, reservationStatsHandler, reservationCollectionReportHandler, saveReservationCollectionReportHandler,
+=======
+  availabilityHandler, availableRoomsHandler, updateRoomHandler, updateRoomTypeHandler, createReservationHandler, validateReservationDiscountHandler, reservationPaymentsHandler, createReservationPaymentHandler, createMaintenanceHandler, checkInHandler, checkOutHandler,
+  updateMaintenanceStatusHandler, maintenanceStatsHandler, reservationStatsHandler,
+  reservationCollectionReportHandler, saveReservationCollectionReportHandler,
+>>>>>>> b949a3db160b0d7189c6400f666f76cbc5aeef54
   updateRoomStatusHandler, equipmentByCodeHandler, equipmentCategoriesHandler, createEquipmentHandler, updateEquipmentHandler,
   equipmentStatsHandler, updateRoomEquipmentStatusHandler,
   roomStatsHandler, updateHousekeepingStatusHandler, housekeepingStatsHandler,
