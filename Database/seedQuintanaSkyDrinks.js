@@ -563,6 +563,31 @@ class SeedQuintanaSkyDrinks {
                 { nom: 'Charbon Shisha', ingredients: 'Charbon pour chisha', prix: 10000, categorie: 'Consignes & Divers', alcool: 0, stock: 30 },
 
                 // =========================================================================
+                // THÉS D'EXCEPTION (Thés chauds)
+                // =========================================================================
+                // --- Thés Verts & Noirs ---
+                { nom: 'Green Tea (Vietnam)', ingredients: 'Thé vert du Vietnam', prix: 16000, categorie: 'Thé d\'exception > Thé Vert & Noir', alcool: 0, stock: 30 },
+                { nom: 'Osmanthus (Thaïlande)', ingredients: 'Thé aux fleurs d\'osmanthe', prix: 16000, categorie: 'Thé d\'exception > Thé Vert & Noir', alcool: 0, stock: 30 },
+                { nom: 'Oolong N°17 (Thaïlande)', ingredients: 'Thé oolong', prix: 16000, categorie: 'Thé d\'exception > Thé Vert & Noir', alcool: 0, stock: 30 },
+                { nom: 'Matcha Japon Premium', ingredients: 'Thé matcha premium du Japon', prix: 20000, categorie: 'Thé d\'exception > Thé Vert & Noir', alcool: 0, stock: 25 },
+                // --- Infusions & Spécialités d'Origine Inde ---
+                { nom: 'Masala Chai (Inde Infusions)', ingredients: 'Infusion épicée indienne', prix: 10000, categorie: 'Thé d\'exception > Infusion', alcool: 0, stock: 40 },
+                { nom: 'Hibiscus (Inde Infusions)', ingredients: 'Infusion hibiscus', prix: 10000, categorie: 'Thé d\'exception > Infusion', alcool: 0, stock: 40 },
+                { nom: 'Jasmin (Inde Infusions)', ingredients: 'Infusion fleur de jasmin', prix: 10000, categorie: 'Thé d\'exception > Infusion', alcool: 0, stock: 40 },
+
+                // =========================================================================
+                // THÉ GLACÉ (Thés froids)
+                // =========================================================================
+                // --- Thés Verts & Noirs (Glacés) ---
+                { nom: 'Green Tea (Vietnam) (Glacé)', ingredients: 'Thé vert glacé', prix: 22000, categorie: 'Thé Glacé > Thé Vert & Noir', alcool: 0, stock: 30 },
+                { nom: 'Osmanthus (Thaïlande) (Glacé)', ingredients: 'Thé osmanthus glacé', prix: 22000, categorie: 'Thé Glacé > Thé Vert & Noir', alcool: 0, stock: 30 },
+                { nom: 'Oolong N°17 (Thaïlande) (Glacé)', ingredients: 'Thé oolong glacé', prix: 22000, categorie: 'Thé Glacé > Thé Vert & Noir', alcool: 0, stock: 30 },
+                { nom: 'Matcha Japon Premium (Glacé)', ingredients: 'Thé matcha premium glacé', prix: 26000, categorie: 'Thé Glacé > Thé Vert & Noir', alcool: 0, stock: 25 },
+                // --- Infusions (Glacées) ---
+                { nom: 'Hibiscus (Inde Infusions) (Glacé)', ingredients: 'Infusion hibiscus glacée', prix: 16000, categorie: 'Thé Glacé > Infusion', alcool: 0, stock: 40 },
+                { nom: 'Jasmin (Inde Infusions) (Glacé)', ingredients: 'Infusion jasmin glacée', prix: 16000, categorie: 'Thé Glacé > Infusion', alcool: 0, stock: 40 },
+
+                // =========================================================================
                 // MATERIEL
                 // =========================================================================
                 { nom: 'Shisha Lumineuse géante', ingredients: 'Shisha lumineuse', prix: 500000, categorie: 'Materiel', alcool: 0, stock: 5 },
