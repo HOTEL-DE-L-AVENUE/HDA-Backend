@@ -1,5 +1,6 @@
 // controllers/hebergementController.js
 const heb = require('../models/hebergementModel');
+const hotelReservationReport = require('../models/hotelReservationReport.model');
 const stock = require('../models/stockModel');
 const { createCrudController } = require('./controllerFactory');
 const ApiError = require('../utils/ApiError');
@@ -253,6 +254,58 @@ async function maintenanceStatsHandler(req, res) {
 async function reservationStatsHandler(req, res) {
   const stats = await heb.getReservationStats();
   return ok(res, stats);
+}
+
+function isIsoDate(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+async function reservationCollectionReportHandler(req, res) {
+  const { start_date: startDate, end_date: endDate } = req.query;
+  if (!isIsoDate(startDate) || !isIsoDate(endDate)) {
+    throw ApiError.badRequest('Les dates de début et de fin doivent être au format YYYY-MM-DD.');
+  }
+  if (startDate > endDate) {
+    throw ApiError.badRequest('La date de début doit précéder ou être égale à la date de fin.');
+  }
+  return ok(res, await heb.getReservationCollectionReport(startDate, endDate));
+}
+
+async function saveReservationCollectionReportHandler(req, res) {
+  const { startDate, endDate, totalCollected, paymentMethods, reservations } = req.body || {};
+  const allowedPaymentMethods = [
+    'ESPECES', 'TPE', 'MVOLA', 'GRATUIT', 'VIREMENT', 'CREDIT', 'ORANGE_MONEY', 'CARTE',
+  ];
+
+  if (!isIsoDate(startDate) || !isIsoDate(endDate) || startDate > endDate) {
+    throw ApiError.badRequest('La période du rapport est invalide.');
+  }
+  if (!Number.isFinite(Number(totalCollected)) || Number(totalCollected) < 0) {
+    throw ApiError.badRequest('Le montant encaissé est invalide.');
+  }
+  if (!paymentMethods || typeof paymentMethods !== 'object'
+      || !allowedPaymentMethods.every((method) =>
+        Number.isFinite(Number(paymentMethods[method])) && Number(paymentMethods[method]) >= 0
+      )) {
+    throw ApiError.badRequest('Les montants par mode de paiement sont invalides.');
+  }
+  if (!Array.isArray(reservations)) {
+    throw ApiError.badRequest('La liste des réservations est invalide.');
+  }
+
+  const saved = await hotelReservationReport.saveHotelReservationReport({
+    startDate,
+    endDate,
+    totalCollected: Number(totalCollected),
+    paymentMethods: Object.fromEntries(
+      allowedPaymentMethods.map((method) => [method, Number(paymentMethods[method])])
+    ),
+    reservations,
+    createdBy: req.user?.id_admin || req.user?.id,
+  });
+  return created(res, saved);
 }
 
 async function updateRoomStatusHandler(req, res) {
@@ -616,7 +669,7 @@ module.exports = {
   roomMinibarCrud, roomStatusHistoryCrud, reservationsCrud, reservationGuestsCrud,
   staysCrud, housekeepingCrud, lostAndFoundCrud, minibarConsumptionsCrud,
   availabilityHandler, availableRoomsHandler, updateRoomHandler, updateRoomTypeHandler, createReservationHandler, validateReservationDiscountHandler, reservationPaymentsHandler, createMaintenanceHandler, checkInHandler, checkOutHandler,
-  updateMaintenanceStatusHandler, maintenanceStatsHandler, reservationStatsHandler,
+  updateMaintenanceStatusHandler, maintenanceStatsHandler, reservationStatsHandler, reservationCollectionReportHandler, saveReservationCollectionReportHandler,
   updateRoomStatusHandler, equipmentByCodeHandler, equipmentCategoriesHandler, createEquipmentHandler,
   equipmentStatsHandler, updateRoomEquipmentStatusHandler,
   roomStatsHandler, updateHousekeepingStatusHandler, housekeepingStatsHandler,
