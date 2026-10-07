@@ -32,7 +32,57 @@ function monthKey(department, year, month) {
 }
 
 function emptyBucket(department, year, month) {
-  return { department, year, month, ca: 0, charges: 0 };
+  return { department, year, month, ca: 0, charges: 0, resultat_final: 0 };
+}
+
+// --- Résultat final Casino (fiche « Calcul final ») ------------------------
+// Chaque fiche joueur (date + table) stocke son calcul final dans sheet_data.finals.
+// Le résultat final est daté par la date de la fiche (sheet_date), pas par la date
+// d'enregistrement : une fiche du 05/10 saisie le 06/10 compte pour le 05/10.
+
+function parseAmount(value) {
+  const text = String(value ?? '').trim().replace(/\s/g, '');
+  if (!text) return 0;
+  const normalized = text.includes(',') ? text.replace(/\./g, '').replace(',', '.') : text;
+  const amount = Number(normalized.replace(/[^\d.-]/g, ''));
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+// Retourne le résultat final enregistré d'une fiche, ou null si le calcul final
+// n'a jamais été enregistré. `_global` contient la dernière valeur enregistrée ;
+// les fiches plus anciennes ne l'ont que sur la fiche joueur sélectionnée.
+function extractCasinoFinalResult(sheetData) {
+  const data = typeof sheetData === 'string' ? JSON.parse(sheetData || '{}') : (sheetData || {});
+  const finals = data.finals || {};
+  const global = finals._global || {};
+  if (global.resultatFinalValue !== undefined && global.resultatFinalValue !== '') {
+    const value = Number(global.resultatFinalValue);
+    if (Number.isFinite(value)) return value;
+  }
+  if (global.resultatFinal) return parseAmount(global.resultatFinal);
+  const legacy = Object.entries(finals)
+    .filter(([key, values]) => key !== '_global' && values && String(values.resultatFinal || '').trim());
+  return legacy.length ? parseAmount(legacy[legacy.length - 1][1].resultatFinal) : null;
+}
+
+// Le résultat final est la seule source du rapport Casino : un résultat positif
+// est un gain (CA), un résultat négatif une perte (charges). Le solde du Casino
+// est donc égal à la somme des résultats finaux de la période.
+function addCasinoFinalResult(bucket, montant) {
+  if (montant >= 0) bucket.ca += montant;
+  else bucket.charges += -montant;
+  bucket.resultat_final += montant;
+}
+
+// Fiches casino d'une plage, avec les colonnes de période calculées en SQL.
+async function casinoFinalResults(selectSql, whereSql, params) {
+  const [rows] = await pool.query(
+    `SELECT ${selectSql}, sheet_data FROM casino_player_sheets WHERE ${whereSql}`,
+    params
+  );
+  return rows
+    .map((row) => ({ ...row, montant: extractCasinoFinalResult(row.sheet_data) }))
+    .filter((row) => row.montant !== null);
 }
 
 // Agrège toutes les sources de données datées en un Map<"dept|annee|mois", {ca, charges}>
@@ -87,7 +137,8 @@ async function buildMonthlyBuckets({ year } = {}) {
   );
   ledger.forEach((row) => {
     const department = normaliseModule(row.module);
-    if (!department) return;
+    // Casino : le rapport reprend uniquement le résultat final des fiches (voir 4).
+    if (!department || department === 'casino') return;
     const flux = String(row.type_flux || '').toUpperCase();
     const bucket = getBucket(department, row.annee, row.mois);
     if (flux.startsWith('ENTREE')) {
@@ -117,6 +168,14 @@ async function buildMonthlyBuckets({ year } = {}) {
     if (!department) return;
     getBucket(department, row.annee, row.mois).charges += Number(row.montant) || 0;
   });
+
+  // 4) Résultat final des fiches Casino, additionné par mois de la fiche.
+  const casinoFinals = await casinoFinalResults(
+    'YEAR(sheet_date) AS annee, MONTH(sheet_date) AS mois',
+    Number.isInteger(year) ? 'YEAR(sheet_date) = ?' : '1 = 1',
+    yearParams
+  );
+  casinoFinals.forEach((row) => addCasinoFinalResult(getBucket('casino', row.annee, row.mois), row.montant));
 
   return buckets;
 }
@@ -180,7 +239,7 @@ async function periodDepartmentBreakdown({ period, department, startDate, endDat
   const buckets = new Map();
   const getBucket = (module, start, end) => {
     const key = keyFor(module, start);
-    if (!buckets.has(key)) buckets.set(key, { department: module, start_date: start, end_date: end, ca: 0, charges: 0 });
+    if (!buckets.has(key)) buckets.set(key, { department: module, start_date: start, end_date: end, ca: 0, charges: 0, resultat_final: 0 });
     return buckets.get(key);
   };
 
@@ -211,7 +270,8 @@ async function periodDepartmentBreakdown({ period, department, startDate, endDat
   );
   ledger.forEach((row) => {
     const module = normaliseModule(row.module);
-    if (!module) return;
+    // Casino : le rapport reprend uniquement le résultat final des fiches (voir plus bas).
+    if (!module || module === 'casino') return;
     const bucket = getBucket(module, row.period_start, row.period_end);
     const flux = String(row.type_flux || '').toUpperCase();
     if (flux.startsWith('ENTREE')) bucket.ca += Number(row.montant) || 0;
@@ -235,6 +295,15 @@ async function periodDepartmentBreakdown({ period, department, startDate, endDat
     if (module) getBucket(module, row.period_start, row.period_end).charges += Number(row.montant) || 0;
   });
 
+  // Résultat final des fiches Casino, additionné sur la période (jour ou semaine) de la fiche.
+  const casinoFinals = await casinoFinalResults(
+    `DATE_FORMAT(${periodStart('sheet_date')}, '%Y-%m-%d') AS period_start,
+     DATE_FORMAT(${periodEnd('sheet_date')}, '%Y-%m-%d') AS period_end`,
+    dateFilter('sheet_date'),
+    [startDate, endDate]
+  );
+  casinoFinals.forEach((row) => addCasinoFinalResult(getBucket('casino', row.period_start, row.period_end), row.montant));
+
   return [...buckets.values()]
     .filter((row) => !normalisedDepartment || row.department === normalisedDepartment)
     .map((row) => ({ ...row, solde: row.ca - row.charges }))
@@ -242,6 +311,7 @@ async function periodDepartmentBreakdown({ period, department, startDate, endDat
 }
 
 module.exports = {
+  extractCasinoFinalResult,
   monthlyDepartmentBreakdown,
   departmentMonthSummary,
   periodDepartmentBreakdown,

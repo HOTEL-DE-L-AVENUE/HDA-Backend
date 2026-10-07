@@ -2376,6 +2376,36 @@ exports.savePlayerSheetHandler = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+// GET /player-sheets/final-results?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD
+// Vérification des « Résultat final » enregistrés : pour chaque fiche (date + table),
+// le résultat du dernier « Enregistrer le calcul », repris par le rapport financier.
+exports.finalResultsHandler = async (req, res, next) => {
+  try {
+    const { date_from: dateFrom, date_to: dateTo } = req.query;
+    const isDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
+    if (!isDate(dateFrom) || !isDate(dateTo)) throw ApiError.badRequest('date_from et date_to (YYYY-MM-DD) sont obligatoires');
+
+    const { extractCasinoFinalResult } = require('../models/financeReportingModel');
+    const [rows] = await pool.query(
+      `SELECT id, DATE_FORMAT(sheet_date, '%Y-%m-%d') AS sheet_date, table_name, updated_at, sheet_data
+         FROM casino_player_sheets
+        WHERE sheet_date BETWEEN ? AND ?
+        ORDER BY sheet_date, table_name`,
+      [dateFrom, dateTo]
+    );
+
+    const results = rows.map((row) => ({
+      sheet_id: row.id,
+      date: row.sheet_date,
+      table_name: row.table_name,
+      updated_at: row.updated_at,
+      montant_rapport: extractCasinoFinalResult(row.sheet_data),
+    }));
+
+    res.json(results);
+  } catch (err) { next(err); }
+};
+
 // POST /player-sheets/finish — clôture une partie sans supprimer sa fiche.
 exports.finishPlayerSheetHandler = async (req, res, next) => {
   try {
