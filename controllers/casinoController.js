@@ -2394,16 +2394,25 @@ exports.finalResultsHandler = async (req, res, next) => {
       [dateFrom, dateTo]
     );
 
-    const results = rows.map((row) => ({
-      sheet_id: row.id,
-      date: row.sheet_date,
-      table_name: row.table_name,
-      updated_at: row.updated_at,
-      montant_rapport: extractCasinoFinalResult(row.sheet_data),
-    }));
+    const results = rows.map((row) => {
+      let montant = null;
+      try { montant = extractCasinoFinalResult(row.sheet_data); } catch (err) {
+        console.error('[final-results] fiche illisible', row.id, err.message);
+      }
+      return {
+        sheet_id: row.id,
+        date: row.sheet_date,
+        table_name: row.table_name,
+        updated_at: row.updated_at,
+        montant_rapport: montant,
+      };
+    });
 
     res.json(results);
-  } catch (err) { next(err); }
+  } catch (err) {
+    console.error('[final-results] échec', { message: err.message, code: err.code, sqlMessage: err.sqlMessage, stack: err.stack });
+    next(err);
+  }
 };
 
 // POST /player-sheets/finish — clôture une partie sans supprimer sa fiche.
