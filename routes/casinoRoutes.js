@@ -122,6 +122,7 @@ router.post('/tables-jeu/:id/fermer', ctrl.fermerTableHandler);              // 
 router.post('/tables-jeu/:id/caves', ctrl.addCaveHandler);                   // POST /api/casino/tables-jeu/:id/caves      { session_id, client_id?|client_libre?, numero_adherent?, montant, statut_paiement, moyen_paiement? }
 router.get('/tables-jeu/:id/caves', ctrl.listCavesHandler);                  // GET  /api/casino/tables-jeu/:id/caves?date=
 router.get('/tables-jeu/:id/feuille', ctrl.feuilleTableHandler);             // GET  /api/casino/tables-jeu/:id/feuille?date=  (feuille de table consolidée)
+router.get('/player-sheets/final-results', requireRole('admin', 'manager', 'caissier', 'caisse'), ctrl.finalResultsHandler); // GET /api/casino/player-sheets/final-results?date_from=&date_to=
 router.get('/player-sheets', requireRole('admin', 'manager', 'caissier', 'caisse', 'croupier'), ctrl.getPlayerSheetHandler); // GET /api/casino/player-sheets?date=&table_name=
 router.put('/player-sheets', requireRole('admin', 'manager', 'caissier', 'caisse', 'croupier'), ctrl.savePlayerSheetHandler); // PUT /api/casino/player-sheets
 router.post('/player-sheets/finish', requireRole('admin', 'croupier'), ctrl.finishPlayerSheetHandler); // clôture sans suppression
