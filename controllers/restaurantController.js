@@ -49,6 +49,13 @@ const orderItemsCrud = createCrudController(resto.OrderItems, { filterable: ['or
 const cashiersCrud = createCrudController(resto.RestaurantCashiers, { filterable: ['statut'] });
 const sessionsCrud = createCrudController(resto.RestaurantSessions, { filterable: ['cashier_id', 'user_id'] });
 
+const normalizeRestaurantProductName = (value) => String(value || '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, ' ')
+  .trim();
+
 // Override productsCrud to only return menu items (PRODUIT_FINI) for restaurant
 const productsCrud = {
   ...createCrudController(stock.Products, { filterable: ['category_id', 'subcategory_id', 'actif'] }),
@@ -89,7 +96,19 @@ const productsCrud = {
     return ok(res, product);
   },
   create: async (req, res) => {
-    const product = await stock.Products.create({ ...req.body, source_module: 'RESTAURANT' });
+    const productName = String(req.body?.nom || '').trim();
+    const normalizedName = normalizeRestaurantProductName(productName);
+    const [restaurantProducts] = await pool.query(
+      "SELECT nom FROM products WHERE source_module = 'RESTAURANT'"
+    );
+    const duplicate = normalizedName && restaurantProducts.some(
+      (product) => normalizeRestaurantProductName(product.nom) === normalizedName
+    );
+    if (duplicate) {
+      throw ApiError.conflict(`Le produit « ${productName} » est déjà enregistré et ne peut pas être ajouté une deuxième fois.`);
+    }
+
+    const product = await stock.Products.create({ ...req.body, nom: productName, source_module: 'RESTAURANT' });
     return created(res, product);
   },
   update: async (req, res) => {
