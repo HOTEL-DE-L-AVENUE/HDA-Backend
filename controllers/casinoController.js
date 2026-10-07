@@ -2411,7 +2411,13 @@ exports.finalResultsHandler = async (req, res, next) => {
     res.json(results);
   } catch (err) {
     console.error('[final-results] échec', { message: err.message, code: err.code, sqlMessage: err.sqlMessage, stack: err.stack });
-    next(err);
+    if (err instanceof ApiError) return next(err);
+    // TEMPORAIRE (diagnostic) : expose la cause exacte de l'erreur 500 en ligne.
+    res.status(500).json({
+      success: false,
+      message: 'Erreur résultats finaux',
+      diagnostic: { message: err.message, code: err.code, sqlMessage: err.sqlMessage, at: String(err.stack || '').split('\n')[1]?.trim() },
+    });
   }
 };
 
