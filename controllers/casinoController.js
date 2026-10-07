@@ -2389,10 +2389,13 @@ exports.finalResultsHandler = async (req, res, next) => {
     const [rows] = await pool.query(
       `SELECT id, DATE_FORMAT(sheet_date, '%Y-%m-%d') AS sheet_date, table_name, updated_at, sheet_data
          FROM casino_player_sheets
-        WHERE sheet_date BETWEEN ? AND ?
-        ORDER BY sheet_date, table_name`,
+        WHERE sheet_date BETWEEN ? AND ?`,
       [dateFrom, dateTo]
     );
+    // Tri en JS : un ORDER BY sur des lignes contenant le JSON sheet_data épuise
+    // le sort buffer de MySQL en ligne (« Out of sort memory »).
+    rows.sort((a, b) => a.sheet_date.localeCompare(b.sheet_date)
+      || String(a.table_name).localeCompare(String(b.table_name), 'fr', { numeric: true }));
 
     const results = rows.map((row) => {
       let montant = null;
@@ -2411,13 +2414,7 @@ exports.finalResultsHandler = async (req, res, next) => {
     res.json(results);
   } catch (err) {
     console.error('[final-results] échec', { message: err.message, code: err.code, sqlMessage: err.sqlMessage, stack: err.stack });
-    if (err instanceof ApiError) return next(err);
-    // TEMPORAIRE (diagnostic) : expose la cause exacte de l'erreur 500 en ligne.
-    res.status(500).json({
-      success: false,
-      message: 'Erreur résultats finaux',
-      diagnostic: { message: err.message, code: err.code, sqlMessage: err.sqlMessage, at: String(err.stack || '').split('\n')[1]?.trim() },
-    });
+    next(err);
   }
 };
 
