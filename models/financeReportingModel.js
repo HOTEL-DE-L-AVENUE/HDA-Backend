@@ -51,10 +51,21 @@ function parseAmount(value) {
 // Retourne le résultat final enregistré d'une fiche, ou null si le calcul final
 // n'a jamais été enregistré. `_global` contient la dernière valeur enregistrée ;
 // les fiches plus anciennes ne l'ont que sur la fiche joueur sélectionnée.
+// Une fiche au JSON illisible (null, texte cassé, double encodage) est ignorée
+// au lieu de faire échouer toute la requête.
+function parseSheetData(sheetData) {
+  let data = sheetData;
+  for (let depth = 0; typeof data === 'string' && depth < 2; depth += 1) {
+    try { data = JSON.parse(data || '{}'); } catch { return {}; }
+  }
+  if (Buffer.isBuffer(data)) return parseSheetData(data.toString('utf8'));
+  return data && typeof data === 'object' ? data : {};
+}
+
 function extractCasinoFinalResult(sheetData) {
-  const data = typeof sheetData === 'string' ? JSON.parse(sheetData || '{}') : (sheetData || {});
-  const finals = data.finals || {};
-  const global = finals._global || {};
+  const data = parseSheetData(sheetData);
+  const finals = data.finals && typeof data.finals === 'object' ? data.finals : {};
+  const global = finals._global && typeof finals._global === 'object' ? finals._global : {};
   if (global.resultatFinalValue !== undefined && global.resultatFinalValue !== '') {
     const value = Number(global.resultatFinalValue);
     if (Number.isFinite(value)) return value;
