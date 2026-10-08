@@ -20,6 +20,8 @@
 const { randomUUID } = require('crypto');
 const { pool, withTransaction } = require('../config/db');
 const ApiError = require('../utils/ApiError');
+const transport = require('../utils/whatsappTransport');
+const whatsappDesktop = require('../utils/whatsappDesktop');
 
 // =====================================================================
 // Helpers génériques
@@ -383,12 +385,50 @@ exports.visitsCrud = buildCrud('casino_visits', {
 });
 
 exports.playersCrud = buildCrud('casino_players', {
-  allowedFields: ['nom', 'prenom', 'surnom', 'telephone', 'whatsapp', 'identite_type', 'identite_numero', 'identite_nom_complet', 'identite_date_emission', 'identite_verifiee', 'identite_fichier_url', 'identite_fichiers_urls', 'date_inscription', 'depot', 'credit', 'mode_jeu', 'statut_jeu', 'statut'],
+  allowedFields: ['nom', 'prenom', 'surnom', 'telephone', 'whatsapp', 'whatsapp_fiche_consent', 'whatsapp_fiche_consent_signature', 'whatsapp_fiche_consent_at', 'identite_type', 'identite_numero', 'identite_nom_complet', 'identite_date_emission', 'identite_verifiee', 'identite_fichier_url', 'identite_fichiers_urls', 'date_inscription', 'depot', 'credit', 'mode_jeu', 'statut_jeu', 'statut'],
   orderBy: 'date_inscription DESC, nom ASC, prenom ASC',
 });
 
+const isTruthyFlag = (value) => value === true || value === 1 || value === '1' || value === 'true';
+
+// Consentement « envoi des fiches par WhatsApp » : il doit être signé par le joueur et
+// associé à un numéro. La date du consentement est fixée par le serveur, jamais par le client.
+const applyWhatsappFicheConsent = (body, existing = null) => {
+  delete body.whatsapp_fiche_consent_at;
+  if (!Object.prototype.hasOwnProperty.call(body, 'whatsapp_fiche_consent')) return null;
+  if (!isTruthyFlag(body.whatsapp_fiche_consent)) {
+    body.whatsapp_fiche_consent = 0;
+    body.whatsapp_fiche_consent_signature = null;
+    body.whatsapp_fiche_consent_at = null;
+    return null;
+  }
+  const signature = body.whatsapp_fiche_consent_signature ?? existing?.whatsapp_fiche_consent_signature;
+  const number = body.whatsapp ?? existing?.whatsapp ?? body.telephone ?? existing?.telephone;
+  if (typeof signature !== 'string' || !signature.startsWith('data:image/')) return 'La signature du joueur est obligatoire pour l’envoi des fiches par WhatsApp';
+  if (!String(number || '').trim()) return 'Un numéro WhatsApp est obligatoire pour l’envoi des fiches par WhatsApp';
+  body.whatsapp_fiche_consent = 1;
+  body.whatsapp_fiche_consent_signature = signature;
+  if (!existing?.whatsapp_fiche_consent || body.whatsapp_fiche_consent_signature !== existing.whatsapp_fiche_consent_signature) {
+    body.whatsapp_fiche_consent_at = new Date();
+  }
+  return null;
+};
+
+const playersUpdate = exports.playersCrud.update;
+exports.playersCrud.update = async (req, res, next) => {
+  try {
+    const [[existing]] = await pool.query('SELECT whatsapp, telephone, whatsapp_fiche_consent, whatsapp_fiche_consent_signature FROM casino_players WHERE id = ?', [req.params.id]);
+    if (!existing) throw ApiError.notFound('Joueur Casino introuvable');
+    const consentError = applyWhatsappFicheConsent(req.body, existing);
+    if (consentError) throw ApiError.badRequest(consentError);
+  } catch (err) { return next(err); }
+  return playersUpdate(req, res, next);
+};
+
 const playersCreate = exports.playersCrud.create;
 exports.playersCrud.create = async (req, res, next) => {
+  const consentError = applyWhatsappFicheConsent(req.body);
+  if (consentError) return next(ApiError.badRequest(consentError));
   const { identite_type: identityType, identite_numero: identityNumber, identite_nom_complet: identityName, identite_date_emission: identityDate, identite_verifiee: identityVerified, identite_fichiers_urls: identityFiles } = req.body;
   let identityFileList = [];
   try { identityFileList = Array.isArray(identityFiles) ? identityFiles : JSON.parse(identityFiles || '[]'); } catch { identityFileList = []; }
@@ -397,6 +437,70 @@ exports.playersCrud.create = async (req, res, next) => {
     return next(ApiError.badRequest('Au moins un fichier d’identité est obligatoire avant l’inscription du joueur'));
   }
   return playersCreate(req, res, next);
+};
+
+// Numero au format international sans « + » : 034… devient 26134… (indicatif par defaut).
+const toInternationalNumber = (raw) => {
+  const compact = String(raw || '').trim().replace(/[^\d+]/g, '');
+  if (compact.startsWith('+')) return compact.slice(1);
+  if (compact.startsWith('00')) return compact.slice(2);
+  if (compact.startsWith('0')) return `${process.env.WHATSAPP_DEFAULT_COUNTRY_CODE || '261'}${compact.slice(1)}`;
+  return compact;
+};
+
+const parsePlayerSheetImage = (image) => {
+  const match = /^data:(image\/(?:png|jpeg));base64,(.+)$/.exec(String(image || ''));
+  if (!match) throw ApiError.badRequest('Capture de la fiche invalide (PNG ou JPEG attendu)');
+  return match;
+};
+
+// Le WhatsApp de la fiche d'inscription du joueur fait foi, puis le numero transmis, puis le telephone.
+const resolvePlayerWhatsappNumber = async (casinoPlayerId, numero) => {
+  let rawNumber = numero;
+  if (casinoPlayerId) {
+    const [[player]] = await pool.query('SELECT whatsapp, telephone FROM casino_players WHERE id = ?', [casinoPlayerId]);
+    rawNumber = player?.whatsapp || numero || player?.telephone;
+  }
+  const destinataire = toInternationalNumber(rawNumber);
+  if (!destinataire) throw ApiError.badRequest('Aucun numéro WhatsApp enregistré pour ce joueur');
+  return destinataire;
+};
+
+// Secours : ouvre la discussion du joueur dans WhatsApp Desktop sur ce PC et y colle la capture,
+// prete a partir (apercu d'envoi). Reserve au poste sur lequel tourne le serveur.
+exports.openPlayerSheetWhatsappDesktopHandler = async (req, res, next) => {
+  try {
+    if (!whatsappDesktop.isAvailableFor(req)) throw new ApiError(409, 'Ouverture automatique de WhatsApp Desktop possible uniquement sur le PC du serveur.');
+    const [, mimetype, base64] = parsePlayerSheetImage(req.body.image);
+    const destinataire = await resolvePlayerWhatsappNumber(req.body.casino_player_id, req.body.numero);
+    const result = await whatsappDesktop.pasteImageInChat(destinataire, { base64, mimetype });
+    if (!result.ok) throw new ApiError(502, `Ouverture de WhatsApp Desktop impossible : ${result.erreur}`);
+    res.json({ ok: true, numero: destinataire });
+  } catch (err) { next(err); }
+};
+
+// Envoi automatique de la capture de la fiche joueur (PNG/JPEG) au numero WhatsApp du joueur,
+// depuis le compte WhatsApp rattache au serveur (transport web, QR code).
+exports.sendPlayerSheetWhatsappHandler = async (req, res, next) => {
+  try {
+    const { image, casino_player_id: casinoPlayerId, numero, caption, filename } = req.body;
+    const match = parsePlayerSheetImage(image);
+    const destinataire = await resolvePlayerWhatsappNumber(casinoPlayerId, numero);
+
+    if (transport.isWeb()) void transport.web.ensureStarted();
+    const blocker = transport.describeBlocker();
+    if (blocker) throw new ApiError(503, `${blocker} Connectez le compte WhatsApp (QR code) dans l’onglet Rapport de l’hôtel.`);
+
+    const [, mimetype, base64] = match;
+    const result = await transport.sendImage(destinataire, {
+      base64,
+      mimetype,
+      filename: String(filename || `fiche-joueur.${mimetype === 'image/png' ? 'png' : 'jpg'}`),
+      caption: caption ? String(caption).slice(0, 1000) : undefined,
+    });
+    if (!result.ok) throw new ApiError(502, `Envoi WhatsApp au ${destinataire} impossible : ${result.erreur}`);
+    res.json({ ok: true, numero: destinataire });
+  } catch (err) { next(err); }
 };
 
 exports.playCasinoPlayerHandler = async (req, res, next) => {

@@ -125,6 +125,8 @@ router.get('/tables-jeu/:id/feuille', ctrl.feuilleTableHandler);             // 
 router.get('/player-sheets/final-results', requireRole('admin', 'manager', 'caissier', 'caisse'), ctrl.finalResultsHandler); // GET /api/casino/player-sheets/final-results?date_from=&date_to=
 router.get('/player-sheets', requireRole('admin', 'manager', 'caissier', 'caisse', 'croupier'), ctrl.getPlayerSheetHandler); // GET /api/casino/player-sheets?date=&table_name=
 router.put('/player-sheets', requireRole('admin', 'manager', 'caissier', 'caisse', 'croupier'), ctrl.savePlayerSheetHandler); // PUT /api/casino/player-sheets
+router.post('/player-sheets/whatsapp', requireRole('admin', 'manager', 'caissier', 'caisse', 'croupier'), ctrl.sendPlayerSheetWhatsappHandler); // envoi de la capture de fiche au WhatsApp du joueur
+router.post('/player-sheets/whatsapp-desktop', requireRole('admin', 'manager', 'caissier', 'caisse', 'croupier'), ctrl.openPlayerSheetWhatsappDesktopHandler); // secours : capture collée dans WhatsApp Desktop du PC serveur
 router.post('/player-sheets/finish', requireRole('admin', 'croupier'), ctrl.finishPlayerSheetHandler); // clôture sans suppression
 router.use('/identity-verifications', createCrudRouter(ctrl.identityVerificationsCrud)); // /api/casino/identity-verifications
 router.get('/tables-jeu', ctrl.listTablesHandler);                            // GET  /api/casino/tables-jeu?room_id=   (remplace la liste générique : ajoute `a_historique`)
