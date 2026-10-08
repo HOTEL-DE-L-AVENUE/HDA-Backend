@@ -54,9 +54,18 @@ async function sendText(destinataire, texte) {
   return cloud.sendWhatsappText(destinataire, texte);
 }
 
+/**
+ * Envoie une image a un numero. Seul le transport web le permet ici : l'API
+ * officielle exigerait un televersement prealable du media et la fenetre de 24 h.
+ */
+async function sendImage(destinataire, image) {
+  if (isWeb()) return web.sendImage(destinataire, image);
+  return { numero: String(destinataire || ''), ok: false, messages: 0, erreur: 'L’envoi d’image nécessite WHATSAPP_TRANSPORT=web.' };
+}
+
 /** Pause entre deux destinataires : utile seulement en transport web. */
 async function pauseBetweenRecipients() {
   if (isWeb()) await web.pauseBetweenRecipients();
 }
 
-module.exports = { getTransportName, isWeb, isConfigured, describeBlocker, sendText, pauseBetweenRecipients, web, cloud };
+module.exports = { getTransportName, isWeb, isConfigured, describeBlocker, sendText, sendImage, pauseBetweenRecipients, web, cloud };

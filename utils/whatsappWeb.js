@@ -12,7 +12,7 @@
 
 const path = require('path');
 const puppeteer = require('puppeteer');
-const { Client, LocalAuth } = require('whatsapp-web.js');
+const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 
 const SESSION_PATH = process.env.WHATSAPP_WEB_SESSION_PATH
   || path.join(__dirname, '..', '.wwebjs_auth');
@@ -225,6 +225,43 @@ async function sendText(destinataire, text, { parts } = {}) {
   return { numero: cible, ok: true, messages: envoyes };
 }
 
+/**
+ * Envoie une image (PNG ou JPEG, en base64 sans prefixe data:) avec une legende facultative.
+ * @returns {Promise<{numero: string, ok: boolean, messages: number, erreur?: string}>}
+ */
+async function sendImage(destinataire, { base64, mimetype, filename, caption } = {}) {
+  const cible = String(destinataire || '');
+  if (!isReady()) {
+    return { numero: cible, ok: false, messages: 0, erreur: 'WhatsApp Web non connecté (QR à scanner).' };
+  }
+
+  let chatId;
+  try {
+    chatId = await resolveChatId(cible);
+  } catch (error) {
+    console.error(`[whatsapp-web] Numéro ${cible} non résolu :`, error);
+    return { numero: cible, ok: false, messages: 0, erreur: error.message };
+  }
+
+  const media = new MessageMedia(mimetype, base64, filename);
+  // sendSeen: false — l'accusé « vu » automatique casse régulièrement après une mise à jour
+  // de WhatsApp Web et fait échouer tout l'envoi ; il est inutile ici.
+  const options = { sendSeen: false, ...(caption ? { caption } : {}) };
+  try {
+    await client.sendMessage(chatId, media, options);
+  } catch (imageError) {
+    console.error(`[whatsapp-web] Envoi image vers ${cible} échoué :`, imageError);
+    // Second essai en document (fichier joint) : chemin d'envoi différent côté WhatsApp Web.
+    try {
+      await client.sendMessage(chatId, media, { ...options, sendMediaAsDocument: true });
+    } catch (documentError) {
+      console.error(`[whatsapp-web] Envoi document vers ${cible} échoué :`, documentError);
+      return { numero: cible, ok: false, messages: 0, erreur: imageError.message || String(imageError) };
+    }
+  }
+  return { numero: cible, ok: true, messages: 1 };
+}
+
 /** Pause aléatoire entre deux destinataires : évite le profil d'envoi en rafale. */
 async function pauseBetweenRecipients() {
   await wait(MIN_GAP_MS + Math.floor(Math.random() * (MAX_GAP_MS - MIN_GAP_MS)));
@@ -239,5 +276,6 @@ module.exports = {
   isConfigured,
   listGroups,
   sendText,
+  sendImage,
   pauseBetweenRecipients,
 };
