@@ -56,6 +56,18 @@ const normalizeRestaurantProductName = (value) => String(value || '')
   .replace(/[^a-z0-9]+/g, ' ')
   .trim();
 
+async function nextRestaurantProductCode() {
+  const year = new Date().getFullYear();
+  const [[row]] = await pool.query(
+    `SELECT COALESCE(MAX(CAST(SUBSTRING_INDEX(SUBSTRING(code, 5), '/', 1) AS UNSIGNED)), 0) AS last_number
+       FROM products
+      WHERE source_module = 'RESTAURANT'
+        AND code REGEXP ?`,
+    [`^PLAT[0-9]+/${year}$`]
+  );
+  return `PLAT${String(Number(row.last_number) + 1).padStart(2, '0')}/${year}`;
+}
+
 // Override productsCrud to only return menu items (PRODUIT_FINI) for restaurant
 const productsCrud = {
   ...createCrudController(stock.Products, { filterable: ['category_id', 'subcategory_id', 'actif'] }),
@@ -95,6 +107,7 @@ const productsCrud = {
     }
     return ok(res, product);
   },
+  nextCode: async (req, res) => ok(res, { code: await nextRestaurantProductCode() }),
   create: async (req, res) => {
     const productName = String(req.body?.nom || '').trim();
     const normalizedName = normalizeRestaurantProductName(productName);
@@ -108,7 +121,8 @@ const productsCrud = {
       throw ApiError.conflict(`Le produit « ${productName} » est déjà enregistré et ne peut pas être ajouté une deuxième fois.`);
     }
 
-    const product = await stock.Products.create({ ...req.body, nom: productName, source_module: 'RESTAURANT' });
+    const code = await nextRestaurantProductCode();
+    const product = await stock.Products.create({ ...req.body, nom: productName, code, source_module: 'RESTAURANT' });
     return created(res, product);
   },
   update: async (req, res) => {

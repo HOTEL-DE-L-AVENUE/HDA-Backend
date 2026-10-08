@@ -18,6 +18,7 @@ router.post('/stock/consume-portion', ctrl.consumeRestaurantPortionHandler);
 // DELETE /api/restaurant/stock?id=... or ?product_id=...&location_id=...
 router.delete('/stock', ctrl.removeRestaurantStockHandler);
 router.use('/stock/locations', createCrudRouter(stockCtrl.stockLocationsCrud));
+router.get('/products/next-code', ctrl.productsCrud.nextCode);
 router.use('/products', createCrudRouter(ctrl.productsCrud));
 router.use('/units', createCrudRouter(stockCtrl.unitsCrud));
 router.use('/product-types', createCrudRouter(stockCtrl.productTypesCrud));
