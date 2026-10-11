@@ -20,6 +20,20 @@ npm run dev             # ou npm start
 
 Le serveur écoute sur `http://localhost:4000/api` (port configurable via `PORT`).
 
+## Fuseau horaire
+
+Les connexions MySQL du backend règlent leur fuseau de session sur UTC+3
+(heure de Madagascar). Les requêtes de présence qui utilisent `NOW()` ou `CURDATE()`
+conservent ainsi l'heure locale, même si le serveur ou MySQL est configuré en UTC.
+Aucune configuration du fuseau horaire du système hébergeant le backend n'est nécessaire.
+
+Pour une base dont les anciens pointages ont été stockés en UTC, sauvegardez la base,
+arrêtez le backend, puis exécutez une seule fois
+`node Database/runMigration.js Database/migrations/20261012_rh_attendance_madagascar_timezone.sql`
+avant de redémarrer le backend mis à jour. Cette migration avance les heures d'entrée et
+de sortie de trois heures et recalcule le statut PRESENT/RETARD. Ne pas la relancer après
+le déploiement.
+
 ## 2. Architecture
 
 ```
