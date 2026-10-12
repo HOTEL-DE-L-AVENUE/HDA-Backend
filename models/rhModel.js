@@ -1,6 +1,7 @@
 const { pool, withTransaction } = require('../config/db');
 const { createCrudModel } = require('./crudFactory');
 const { workingDays, monthBounds, calculateNet, calculateRawNet, statutoryContributions, deductionTotal, DEDUCTION_FREQUENCIES, DAILY_RATE_CONTRACT, IN_WORKFORCE_SQL, DEPARTURE_STATUSES } = require('../utils/hr');
+const { madagascarDate } = require('../utils/timezone');
 
 const employeeFields = ['user_id', 'matricule', 'first_name', 'last_name', 'photo_url', 'birth_date', 'phone', 'address', 'email', 'identification_number', 'department', 'position', 'joined_at', 'contract_type', 'contract_end_date', 'qualification', 'cnaps_number', 'dependents', 'salary', 'prime', 'pourboire', 'cnaps', 'ostie', 'irsa', 'status', 'departure_date', 'departure_reason'];
 const employees = createCrudModel({ table: 'rh_employees', fields: employeeFields, sortable: ['id', 'matricule', 'first_name', 'last_name', 'department', 'position', 'joined_at', 'contract_type', 'salary', 'status', 'created_at'] });
@@ -159,7 +160,7 @@ const NOT_ON_APPROVED_LEAVE = `NOT EXISTS (SELECT 1 FROM rh_leave_requests l WHE
 
 async function listAttendance({ date, page = 1, limit = 20, offset = 0 } = {}) {
   await syncCurrentLeaveStatus();
-  const attendanceDate = date || new Date().toISOString().slice(0, 10);
+  const attendanceDate = date || madagascarDate();
   const [[count]] = await pool.query(`SELECT COUNT(*) total FROM rh_employees e WHERE ${IN_WORKFORCE_SQL('e')} AND ${NOT_ON_APPROVED_LEAVE}`, [attendanceDate]);
   const [rows] = await pool.query(`SELECT e.id employee_id, e.matricule, e.first_name, e.last_name, e.department, a.id attendance_id, a.attendance_date, a.check_in, a.check_out,
     a.check_in_method, a.check_out_method, (a.check_in_photo IS NOT NULL) has_check_in_photo, (a.check_out_photo IS NOT NULL) has_check_out_photo,
