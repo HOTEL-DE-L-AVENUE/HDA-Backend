@@ -15,6 +15,7 @@
     "seed:unit": "node Database/seedUnit.js",
     "seed:productType": "node Database/seedProductType.js",
     "seed:ingredients": "node Database/seedRestaurantIngredients.js",
+    "seed:stock-articles": "node Database/seedRestaurantStockArticles.js",
     "seed:refresh": "node Database/seed.js --refresh"
   },
   "dependencies": {
