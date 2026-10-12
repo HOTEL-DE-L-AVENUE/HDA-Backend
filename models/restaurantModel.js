@@ -1,6 +1,7 @@
 // models/restaurantModel.js
 const { pool, withTransaction } = require('../config/db');
 const { createCrudModel } = require('./crudFactory');
+const stockModel = require('./stockModel');
 
 let restaurantSchemaReady;
 
@@ -47,6 +48,12 @@ async function ensureRestaurantSchema() {
       }
       if (!orderColumns.some((column) => column.Field === 'special_person_name')) {
         await pool.query('ALTER TABLE orders ADD COLUMN special_person_name VARCHAR(255) NULL AFTER location_type');
+      }
+
+      // Marque les commandes dont les ingrédients ont été sortis du stock (les anciennes
+      // commandes, jamais déduites, ne doivent rien remettre en stock à l'annulation).
+      if (!orderColumns.some((column) => column.Field === 'stock_deducted_at')) {
+        await pool.query('ALTER TABLE orders ADD COLUMN stock_deducted_at DATETIME NULL');
       }
 
       // Add cuisson column to order_items for cooking level customization
@@ -104,7 +111,71 @@ const OrderItems = createCrudModel({
   sortable: ['id'],
 });
 
-// Recipes/recipe_items removed — feature deprecated
+// --- Stock des ingrédients ---------------------------------------------------
+// Chaque plat du menu a une recette (recipes / recipe_items, voir
+// Database/seedRestaurantIngredients.js). Une commande sort du stock du restaurant
+// les ingrédients de ses plats ; un produit sans recette mais stocké au restaurant
+// (boisson, dessert prêt…) sort lui-même du stock.
+const RESTAURANT_LOCATION_ID = 2;
+
+// Quantités d'ingrédients par product_id pour une liste de lignes de commande.
+async function ingredientNeeds(conn, items) {
+  const needs = new Map();
+  const add = (productId, qty) => needs.set(productId, (needs.get(productId) || 0) + qty);
+  for (const item of items) {
+    const productId = Number(item.product_id);
+    const quantity = Number(item.quantite);
+    if (!productId || !(quantity > 0)) continue;
+    const [recipeItems] = await conn.query(
+      `SELECT ri.ingredient_id, ri.quantite
+         FROM recipes r JOIN recipe_items ri ON ri.recipe_id = r.id
+        WHERE r.product_id = ?`,
+      [productId]
+    );
+    if (recipeItems.length) {
+      recipeItems.forEach((ri) => add(Number(ri.ingredient_id), Number(ri.quantite) * quantity));
+      continue;
+    }
+    const [[stocked]] = await conn.query(
+      'SELECT id FROM stocks WHERE product_id = ? AND location_id = ? LIMIT 1',
+      [productId, RESTAURANT_LOCATION_ID]
+    );
+    if (stocked) add(productId, quantity);
+  }
+  return needs;
+}
+
+// Fait passer le stock de l'état « lignes `fromItems` déduites » à « lignes `toItems` déduites ».
+// Le stock peut devenir négatif : le service en salle n'est jamais bloqué, l'article
+// apparaît alors en rupture sur la page Stock.
+async function syncOrderIngredients(conn, { orderId, fromItems, toItems, motif }) {
+  const before = await ingredientNeeds(conn, fromItems);
+  const after = await ingredientNeeds(conn, toItems);
+  for (const productId of new Set([...before.keys(), ...after.keys()])) {
+    const delta = Math.round(((after.get(productId) || 0) - (before.get(productId) || 0)) * 1000) / 1000;
+    if (delta === 0) continue;
+    await stockModel.recordMovement({
+      productId,
+      locationId: RESTAURANT_LOCATION_ID,
+      type: delta > 0 ? 'SORTIE' : 'ENTREE',
+      quantite: Math.abs(delta),
+      sourceModule: 'RESTAURANT',
+      referenceId: orderId,
+      motif: delta > 0 ? motif : `${motif} (retour en stock)`,
+      allowNegative: true,
+      conn,
+    });
+  }
+}
+
+// Remet en stock les ingrédients d'une commande déjà déduite (annulation, suppression).
+async function restoreOrderIngredients(conn, orderId, motif) {
+  const [[order]] = await conn.query('SELECT stock_deducted_at FROM orders WHERE id = ? FOR UPDATE', [orderId]);
+  if (!order?.stock_deducted_at) return;
+  const [items] = await conn.query('SELECT product_id, quantite FROM order_items WHERE order_id = ?', [orderId]);
+  await syncOrderIngredients(conn, { orderId, fromItems: items, toItems: [], motif });
+  await conn.query('UPDATE orders SET stock_deducted_at = NULL WHERE id = ?', [orderId]);
+}
 
 const RestaurantCashiers = createCrudModel({
   table: 'restaurant_cashiers', pk: 'id',
@@ -139,6 +210,8 @@ async function createOrderWithItems({ clientId, tableId, items, notes, locationT
         [orderId, it.product_id, it.quantite, it.prix_unitaire, it.cuisson || null]
       );
     }
+    await syncOrderIngredients(conn, { orderId, fromItems: [], toItems: items, motif: `Commande restaurant #${orderId}` });
+    await conn.query('UPDATE orders SET stock_deducted_at = NOW() WHERE id = ?', [orderId]);
     const [order] = await conn.query('SELECT * FROM orders WHERE id = ?', [orderId]);
     return order[0];
   });
@@ -148,8 +221,20 @@ async function updateOrderWithItems({ orderId, clientId, tableId, items, notes, 
   await ensureRestaurantSchema();
   return withTransaction(async (conn) => {
     const montantTotal = items.reduce((sum, item) => sum + Number(item.quantite) * Number(item.prix_unitaire), 0);
-    const [existingRows] = await conn.query('SELECT id FROM orders WHERE id = ? LIMIT 1', [orderId]);
+    const [existingRows] = await conn.query('SELECT id, statut, stock_deducted_at FROM orders WHERE id = ? LIMIT 1 FOR UPDATE', [orderId]);
     if (!existingRows[0]) return null;
+    // Seul l'écart entre l'ancienne et la nouvelle commande passe dans le stock.
+    const [previousItems] = await conn.query('SELECT product_id, quantite FROM order_items WHERE order_id = ?', [orderId]);
+    const deducted = Boolean(existingRows[0].stock_deducted_at);
+    if (deducted || existingRows[0].statut !== 'ANNULEE') {
+      await syncOrderIngredients(conn, {
+        orderId,
+        fromItems: deducted ? previousItems : [],
+        toItems: items,
+        motif: `Commande restaurant #${orderId} modifiée`,
+      });
+      await conn.query('UPDATE orders SET stock_deducted_at = NOW() WHERE id = ?', [orderId]);
+    }
 
     await conn.query(
       `UPDATE orders
@@ -234,9 +319,12 @@ Orders.update = async function(id, data) {
   return orderWithItems(id);
 };
 Orders.remove = async function(id) {
+  await ensureRestaurantSchema();
   return withTransaction(async (conn) => {
     const [orders] = await conn.query('SELECT id, table_id FROM orders WHERE id = ? LIMIT 1', [id]);
     if (!orders[0]) return false;
+
+    await restoreOrderIngredients(conn, id, `Commande restaurant #${id} supprimée`);
 
     await conn.query('DELETE FROM payments WHERE order_id = ?', [id]);
     await conn.query(
@@ -259,6 +347,21 @@ Orders.remove = async function(id) {
     return result.affectedRows > 0;
   });
 };
+
+// Changement de statut : une commande annulée rend ses ingrédients au stock.
+async function updateOrderStatus(orderId, statut) {
+  await ensureRestaurantSchema();
+  return withTransaction(async (conn) => {
+    const [[order]] = await conn.query('SELECT id FROM orders WHERE id = ? FOR UPDATE', [orderId]);
+    if (!order) return null;
+    if (statut === 'ANNULEE') {
+      await restoreOrderIngredients(conn, orderId, `Commande restaurant #${orderId} annulée`);
+    }
+    await conn.query('UPDATE orders SET statut = ? WHERE id = ?', [statut, orderId]);
+    const [[updated]] = await conn.query('SELECT * FROM orders WHERE id = ?', [orderId]);
+    return updated;
+  });
+}
 
 async function closeAllRestaurantOrders(orderIds = []) {
   await ensureRestaurantSchema();
@@ -300,5 +403,5 @@ module.exports = {
   TablesRestaurant, Orders, OrderItems,
   RestaurantCashiers, RestaurantSessions,
   createOrderWithItems, updateOrderWithItems, orderWithItems, ordersByTable, ensureRestaurantSchema,
-  closeAllRestaurantOrders,
+  closeAllRestaurantOrders, updateOrderStatus,
 };

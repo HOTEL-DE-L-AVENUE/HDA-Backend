@@ -3,7 +3,9 @@ const { pool } = require('../config/db');
 
 /**
  * Seeder pour créer les ingrédients et les recettes pour les produits du restaurant
- * Établit la relation entre Menu-Restaurant et Stock-Restaurant
+ * Établit la relation entre Menu-Restaurant et Stock-Restaurant : chaque commande
+ * sort du stock du restaurant les ingrédients de la recette × quantité commandée
+ * (voir models/restaurantModel.js, syncOrderIngredients).
  */
 class SeedRestaurantIngredients {
     async run() {
@@ -140,10 +142,8 @@ class SeedRestaurantIngredients {
                 );
 
                 if (existingStock.length > 0) {
-                    await pool.query(
-                        'UPDATE stocks SET quantite = ? WHERE id = ?',
-                        [ing.default_stock, existingStock[0].id]
-                    );
+                    // Stock existant : on ne touche pas à la quantité réelle (sinon chaque
+                    // relance du seed effacerait les consommations des commandes).
                     stockUpdated++;
                 } else {
                     await pool.query(
@@ -154,7 +154,7 @@ class SeedRestaurantIngredients {
                 }
             }
 
-            console.log(`📊 Stock restaurant: ${stockCreated} créés, ${stockUpdated} mis à jour`);
+            console.log(`📊 Stock restaurant: ${stockCreated} créés, ${stockUpdated} déjà présents (quantité conservée)`);
 
             // 5. Définir les recettes pour les produits du menu
             const recipes = [
@@ -297,7 +297,7 @@ class SeedRestaurantIngredients {
             console.log('\n✅ Seeder des ingrédients du restaurant terminé avec succès !');
             console.log(`📊 Résumé:`);
             console.log(`   - Ingrédients: ${createdIngredients} créés, ${updatedIngredients} mis à jour`);
-            console.log(`   - Stock: ${stockCreated} créés, ${stockUpdated} mis à jour`);
+            console.log(`   - Stock: ${stockCreated} créés, ${stockUpdated} déjà présents (quantité conservée)`);
             console.log(`   - Recettes: ${recipesCreated} créées, ${recipesUpdated} mises à jour`);
             console.log(`   - Items de recette: ${recipeItemsCreated} créés`);
 

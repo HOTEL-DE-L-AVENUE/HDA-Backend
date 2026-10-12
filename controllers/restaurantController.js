@@ -607,13 +607,8 @@ async function updateOrderStatusHandler(req, res) {
   const { statut } = req.body;
   if (!statut) throw ApiError.badRequest('statut est requis');
 
-  const [result] = await pool.query(
-    'UPDATE orders SET statut = ? WHERE id = ?',
-    [statut, req.params.id]
-  );
-  if (result.affectedRows === 0) throw ApiError.notFound(`Commande #${req.params.id} introuvable`);
-
-  const [[order]] = await pool.query('SELECT * FROM orders WHERE id = ?', [req.params.id]);
+  const order = await resto.updateOrderStatus(req.params.id, statut);
+  if (!order) throw ApiError.notFound(`Commande #${req.params.id} introuvable`);
   return ok(res, order);
 }
 
