@@ -984,7 +984,36 @@ async function refreshRoomOperationalStatus(conn, roomId) {
   }
 }
 
-async function saveOperationalRecord({ table, fields, id = null, data, stockField, sourceModule, referenceLabel, statusField }) {
+function quantitiesByProduct(items) {
+  const totals = new Map();
+  for (const item of items) totals.set(item.product_id, (totals.get(item.product_id) || 0) + item.quantity);
+  return totals;
+}
+
+// Ajuste le stock de l'hôtel pour passer d'une liste de produits déjà déduite (`from`)
+// à la nouvelle liste (`to`) : sortie pour ce qui est ajouté, retour pour ce qui est retiré.
+async function syncUsedProductsStock(conn, { from, to, sourceModule, referenceId, motif }) {
+  const before = quantitiesByProduct(from);
+  const after = quantitiesByProduct(to);
+  const productIds = new Set([...before.keys(), ...after.keys()]);
+  for (const productId of productIds) {
+    const delta = (after.get(productId) || 0) - (before.get(productId) || 0);
+    if (delta === 0) continue;
+    await stockModel.recordMovement({
+      productId,
+      locationId: 5,
+      type: delta > 0 ? 'SORTIE' : 'ENTREE',
+      quantite: Math.abs(delta),
+      sourceModule,
+      referenceId,
+      motif: delta > 0 ? motif : `${motif} (retour en stock)`,
+      allowNegative: false,
+      conn,
+    });
+  }
+}
+
+async function saveOperationalRecord({ table, fields, id = null, data, stockField, sourceModule, referenceLabel, statusField, deductOnSave = false }) {
   return withTransaction(async (conn) => {
     let existing = null;
     if (id) {
@@ -1034,6 +1063,23 @@ async function saveOperationalRecord({ table, fields, id = null, data, stockFiel
 
     const [currentRows] = await conn.query(`SELECT * FROM ${table} WHERE id = ?`, [recordId]);
     const current = currentRows[0];
+    const motif = `${referenceLabel} - ${current.type_tache || current.type_intervention || 'tâche'}`;
+
+    // Ménage : les produits choisis sortent du stock dès l'enregistrement de la tâche.
+    // À chaque modification, seul l'écart avec ce qui a déjà été déduit est appliqué.
+    if (deductOnSave) {
+      const alreadyDeducted = existing?.stock_deducted_at ? normalizeUsedProducts(existing[stockField]) : [];
+      await syncUsedProductsStock(conn, {
+        from: alreadyDeducted, to: usedProducts, sourceModule, referenceId: recordId, motif,
+      });
+      if (usedProducts.length || alreadyDeducted.length) {
+        await conn.query(`UPDATE ${table} SET stock_deducted_at = NOW() WHERE id = ?`, [recordId]);
+      }
+      await refreshRoomOperationalStatus(conn, current.room_id);
+      const [savedRows] = await conn.query(`SELECT * FROM ${table} WHERE id = ?`, [recordId]);
+      return savedRows[0];
+    }
+
     const completing = current?.statut === 'TERMINE' && !existing?.stock_deducted_at;
     if (completing && usedProducts.length) {
       for (const item of usedProducts) {
@@ -1087,13 +1133,24 @@ async function saveHousekeepingTask(id, data) {
     sourceModule: 'MENAGE',
     referenceLabel: 'Ménage',
     statusField: 'statut',
+    deductOnSave: true,
   });
 }
 
-async function deleteOperationalRecord(table, id) {
+async function deleteOperationalRecord(table, id, { returnStock = null } = {}) {
   return withTransaction(async (conn) => {
-    const [rows] = await conn.query(`SELECT room_id FROM ${table} WHERE id = ? FOR UPDATE`, [id]);
+    const [rows] = await conn.query(`SELECT * FROM ${table} WHERE id = ? FOR UPDATE`, [id]);
     if (!rows[0]) throw new Error(`${table} #${id} introuvable`);
+    // Tâche supprimée : les produits déjà sortis pour elle reviennent dans le stock.
+    if (returnStock && rows[0].stock_deducted_at) {
+      await syncUsedProductsStock(conn, {
+        from: normalizeUsedProducts(rows[0][returnStock.stockField]),
+        to: [],
+        sourceModule: returnStock.sourceModule,
+        referenceId: id,
+        motif: `${returnStock.referenceLabel} - tâche #${id} supprimée`,
+      });
+    }
     await conn.query(`DELETE FROM ${table} WHERE id = ?`, [id]);
     await refreshRoomOperationalStatus(conn, rows[0].room_id);
     return true;
@@ -1105,7 +1162,9 @@ async function deleteMaintenance(id) {
 }
 
 async function deleteHousekeepingTask(id) {
-  return deleteOperationalRecord('housekeeping_tasks', id);
+  return deleteOperationalRecord('housekeeping_tasks', id, {
+    returnStock: { stockField: 'products_used', sourceModule: 'MENAGE', referenceLabel: 'Ménage' },
+  });
 }
 
 // Les statuts et déductions sont traités comme une seule opération atomique.
@@ -1252,7 +1311,8 @@ async function getRoomStats() {
 async function updateHousekeepingStatus(id, statut, productsUsed = null) {
   return saveHousekeepingTask(id, {
     statut,
-    ...(productsUsed === null ? {} : { products_used: productsUsed }),
+    // Absent ou null : on garde les produits déjà enregistrés sur la tâche (ils seront déduits).
+    ...(productsUsed == null ? {} : { products_used: productsUsed }),
   });
 }
 

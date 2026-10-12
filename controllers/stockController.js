@@ -275,6 +275,33 @@ async function lowStockHandler(req, res, next) {
 }
 
 /**
+ * Vue consolidée : tous les articles de tous les modules avec leur quantité restante
+ */
+async function stockOverviewHandler(req, res, next) {
+  try {
+    const rows = await stock.stockOverview();
+    return ok(res, rows);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Actions de la page Stock sur une ligne de la vue consolidée (clé BAR-x ou STK-x)
+async function stockItemDetailsHandler(req, res) {
+  return ok(res, await stock.stockItemDetails(req.params.cle));
+}
+
+async function updateStockItemHandler(req, res) {
+  const userId = req.user?.id_admin || req.user?.id || null;
+  return ok(res, await stock.updateStockItem(req.params.cle, req.body || {}, userId));
+}
+
+async function deleteStockItemHandler(req, res) {
+  const userId = req.user?.id_admin || req.user?.id || null;
+  return ok(res, await stock.deleteStockItem(req.params.cle, userId));
+}
+
+/**
  * Récupère l'état des stocks d'un produit spécifique
  */
 async function stockByProductHandler(req, res, next) {
@@ -542,6 +569,10 @@ module.exports = {
   movementHandler,
   createPurchaseHandler,
   lowStockHandler,
+  stockOverviewHandler,
+  stockItemDetailsHandler,
+  updateStockItemHandler,
+  deleteStockItemHandler,
   stockByProductHandler,
   getProductsWithStockHandler,
   createStockHandler,
