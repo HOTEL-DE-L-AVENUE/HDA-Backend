@@ -16,7 +16,11 @@ router.use('/units', managementRoles, createCrudRouter(ctrl.unitsCrud));
 router.use('/products', managementRoles, createCrudRouter(ctrl.productsCrud));
 router.use('/locations', createCrudRouter(ctrl.stockLocationsCrud)); // Read-only access to locations for all authenticated users
 
-router.get('/alerts/low-stock', ctrl.lowStockHandler);            // GET /api/stock/alerts/low-stock?threshold=
+router.get('/overview', managementRoles, ctrl.stockOverviewHandler);  // GET /api/stock/overview (tous modules)
+router.get('/overview/:cle', managementRoles, ctrl.stockItemDetailsHandler);     // détail + historique
+router.put('/overview/:cle', managementRoles, ctrl.updateStockItemHandler);      // quantité / seuil
+router.delete('/overview/:cle', managementRoles, ctrl.deleteStockItemHandler);
+router.get('/alerts/low-stock', ctrl.lowStockHandler);           // GET /api/stock/alerts/low-stock?threshold=
 router.get('/products/:id/stock', ctrl.stockByProductHandler);    // GET /api/stock/products/:id/stock
 router.get('/stocks/with-products', ctrl.getProductsWithStockHandler); // GET /api/stock/stocks/with-products?location_id=
 router.post('/products-with-stock', managementRoles, ctrl.createProductWithStockHandler);

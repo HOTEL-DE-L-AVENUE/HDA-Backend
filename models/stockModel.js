@@ -222,6 +222,169 @@ async function lowStock(threshold = 10) {
   return rows;
 }
 
+// Vue consolidée de tous les articles en stock : le bar garde son propre stock
+// (bar_products / bar_stock), les autres modules utilisent stocks par emplacement.
+async function stockOverview() {
+  const [rows] = await pool.query(
+    `SELECT CONCAT('BAR-', p.id) AS cle, 'BAR' AS module, 'Bar & Lounge' AS emplacement,
+            p.id AS product_id, p.nom, NULL AS code, p.categorie,
+            COALESCE(s.quantite, 0) AS quantite, COALESCE(s.seuil_minimum, 0) AS seuil_minimum,
+            COALESCE(s.unite, 'unités') AS unite, s.updated_at
+       FROM bar_products p
+       LEFT JOIN bar_stock s ON s.product_id = p.id
+     UNION ALL
+     SELECT CONCAT('STK-', s.id), UPPER(COALESCE(p.source_module, sl.nom)), sl.nom,
+            p.id, p.nom, p.code, c.nom,
+            s.quantite, s.seuil_minimum, p.unite, NULL
+       FROM stocks s
+       JOIN products p ON p.id = s.product_id
+       JOIN stock_locations sl ON sl.id = s.location_id
+       LEFT JOIN categories c ON c.id = p.category_id
+     ORDER BY emplacement, nom`
+  );
+  return rows.map((r) => ({ ...r, quantite: Number(r.quantite), seuil_minimum: Number(r.seuil_minimum) }));
+}
+
+// Clé d'une ligne de la vue consolidée : 'BAR-<bar_products.id>' ou 'STK-<stocks.id>'.
+function parseOverviewKey(cle) {
+  const match = /^(BAR|STK)-(\d+)$/.exec(String(cle || ''));
+  if (!match) throw ApiError.badRequest('Article de stock invalide');
+  return { kind: match[1], id: Number(match[2]) };
+}
+
+async function stockItemDetails(cle) {
+  const { kind, id } = parseOverviewKey(cle);
+  if (kind === 'BAR') {
+    const [[item]] = await pool.query(
+      `SELECT CONCAT('BAR-', p.id) AS cle, 'BAR' AS module, 'Bar & Lounge' AS emplacement, p.id AS product_id,
+              p.nom, NULL AS code, p.categorie, p.prix AS prix_vente, NULL AS prix_achat,
+              IF(p.alcool, 'Avec alcool', 'Sans alcool') AS type_produit,
+              COALESCE(s.quantite, 0) AS quantite, COALESCE(s.seuil_minimum, 0) AS seuil_minimum,
+              COALESCE(s.unite, 'unités') AS unite, s.updated_at
+         FROM bar_products p LEFT JOIN bar_stock s ON s.product_id = p.id
+        WHERE p.id = ?`,
+      [id]
+    );
+    if (!item) throw ApiError.notFound('Article introuvable');
+    // Le bar n'a pas de journal de mouvements : son historique est celui des ventes.
+    const [history] = await pool.query(
+      `SELECT bt.id, bt.created_at, 'SORTIE' AS type_mouvement, bt.quantite, NULL AS stock_after,
+              CONCAT('Vente – commande bar #', bt.order_id, IF(bt.statut IS NULL, '', CONCAT(' (', bt.statut, ')'))) AS motif,
+              NULL AS user_nom
+         FROM bar_transactions bt
+        WHERE bt.product_id = ?
+        ORDER BY bt.created_at DESC, bt.id DESC LIMIT 50`,
+      [id]
+    );
+    return { item, history };
+  }
+
+  const [[item]] = await pool.query(
+    `SELECT CONCAT('STK-', s.id) AS cle, UPPER(COALESCE(p.source_module, sl.nom)) AS module, sl.nom AS emplacement,
+            p.id AS product_id, p.nom, p.code, c.nom AS categorie, p.prix_vente, p.prix_achat, p.type_produit,
+            s.quantite, s.seuil_minimum, p.unite, s.location_id
+       FROM stocks s
+       JOIN products p ON p.id = s.product_id
+       JOIN stock_locations sl ON sl.id = s.location_id
+       LEFT JOIN categories c ON c.id = p.category_id
+      WHERE s.id = ?`,
+    [id]
+  );
+  if (!item) throw ApiError.notFound('Article introuvable');
+  const [history] = await pool.query(
+    `SELECT m.id, m.created_at, m.type_mouvement, m.quantite, m.stock_after,
+            COALESCE(m.motif, m.source_module) AS motif, TRIM(CONCAT(COALESCE(u.prenom, ''), ' ', COALESCE(u.nom, ''))) AS user_nom
+       FROM stock_movements m
+       LEFT JOIN users u ON u.id_admin = m.user_id
+      WHERE m.product_id = ? AND m.location_id = ?
+      ORDER BY m.created_at DESC, m.id DESC LIMIT 50`,
+    [item.product_id, item.location_id]
+  );
+  return { item, history };
+}
+
+async function updateStockItem(cle, { quantite, seuil_minimum, unite }, userId = null) {
+  const { kind, id } = parseOverviewKey(cle);
+  const qty = Number(quantite);
+  const threshold = Number(seuil_minimum);
+  if (!Number.isFinite(qty) || qty < 0 || !Number.isFinite(threshold) || threshold < 0) {
+    throw ApiError.badRequest('La quantité et le seuil doivent être des nombres positifs');
+  }
+
+  return withTransaction(async (conn) => {
+    if (kind === 'BAR') {
+      if (!Number.isInteger(qty) || !Number.isInteger(threshold)) {
+        throw ApiError.badRequest('Les quantités du bar doivent être des nombres entiers');
+      }
+      const [[product]] = await conn.query('SELECT id FROM bar_products WHERE id = ? FOR UPDATE', [id]);
+      if (!product) throw ApiError.notFound('Article introuvable');
+      await conn.query(
+        `INSERT INTO bar_stock (product_id, quantite, seuil_minimum, unite) VALUES (?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE quantite = VALUES(quantite), seuil_minimum = VALUES(seuil_minimum), unite = VALUES(unite)`,
+        [id, qty, threshold, String(unite || 'unités').trim() || 'unités']
+      );
+      return { cle };
+    }
+
+    const [[row]] = await conn.query('SELECT * FROM stocks WHERE id = ? FOR UPDATE', [id]);
+    if (!row) throw ApiError.notFound('Article introuvable');
+    if (Number(row.location_id) === HOTEL_LOCATION_ID && (!Number.isInteger(qty) || !Number.isInteger(threshold))) {
+      throw ApiError.badRequest('Les quantités du stock hôtel doivent être des nombres entiers');
+    }
+    // La correction de quantité passe par un mouvement pour garder la trace de l'écart.
+    const difference = qty - Number(row.quantite || 0);
+    if (difference !== 0) {
+      await recordMovement({
+        productId: row.product_id,
+        locationId: row.location_id,
+        type: difference > 0 ? 'ENTREE' : 'SORTIE',
+        quantite: Math.abs(difference),
+        sourceModule: 'STOCK_MANUEL',
+        motif: 'Modification depuis la page Stock',
+        userId,
+        conn,
+      });
+    }
+    await conn.query('UPDATE stocks SET seuil_minimum = ? WHERE id = ?', [threshold, id]);
+    return { cle };
+  });
+}
+
+async function deleteStockItem(cle, userId = null) {
+  const { kind, id } = parseOverviewKey(cle);
+  return withTransaction(async (conn) => {
+    if (kind === 'BAR') {
+      const [[product]] = await conn.query('SELECT id, nom FROM bar_products WHERE id = ? FOR UPDATE', [id]);
+      if (!product) throw ApiError.notFound('Article introuvable');
+      // Un produit déjà vendu reste en base pour ne pas fausser l'historique des ventes.
+      const [[sales]] = await conn.query('SELECT COUNT(*) AS total FROM bar_transactions WHERE product_id = ?', [id]);
+      if (Number(sales.total) > 0) {
+        throw ApiError.badRequest(`« ${product.nom} » a déjà été vendu : mettez sa quantité à 0 au lieu de le supprimer, pour conserver l'historique des ventes.`);
+      }
+      await conn.query('DELETE FROM bar_stock WHERE product_id = ?', [id]);
+      await conn.query('DELETE FROM bar_products WHERE id = ?', [id]);
+      return { cle };
+    }
+
+    const [[row]] = await conn.query('SELECT * FROM stocks WHERE id = ? FOR UPDATE', [id]);
+    if (!row) throw ApiError.notFound('Article introuvable');
+    if (Number(row.quantite) > 0) {
+      await recordMovement({
+        productId: row.product_id,
+        locationId: row.location_id,
+        type: 'SORTIE',
+        quantite: Number(row.quantite),
+        sourceModule: 'STOCK_MANUEL',
+        motif: 'Suppression depuis la page Stock',
+        userId,
+        conn,
+      });
+    }
+    await conn.query('DELETE FROM stocks WHERE id = ?', [id]);
+    return { cle };
+  });
+}
+
 async function stockByProduct(productId) {
   const [rows] = await pool.query(
     `SELECT s.*, sl.nom AS location_nom FROM stocks s
@@ -280,5 +443,5 @@ async function consumePortion({ productId, locationId, portionSize, portionUnit,
 module.exports = {
   Categories, Subcategories, ProductTypes, Units, Products, StockLocations, Stocks, StockMovements,
   Suppliers, Purchases, PurchaseItems,
-  recordMovement, createPurchaseWithItems, lowStock, stockByProduct, getProductsWithStock, consumePortion, getStockQuantity,
+  recordMovement, createPurchaseWithItems, lowStock, stockByProduct, stockOverview, stockItemDetails, updateStockItem, deleteStockItem, getProductsWithStock, consumePortion, getStockQuantity,
 };
