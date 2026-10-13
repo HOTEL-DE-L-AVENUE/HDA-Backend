@@ -227,36 +227,84 @@ async function lowStock(threshold = 10) {
 async function stockOverview() {
   const [rows] = await pool.query(
     `SELECT CONCAT('BAR-', p.id) AS cle, 'BAR' AS module, 'Bar & Lounge' AS emplacement,
-            p.id AS product_id, p.nom, NULL AS code, p.categorie,
+            p.id AS product_id, NULL AS ingredient_id, 'PRODUCT' AS item_type, NULL AS location_id,
+            p.nom, NULL AS code, p.categorie, NULL AS prix_achat,
             COALESCE(s.quantite, 0) AS quantite, COALESCE(s.seuil_minimum, 0) AS seuil_minimum,
             COALESCE(s.unite, 'unités') AS unite, s.updated_at
        FROM bar_products p
        LEFT JOIN bar_stock s ON s.product_id = p.id
      UNION ALL
      SELECT CONCAT('STK-', s.id), UPPER(COALESCE(p.source_module, sl.nom)), sl.nom,
-            p.id, p.nom, p.code, c.nom,
+            p.id, NULL, 'PRODUCT', s.location_id, p.nom, p.code, c.nom, p.prix_achat,
             s.quantite, s.seuil_minimum, p.unite, NULL
        FROM stocks s
        JOIN products p ON p.id = s.product_id
        JOIN stock_locations sl ON sl.id = s.location_id
        LEFT JOIN categories c ON c.id = p.category_id
+      WHERE NOT EXISTS (
+        SELECT 1 FROM restaurant_ingredients ri WHERE ri.legacy_product_id = p.id
+      )
+     UNION ALL
+     SELECT CONCAT('ING-', i.id, '-', s.location_id), 'RESTAURANT', sl.nom,
+            NULL, i.id, 'INGREDIENT', s.location_id, i.nom, NULL, 'Ingrédients de cuisine', i.prix_achat,
+            s.quantite, 5, i.unite, NULL
+       FROM restaurant_ingredient_stocks s
+       JOIN restaurant_ingredients i ON i.id = s.ingredient_id
+       JOIN stock_locations sl ON sl.id = s.location_id
+      WHERE i.actif = 1
      ORDER BY emplacement, nom`
   );
   return rows.map((r) => ({ ...r, quantite: Number(r.quantite), seuil_minimum: Number(r.seuil_minimum) }));
 }
 
-// Clé d'une ligne de la vue consolidée : 'BAR-<bar_products.id>' ou 'STK-<stocks.id>'.
+// Clés : 'BAR-<id>', 'STK-<id>' ou 'ING-<ingredient_id>-<location_id>'.
 function parseOverviewKey(cle) {
+  const ingredientMatch = /^ING-(\d+)-(\d+)$/.exec(String(cle || ''));
+  if (ingredientMatch) {
+    return {
+      kind: 'ING',
+      id: Number(ingredientMatch[1]),
+      locationId: Number(ingredientMatch[2]),
+    };
+  }
   const match = /^(BAR|STK)-(\d+)$/.exec(String(cle || ''));
   if (!match) throw ApiError.badRequest('Article de stock invalide');
   return { kind: match[1], id: Number(match[2]) };
 }
 
 async function stockItemDetails(cle) {
-  const { kind, id } = parseOverviewKey(cle);
+  const { kind, id, locationId } = parseOverviewKey(cle);
+  if (kind === 'ING') {
+    const [[item]] = await pool.query(
+      `SELECT CONCAT('ING-', i.id, '-', s.location_id) AS cle,
+              'RESTAURANT' AS module, sl.nom AS emplacement,
+              NULL AS product_id, i.id AS ingredient_id, 'INGREDIENT' AS item_type,
+              s.location_id, i.nom, NULL AS code, 'Ingrédients de cuisine' AS categorie,
+              NULL AS prix_vente, i.prix_achat, NULL AS type_produit,
+              s.quantite, 5 AS seuil_minimum, i.unite, NULL AS updated_at
+         FROM restaurant_ingredient_stocks s
+         JOIN restaurant_ingredients i ON i.id = s.ingredient_id
+         JOIN stock_locations sl ON sl.id = s.location_id
+        WHERE i.id = ? AND s.location_id = ? AND i.actif = 1`,
+      [id, locationId]
+    );
+    if (!item) throw ApiError.notFound('Ingrédient introuvable');
+    const [history] = await pool.query(
+      `SELECT m.id, m.created_at, m.type_mouvement, m.quantite, m.stock_after,
+              COALESCE(m.motif, m.source_module) AS motif,
+              TRIM(CONCAT(COALESCE(u.prenom, ''), ' ', COALESCE(u.nom, ''))) AS user_nom
+         FROM restaurant_ingredient_stock_movements m
+         LEFT JOIN users u ON u.id_admin = m.user_id
+        WHERE m.ingredient_id = ? AND m.location_id = ?
+        ORDER BY m.created_at DESC, m.id DESC LIMIT 50`,
+      [id, item.location_id]
+    );
+    return { item, history };
+  }
   if (kind === 'BAR') {
     const [[item]] = await pool.query(
-      `SELECT CONCAT('BAR-', p.id) AS cle, 'BAR' AS module, 'Bar & Lounge' AS emplacement, p.id AS product_id,
+      `SELECT CONCAT('BAR-', p.id) AS cle, 'BAR' AS module, 'Bar & Lounge' AS emplacement,
+              p.id AS product_id, NULL AS ingredient_id, 'PRODUCT' AS item_type, NULL AS location_id,
               p.nom, NULL AS code, p.categorie, p.prix AS prix_vente, NULL AS prix_achat,
               IF(p.alcool, 'Avec alcool', 'Sans alcool') AS type_produit,
               COALESCE(s.quantite, 0) AS quantite, COALESCE(s.seuil_minimum, 0) AS seuil_minimum,
@@ -281,7 +329,8 @@ async function stockItemDetails(cle) {
 
   const [[item]] = await pool.query(
     `SELECT CONCAT('STK-', s.id) AS cle, UPPER(COALESCE(p.source_module, sl.nom)) AS module, sl.nom AS emplacement,
-            p.id AS product_id, p.nom, p.code, c.nom AS categorie, p.prix_vente, p.prix_achat, p.type_produit,
+            p.id AS product_id, NULL AS ingredient_id, 'PRODUCT' AS item_type,
+            p.nom, p.code, c.nom AS categorie, p.prix_vente, p.prix_achat, p.type_produit,
             s.quantite, s.seuil_minimum, p.unite, s.location_id
        FROM stocks s
        JOIN products p ON p.id = s.product_id
