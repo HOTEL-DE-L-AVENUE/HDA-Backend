@@ -165,16 +165,17 @@ async function ensureRestaurantSchema() {
              JOIN stock_movements m ON m.product_id = i.legacy_product_id
             WHERE i.legacy_product_id IS NOT NULL`
         );
+        // La clé vers `products` doit tomber avant la réécriture des ids, sinon
+        // les nouveaux ids restaurant_ingredients sont refusés par l'ancienne FK.
+        for (const key of recipeForeignKeys) {
+          const constraintName = String(key.CONSTRAINT_NAME).replace(/`/g, '``');
+          await pool.query(`ALTER TABLE recipe_items DROP FOREIGN KEY \`${constraintName}\``);
+        }
         await pool.query(
           `UPDATE recipe_items ri
            JOIN restaurant_ingredients i ON i.legacy_product_id = ri.ingredient_id
               SET ri.ingredient_id = i.id`
         );
-
-        for (const key of recipeForeignKeys) {
-          const constraintName = String(key.CONSTRAINT_NAME).replace(/`/g, '``');
-          await pool.query(`ALTER TABLE recipe_items DROP FOREIGN KEY \`${constraintName}\``);
-        }
         await pool.query(
           `ALTER TABLE recipe_items
            ADD CONSTRAINT fk_recipe_items_restaurant_ingredient
