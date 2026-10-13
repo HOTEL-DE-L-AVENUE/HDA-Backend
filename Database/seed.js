@@ -6,11 +6,8 @@ const SeedUnit = require('./seedUnit');
 const SeedProductType = require('./seedProductType');
 const SeedProducts = require('./seedProducts');
 const SeedQuintanaSkyDrinks = require('./seedQuintanaSkyDrinks');
-const SeedQuintanaSkyProducts = require('./Seedquintanaskyproducts');
 const SeedBillardExtras = require('./seedBillardExtras');
 const SeedBottleExtras = require('./seedBottleExtras');
-const SeedRestaurantIngredients = require('./seedRestaurantIngredients');
-const SeedRestaurantStockArticles = require('./seedRestaurantStockArticles');
 
 /**
  * Script principal pour exécuter tous les seeders
@@ -47,23 +44,11 @@ async function runAllSeeders() {
     const seedBarProducts = new SeedQuintanaSkyDrinks();
     await seedBarProducts.run();
 
-    // 8. Seeder des produits Quintana Sky (Restaurant)
-    const seedRestaurantProducts = new SeedQuintanaSkyProducts();
-    await seedRestaurantProducts.run();
-
-    // 9. Seeder des extras Billard
+    // 8. Seeder des extras Billard
     await SeedBillardExtras();
 
-    // 10. Seeder des extras Bouteille
+    // 9. Seeder des extras Bouteille
     await SeedBottleExtras();
-
-    // 11. Seeder des ingrédients du restaurant
-    const seedIngredients = new SeedRestaurantIngredients();
-    await seedIngredients.run();
-
-    // 12. Articles du stock cuisine (fiches de stock) + rattachement des recettes
-    const seedStockArticles = new SeedRestaurantStockArticles();
-    await seedStockArticles.run();
 
     console.log('\n🎉 Tous les seeders ont été exécutés avec succès !');
 
