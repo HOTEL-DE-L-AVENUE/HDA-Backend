@@ -8,6 +8,7 @@ const SeedProducts = require('./seedProducts');
 const SeedQuintanaSkyDrinks = require('./seedQuintanaSkyDrinks');
 const SeedBillardExtras = require('./seedBillardExtras');
 const SeedBottleExtras = require('./seedBottleExtras');
+const SeedRestaurantPizzas = require('./seedRestaurantPizzas');
 
 /**
  * Script principal pour exécuter tous les seeders
@@ -49,6 +50,10 @@ async function runAllSeeders() {
 
     // 9. Seeder des extras Bouteille
     await SeedBottleExtras();
+
+    // 10. Seeder du menu Restaurant (pizzas + ingrédients + recettes)
+    const seedRestaurantPizzas = new SeedRestaurantPizzas();
+    await seedRestaurantPizzas.run();
 
     console.log('\n🎉 Tous les seeders ont été exécutés avec succès !');
 
