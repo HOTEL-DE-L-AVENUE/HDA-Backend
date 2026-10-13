@@ -19,6 +19,7 @@ router.delete('/stock', ctrl.removeRestaurantStockHandler);
 router.use('/stock/locations', createCrudRouter(stockCtrl.stockLocationsCrud));
 router.get('/ingredients', ctrl.restaurantIngredientsHandler);
 router.post('/ingredients', ctrl.createRestaurantIngredientHandler);
+router.put('/ingredients/:id', ctrl.updateRestaurantIngredientHandler);
 router.get('/recipes', ctrl.listRestaurantRecipesHandler);
 router.get('/products/next-code', ctrl.productsCrud.nextCode);
 router.get('/products/:id/recipe', ctrl.getRestaurantProductRecipeHandler);
