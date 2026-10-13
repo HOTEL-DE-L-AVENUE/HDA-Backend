@@ -8,7 +8,6 @@ const { requireAuth, requireRole } = require('../middlewares/auth');
 const router = express.Router();
 router.get('/reports/:date', requireAuth, ctrl.getRestaurantReportHandler);
 router.post('/reports', requireAuth, requireRole('admin', 'manager', 'caisse', 'caissier'), ctrl.saveRestaurantReportHandler);
-router.delete('/orders/:id', requireAuth, requireRole('admin'), ctrl.ordersCrud.remove);
 router.get('/product-history', requireAuth, requireRole('admin'), ctrl.getProductHistoryHandler);
 // Stock restaurant - same data as stock module, with labels needed for the interface.
 router.get('/stock', ctrl.restaurantStockHandler);
@@ -18,7 +17,12 @@ router.post('/stock/consume-portion', ctrl.consumeRestaurantPortionHandler);
 // DELETE /api/restaurant/stock?id=... or ?product_id=...&location_id=...
 router.delete('/stock', ctrl.removeRestaurantStockHandler);
 router.use('/stock/locations', createCrudRouter(stockCtrl.stockLocationsCrud));
+router.get('/ingredients', ctrl.restaurantIngredientsHandler);
+router.post('/ingredients', ctrl.createRestaurantIngredientHandler);
+router.get('/recipes', ctrl.listRestaurantRecipesHandler);
 router.get('/products/next-code', ctrl.productsCrud.nextCode);
+router.get('/products/:id/recipe', ctrl.getRestaurantProductRecipeHandler);
+router.put('/products/:id/recipe', ctrl.saveRestaurantProductRecipeHandler);
 router.use('/products', createCrudRouter(ctrl.productsCrud));
 router.use('/units', createCrudRouter(stockCtrl.unitsCrud));
 router.use('/product-types', createCrudRouter(stockCtrl.productTypesCrud));
@@ -45,6 +49,7 @@ router.get('/orders/:id/invoice.pdf', ctrl.orderInvoicePdfHandler);
 router.get('/orders/:id/detail', ctrl.orderDetailHandler);
 router.put('/orders/:id', ctrl.updateOrderHandler);
 router.put('/orders/:id/status', ctrl.updateOrderStatusHandler);
+router.delete('/orders/:id', ctrl.removeOrderHandler);
 router.use('/orders', createCrudRouter(ctrl.ordersCrud));
 router.use('/order-items', createCrudRouter(ctrl.orderItemsCrud));
 
