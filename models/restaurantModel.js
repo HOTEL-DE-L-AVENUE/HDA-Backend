@@ -2,6 +2,7 @@
 const { pool, withTransaction } = require('../config/db');
 const { createCrudModel } = require('./crudFactory');
 const stockModel = require('./stockModel');
+const { convertQuantity } = require('../utils/unitConversion');
 
 let restaurantSchemaReady;
 
@@ -61,6 +62,131 @@ async function ensureRestaurantSchema() {
       if (!orderItemColumns.some((column) => column.Field === 'cuisson')) {
         await pool.query('ALTER TABLE order_items ADD COLUMN cuisson VARCHAR(50) NULL AFTER prix_unitaire');
       }
+
+      const [recipeItemColumns] = await pool.query('SHOW COLUMNS FROM recipe_items');
+      if (!recipeItemColumns.some((column) => column.Field === 'unite')) {
+        await pool.query('ALTER TABLE recipe_items ADD COLUMN unite VARCHAR(50) NULL AFTER quantite');
+      }
+
+      await pool.query(
+        `CREATE TABLE IF NOT EXISTS restaurant_ingredients (
+          id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+          nom VARCHAR(150) NOT NULL,
+          unite VARCHAR(50) NOT NULL,
+          prix_achat DECIMAL(15,2) NOT NULL DEFAULT 0,
+          actif TINYINT(1) NOT NULL DEFAULT 1,
+          legacy_product_id BIGINT UNSIGNED NULL,
+          created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (id),
+          UNIQUE KEY uq_restaurant_ingredients_legacy_product (legacy_product_id),
+          KEY idx_restaurant_ingredients_nom (nom)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`
+      );
+      await pool.query(
+        `CREATE TABLE IF NOT EXISTS restaurant_ingredient_stocks (
+          id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+          ingredient_id BIGINT UNSIGNED NOT NULL,
+          location_id BIGINT UNSIGNED NOT NULL,
+          quantite DECIMAL(15,3) NOT NULL DEFAULT 0,
+          PRIMARY KEY (id),
+          UNIQUE KEY uq_restaurant_ingredient_stock_location (ingredient_id, location_id),
+          CONSTRAINT fk_restaurant_ingredient_stock_ingredient
+            FOREIGN KEY (ingredient_id) REFERENCES restaurant_ingredients (id),
+          CONSTRAINT fk_restaurant_ingredient_stock_location
+            FOREIGN KEY (location_id) REFERENCES stock_locations (id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`
+      );
+      await pool.query(
+        `CREATE TABLE IF NOT EXISTS restaurant_ingredient_stock_movements (
+          id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+          ingredient_id BIGINT UNSIGNED NOT NULL,
+          location_id BIGINT UNSIGNED NOT NULL,
+          type_mouvement VARCHAR(20) NOT NULL,
+          quantite DECIMAL(15,3) NOT NULL,
+          source_module VARCHAR(50) NULL,
+          reference_id BIGINT UNSIGNED NULL,
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          stock_after DECIMAL(15,3) NULL,
+          motif VARCHAR(255) NULL,
+          user_id BIGINT UNSIGNED NULL,
+          legacy_movement_id BIGINT UNSIGNED NULL,
+          PRIMARY KEY (id),
+          UNIQUE KEY uq_restaurant_ingredient_legacy_movement (legacy_movement_id),
+          KEY idx_restaurant_ingredient_movement_date (ingredient_id, created_at),
+          CONSTRAINT fk_restaurant_ingredient_movement_ingredient
+            FOREIGN KEY (ingredient_id) REFERENCES restaurant_ingredients (id),
+          CONSTRAINT fk_restaurant_ingredient_movement_location
+            FOREIGN KEY (location_id) REFERENCES stock_locations (id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`
+      );
+
+      const [recipeForeignKeys] = await pool.query(
+        `SELECT CONSTRAINT_NAME, REFERENCED_TABLE_NAME
+           FROM information_schema.KEY_COLUMN_USAGE
+          WHERE TABLE_SCHEMA = DATABASE()
+            AND TABLE_NAME = 'recipe_items'
+            AND COLUMN_NAME = 'ingredient_id'
+            AND REFERENCED_TABLE_NAME IS NOT NULL`
+      );
+      const recipesUseDedicatedIngredients = recipeForeignKeys.some(
+        (key) => key.REFERENCED_TABLE_NAME === 'restaurant_ingredients'
+      );
+
+      if (!recipesUseDedicatedIngredients) {
+        await pool.query(
+          `INSERT IGNORE INTO restaurant_ingredients (nom, unite, prix_achat, actif, legacy_product_id)
+           SELECT p.nom, COALESCE(NULLIF(p.unite, ''), 'PIECE'), COALESCE(p.prix_achat, 0), p.actif, p.id
+             FROM products p
+            WHERE p.type_produit = 'MATIERE_PREMIERE'
+              AND (p.source_module = 'RESTAURANT'
+                   OR EXISTS (SELECT 1 FROM recipe_items ri WHERE ri.ingredient_id = p.id))`
+        );
+        await pool.query(
+          `INSERT IGNORE INTO restaurant_ingredient_stocks (ingredient_id, location_id, quantite)
+           SELECT i.id, s.location_id, s.quantite
+             FROM restaurant_ingredients i
+             JOIN stocks s ON s.product_id = i.legacy_product_id
+            WHERE i.legacy_product_id IS NOT NULL`
+        );
+        await pool.query(
+          `INSERT IGNORE INTO restaurant_ingredient_stocks (ingredient_id, location_id, quantite)
+           SELECT DISTINCT i.id, 2, 0
+             FROM restaurant_ingredients i
+             JOIN recipe_items ri ON ri.ingredient_id = i.legacy_product_id
+            WHERE i.legacy_product_id IS NOT NULL`
+        );
+        await pool.query(
+          `INSERT IGNORE INTO restaurant_ingredient_stock_movements
+             (ingredient_id, location_id, type_mouvement, quantite, source_module,
+              reference_id, created_at, stock_after, motif, user_id, legacy_movement_id)
+           SELECT i.id, m.location_id, m.type_mouvement, m.quantite, m.source_module,
+                  m.reference_id, m.created_at, m.stock_after, m.motif, m.user_id, m.id
+             FROM restaurant_ingredients i
+             JOIN stock_movements m ON m.product_id = i.legacy_product_id
+            WHERE i.legacy_product_id IS NOT NULL`
+        );
+        await pool.query(
+          `UPDATE recipe_items ri
+           JOIN restaurant_ingredients i ON i.legacy_product_id = ri.ingredient_id
+              SET ri.ingredient_id = i.id`
+        );
+
+        for (const key of recipeForeignKeys) {
+          const constraintName = String(key.CONSTRAINT_NAME).replace(/`/g, '``');
+          await pool.query(`ALTER TABLE recipe_items DROP FOREIGN KEY \`${constraintName}\``);
+        }
+        await pool.query(
+          `ALTER TABLE recipe_items
+           ADD CONSTRAINT fk_recipe_items_restaurant_ingredient
+           FOREIGN KEY (ingredient_id) REFERENCES restaurant_ingredients (id)`
+        );
+      }
+
+      await pool.query(
+        `UPDATE products p
+         JOIN restaurant_ingredients i ON i.legacy_product_id = p.id
+            SET p.actif = 0`
+      );
     })().catch((error) => {
       restaurantSchemaReady = undefined;
       throw error;
@@ -112,37 +238,105 @@ const OrderItems = createCrudModel({
 });
 
 // --- Stock des ingrédients ---------------------------------------------------
-// Chaque plat du menu a une recette (recipes / recipe_items, voir
-// Database/seedRestaurantIngredients.js). Une commande sort du stock du restaurant
-// les ingrédients de ses plats ; un produit sans recette mais stocké au restaurant
-// (boisson, dessert prêt…) sort lui-même du stock.
+// Une commande sort du stock du restaurant pour les plats suivis en stock et
+// pour chacun des ingrédients de leur recette.
 const RESTAURANT_LOCATION_ID = 2;
 
-// Quantités d'ingrédients par product_id pour une liste de lignes de commande.
+// Quantités à déduire par product_id pour une liste de lignes de commande.
 async function ingredientNeeds(conn, items) {
   const needs = new Map();
-  const add = (productId, qty) => needs.set(productId, (needs.get(productId) || 0) + qty);
+  const addProduct = (productId, qty) => {
+    const key = `product:${productId}`;
+    needs.set(key, (needs.get(key) || 0) + qty);
+  };
   for (const item of items) {
     const productId = Number(item.product_id);
     const quantity = Number(item.quantite);
     if (!productId || !(quantity > 0)) continue;
+    const [[productStock]] = await conn.query(
+      `SELECT p.type_produit, p.source_module, s.id AS stock_id
+         FROM products p
+         LEFT JOIN stocks s ON s.product_id = p.id AND s.location_id = ?
+        WHERE p.id = ?
+        LIMIT 1`,
+      [RESTAURANT_LOCATION_ID, productId]
+    );
+    if (
+      productStock?.stock_id
+      || (productStock?.source_module === 'RESTAURANT' && productStock?.type_produit === 'PRODUIT_FINI')
+    ) {
+      addProduct(productId, quantity);
+    }
+
     const [recipeItems] = await conn.query(
-      `SELECT ri.ingredient_id, ri.quantite
-         FROM recipes r JOIN recipe_items ri ON ri.recipe_id = r.id
+      `SELECT ri.ingredient_id, ri.quantite, ri.unite AS recipe_unite, i.unite AS stock_unite
+         FROM recipes r
+         JOIN recipe_items ri ON ri.recipe_id = r.id
+         JOIN restaurant_ingredients i ON i.id = ri.ingredient_id
         WHERE r.product_id = ?`,
       [productId]
     );
     if (recipeItems.length) {
-      recipeItems.forEach((ri) => add(Number(ri.ingredient_id), Number(ri.quantite) * quantity));
-      continue;
+      recipeItems.forEach((ri) => {
+        const recipeQuantity = Number(ri.quantite);
+        const stockQuantity = convertQuantity(recipeQuantity, ri.recipe_unite || ri.stock_unite, ri.stock_unite);
+        const ingredientId = Number(ri.ingredient_id);
+        const key = `ingredient:${ingredientId}`;
+        needs.set(key, (needs.get(key) || 0) + (stockQuantity ?? recipeQuantity) * quantity);
+      });
     }
-    const [[stocked]] = await conn.query(
-      'SELECT id FROM stocks WHERE product_id = ? AND location_id = ? LIMIT 1',
-      [productId, RESTAURANT_LOCATION_ID]
-    );
-    if (stocked) add(productId, quantity);
   }
   return needs;
+}
+
+async function recordRestaurantIngredientMovement(conn, {
+  ingredientId,
+  locationId,
+  type,
+  quantite,
+  sourceModule,
+  referenceId,
+  motif,
+  userId,
+}) {
+  const signedQuantity = type === 'SORTIE' ? -Math.abs(Number(quantite)) : Math.abs(Number(quantite));
+  const [[stock]] = await conn.query(
+    `SELECT id, quantite
+       FROM restaurant_ingredient_stocks
+      WHERE ingredient_id = ? AND location_id = ?
+      FOR UPDATE`,
+    [ingredientId, locationId]
+  );
+  const newQuantity = Number(stock?.quantite || 0) + signedQuantity;
+  if (stock) {
+    await conn.query(
+      'UPDATE restaurant_ingredient_stocks SET quantite = ? WHERE id = ?',
+      [newQuantity, stock.id]
+    );
+  } else {
+    await conn.query(
+      'INSERT INTO restaurant_ingredient_stocks (ingredient_id, location_id, quantite) VALUES (?, ?, ?)',
+      [ingredientId, locationId, newQuantity]
+    );
+  }
+  await conn.query(
+    `INSERT INTO restaurant_ingredient_stock_movements
+       (ingredient_id, location_id, type_mouvement, quantite, source_module,
+        reference_id, created_at, stock_after, motif, user_id)
+     VALUES (?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?)`,
+    [
+      ingredientId,
+      locationId,
+      type,
+      Math.abs(Number(quantite)),
+      sourceModule || 'RESTAURANT',
+      referenceId || null,
+      newQuantity,
+      motif || null,
+      userId || null,
+    ]
+  );
+  return newQuantity;
 }
 
 // Fait passer le stock de l'état « lignes `fromItems` déduites » à « lignes `toItems` déduites ».
@@ -151,20 +345,32 @@ async function ingredientNeeds(conn, items) {
 async function syncOrderIngredients(conn, { orderId, fromItems, toItems, motif }) {
   const before = await ingredientNeeds(conn, fromItems);
   const after = await ingredientNeeds(conn, toItems);
-  for (const productId of new Set([...before.keys(), ...after.keys()])) {
-    const delta = Math.round(((after.get(productId) || 0) - (before.get(productId) || 0)) * 1000) / 1000;
+  for (const itemKey of new Set([...before.keys(), ...after.keys()])) {
+    const delta = Math.round(((after.get(itemKey) || 0) - (before.get(itemKey) || 0)) * 1000) / 1000;
     if (delta === 0) continue;
-    await stockModel.recordMovement({
-      productId,
+    const isIngredient = itemKey.startsWith('ingredient:');
+    const id = Number(itemKey.slice(itemKey.indexOf(':') + 1));
+    const movement = {
       locationId: RESTAURANT_LOCATION_ID,
       type: delta > 0 ? 'SORTIE' : 'ENTREE',
       quantite: Math.abs(delta),
       sourceModule: 'RESTAURANT',
       referenceId: orderId,
       motif: delta > 0 ? motif : `${motif} (retour en stock)`,
-      allowNegative: true,
-      conn,
-    });
+    };
+    if (isIngredient) {
+      await recordRestaurantIngredientMovement(conn, {
+        ...movement,
+        ingredientId: id,
+      });
+    } else {
+      await stockModel.recordMovement({
+        ...movement,
+        productId: id,
+        allowNegative: true,
+        conn,
+      });
+    }
   }
 }
 
@@ -397,11 +603,10 @@ async function ordersByTable(statutFilter = 'EN_COURS') {
   return rows;
 }
 
-// Recipe helpers removed
-
 module.exports = {
   TablesRestaurant, Orders, OrderItems,
   RestaurantCashiers, RestaurantSessions,
-  createOrderWithItems, updateOrderWithItems, orderWithItems, ordersByTable, ensureRestaurantSchema,
+  createOrderWithItems, updateOrderWithItems, orderWithItems, ordersByTable, ensureRestaurantSchema, ingredientNeeds,
+  recordRestaurantIngredientMovement,
   closeAllRestaurantOrders, updateOrderStatus,
 };
