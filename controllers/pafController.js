@@ -52,6 +52,10 @@ async function closuresHandler(req, res) {
   return ok(res, await paf.listClosures());
 }
 
+async function clearHistoryHandler(req, res) {
+  return ok(res, await paf.clearHistory());
+}
+
 async function closureHandler(req, res) {
   const closure = await paf.getClosure(req.params.id);
   if (!closure) throw ApiError.notFound('Clôture PAF introuvable');
@@ -68,6 +72,7 @@ module.exports = {
   updateHandler,
   deleteHandler,
   closuresHandler,
+  clearHistoryHandler,
   closureHandler,
   closeHandler,
 };

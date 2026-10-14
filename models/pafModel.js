@@ -181,6 +181,14 @@ async function listClosures() {
   return rows.map((row) => mapClosure(row));
 }
 
+async function clearHistory() {
+  return withTransaction(async (connection) => {
+    await connection.query('DELETE FROM paf_operations WHERE cloture_id IS NOT NULL');
+    const [result] = await connection.query('DELETE FROM paf_clotures');
+    return { deleted: result.affectedRows };
+  });
+}
+
 async function getClosure(id) {
   const [[closure]] = await pool.query('SELECT * FROM paf_clotures WHERE id = ?', [id]);
   if (!closure) return null;
@@ -254,6 +262,7 @@ module.exports = {
   updateOperation,
   deleteOperation,
   listClosures,
+  clearHistory,
   getClosure,
   closeCurrentSession,
 };
