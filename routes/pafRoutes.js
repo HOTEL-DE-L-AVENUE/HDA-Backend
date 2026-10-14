@@ -10,6 +10,7 @@ router.get('/current', ctrl.currentHandler);
 router.get('/closures', requireRole('admin'), ctrl.closuresHandler);
 router.get('/closures/:id', requireRole('admin'), ctrl.closureHandler);
 router.get('/history', requireRole('admin'), ctrl.closuresHandler);
+router.delete('/history', requireRole('admin'), ctrl.clearHistoryHandler);
 router.post('/operations', cashierRoles, ctrl.createHandler);
 router.put('/operations/:id', cashierRoles, ctrl.updateHandler);
 router.delete('/operations/:id', cashierRoles, ctrl.deleteHandler);
