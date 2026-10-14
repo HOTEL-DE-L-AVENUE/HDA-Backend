@@ -10,6 +10,10 @@ const PDFDocument = require('pdfkit');
 const { getRestaurantReport, saveRestaurantReport } = require('../models/restaurantReport.model');
 const { getProductHistory } = require('../models/restaurantProductHistory.model');
 const { nextRestaurantProductCode: formatNextRestaurantProductCode } = require('../utils/restaurantProductCode');
+const {
+  getRestaurantHistoryDateRange,
+  buildRestaurantHistoryResponse,
+} = require('../utils/restaurantOrderHistory');
 
 // Simple HTML escaper for values interpolated into the invoice template
 function escapeHtml(input) {
@@ -1034,23 +1038,47 @@ async function removeOrderHandler(req, res) {
 }
 
 async function historyTotalHandler(req, res) {
-  const { dateFrom, dateTo } = req.query;
-  let whereSql = "WHERE source_module = 'RESTAURANT'";
+  await resto.ensureRestaurantSchema();
+  const { dateFrom, dateTo } = getRestaurantHistoryDateRange(req.query);
+  const conditions = ["o.source_module = 'RESTAURANT'"];
   const params = [];
   if (dateFrom) {
-    whereSql += ' AND created_at >= ?';
-    params.push(dateFrom);
+    conditions.push('COALESCE(p.date_paiement, o.created_at) >= ?');
+    params.push(`${dateFrom} 00:00:00`);
   }
   if (dateTo) {
-    whereSql += ' AND created_at <= ?';
+    conditions.push('COALESCE(p.date_paiement, o.created_at) < DATE_ADD(?, INTERVAL 1 DAY)');
     params.push(dateTo);
   }
-  const [[row]] = await pool.query(
-    `SELECT COUNT(*) AS total_orders, SUM(montant_total) AS total_amount
-       FROM orders ${whereSql}`,
+
+  const [payments] = await pool.query(
+    `SELECT p.id AS payment_id, p.order_id,
+            COALESCE(p.date_paiement, o.created_at) AS date_paiement,
+            p.montant, p.moyen_paiement, t.numero AS table_numero
+       FROM payments p
+       JOIN orders o ON o.id = p.order_id
+       LEFT JOIN tables_restaurant t ON t.id = o.table_id
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY COALESCE(p.date_paiement, o.created_at) DESC, p.id DESC`,
     params
   );
-  return ok(res, row);
+  let items = [];
+  if (payments.length > 0) {
+    const orderIds = [...new Set(payments.map((payment) => Number(payment.order_id)))];
+    const placeholders = orderIds.map(() => '?').join(', ');
+    [items] = await pool.query(
+      `SELECT oi.id, oi.order_id, oi.quantite, oi.prix_unitaire,
+              p.nom AS product_nom, c.nom AS category_nom
+         FROM order_items oi
+         LEFT JOIN products p ON p.id = oi.product_id
+         LEFT JOIN categories c ON c.id = p.category_id
+        WHERE oi.order_id IN (${placeholders})
+        ORDER BY oi.order_id, oi.id`,
+      orderIds
+    );
+  }
+
+  return ok(res, buildRestaurantHistoryResponse(payments, items));
 }
 
 async function openCashierHandler(req, res) {
