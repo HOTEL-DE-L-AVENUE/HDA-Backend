@@ -57,7 +57,10 @@ const normalizeRestaurantProductName = (value) => String(value || '')
   .replace(/[^a-z0-9]+/g, ' ')
   .trim();
 
-async function saveRestaurantProductRecipe(conn, productId, productName, recipeIngredients) {
+async function saveRestaurantProductRecipe(conn, productId, productName, recipeIngredients, {
+  consumeIngredients = false,
+  userId = null,
+} = {}) {
   const ingredients = [];
   const seenIds = new Set();
 
@@ -74,7 +77,7 @@ async function saveRestaurantProductRecipe(conn, productId, productName, recipeI
     if (seenIds.has(ingredientId)) throw ApiError.badRequest('Un ingrédient ne peut apparaître qu\'une seule fois');
 
     const [[ingredient]] = await conn.query(
-      'SELECT id, unite FROM restaurant_ingredients WHERE id = ? AND actif = 1',
+      'SELECT id, nom, unite FROM restaurant_ingredients WHERE id = ? AND actif = 1',
       [ingredientId]
     );
     if (!ingredient) throw ApiError.badRequest(`Ingrédient #${ingredientId} introuvable ou inactif`);
@@ -87,7 +90,13 @@ async function saveRestaurantProductRecipe(conn, productId, productName, recipeI
     }
 
     seenIds.add(ingredientId);
-    ingredients.push({ ingredientId, quantity, unit: recipeUnit });
+    ingredients.push({
+      ingredientId,
+      quantity,
+      unit: recipeUnit,
+      stockUnit,
+      name: ingredient.nom,
+    });
   }
 
   const [[productStock]] = await conn.query(
@@ -132,6 +141,15 @@ async function saveRestaurantProductRecipe(conn, productId, productName, recipeI
         [ingredient.ingredientId]
       );
     }
+  }
+
+  if (consumeIngredients && ingredients.length > 0) {
+    await resto.consumeRestaurantRecipeIngredients(conn, {
+      ingredients,
+      productId,
+      productName,
+      userId,
+    });
   }
 }
 
@@ -236,7 +254,10 @@ const productsCrud = {
         );
       }
       if (Array.isArray(req.body?.ingredients)) {
-        await saveRestaurantProductRecipe(conn, productId, productName, req.body.ingredients);
+        await saveRestaurantProductRecipe(conn, productId, productName, req.body.ingredients, {
+          consumeIngredients: true,
+          userId: req.user?.id_admin ?? null,
+        });
       }
       const [[createdProduct]] = await conn.query('SELECT * FROM products WHERE id = ?', [productId]);
       return createdProduct;
@@ -874,7 +895,8 @@ async function updateOrderStatusHandler(req, res) {
   if (!statut || !['EN_ATTENTE', 'EN_COURS', 'PRETE', 'SERVIE', 'PAYEE', 'ANNULEE'].includes(statut)) {
     throw ApiError.badRequest('statut invalide');
   }
-  
+
+  await resto.ensureRestaurantSchema();
   await withTransaction(async (conn) => {
     const [[order]] = await conn.query(
       'SELECT * FROM orders WHERE id = ? AND source_module = "RESTAURANT" LIMIT 1 FOR UPDATE',
@@ -893,8 +915,12 @@ async function updateOrderStatusHandler(req, res) {
         fromItems: orderItems,
         toItems: [],
         motif: `Annulation commande restaurant #${req.params.id}`,
+        includeRecipeIngredients: Boolean(order.order_ingredients_deducted),
       });
-      await conn.query('UPDATE orders SET stock_deducted_at = NULL WHERE id = ?', [req.params.id]);
+      await conn.query(
+        'UPDATE orders SET stock_deducted_at = NULL, order_ingredients_deducted = 0 WHERE id = ?',
+        [req.params.id]
+      );
     }
     
     await conn.query(
@@ -907,31 +933,8 @@ async function updateOrderStatusHandler(req, res) {
 }
 
 async function removeOrderHandler(req, res) {
-  await withTransaction(async (conn) => {
-    const [[order]] = await conn.query(
-      'SELECT * FROM orders WHERE id = ? AND source_module = "RESTAURANT" LIMIT 1 FOR UPDATE',
-      [req.params.id]
-    );
-    if (!order) throw ApiError.notFound('Commande introuvable');
-    
-    // Si la commande a du stock déduit, rétablir le stock avant suppression
-    if (order.stock_deducted_at) {
-      const [orderItems] = await conn.query(
-        'SELECT product_id, quantite FROM order_items WHERE order_id = ?',
-        [req.params.id]
-      );
-      await resto.syncOrderIngredients(conn, {
-        orderId: Number(req.params.id),
-        fromItems: orderItems,
-        toItems: [],
-        motif: `Suppression commande restaurant #${req.params.id}`,
-      });
-    }
-    
-    await conn.query('DELETE FROM order_items WHERE order_id = ?', [req.params.id]);
-    await conn.query('DELETE FROM orders WHERE id = ?', [req.params.id]);
-  });
-  
+  const deleted = await resto.Orders.remove(req.params.id);
+  if (!deleted) throw ApiError.notFound('Commande introuvable');
   return noContent(res);
 }
 

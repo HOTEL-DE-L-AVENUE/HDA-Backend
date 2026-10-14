@@ -1,6 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { ingredientNeeds } = require('../models/restaurantModel');
+const {
+  ingredientNeeds,
+  consumeRestaurantRecipeIngredients,
+} = require('../models/restaurantModel');
 
 function createConnection({
   stockRow = true,
@@ -24,7 +27,7 @@ function createConnection({
   };
 }
 
-test('sale déduit le plat suivi en stock et les quantités converties de sa recette', async () => {
+test('le calcul legacy inclut le plat suivi en stock et les quantités converties de sa recette', async () => {
   const needs = await ingredientNeeds(createConnection({
     recipeItems: [{
       ingredient_id: 200,
@@ -77,4 +80,86 @@ test('identifiants de plat et d’ingrédient identiques restent distincts', asy
   }), [{ product_id: 100, quantite: 1 }]);
 
   assert.deepEqual([...needs.entries()], [['product:100', 1], ['ingredient:100', 0.5]]);
+});
+
+test('une commande ne déduit pas une seconde fois les ingrédients déjà sortis à la création de la recette', async () => {
+  const needs = await ingredientNeeds(createConnection(), [{ product_id: 100, quantite: 2 }], {
+    includeRecipeIngredients: false,
+  });
+
+  assert.deepEqual([...needs.entries()], [['product:100', 2]]);
+});
+
+test('la création de recette déduit les quantités demandées du stock cuisine', async () => {
+  let quantity = 10;
+  const movements = [];
+  const connection = {
+    query: async (sql, params) => {
+      if (sql.includes('SELECT quantite FROM restaurant_ingredient_stocks')) {
+        return [[{ quantite: quantity }], []];
+      }
+      if (sql.includes('SELECT id, quantite') && sql.includes('restaurant_ingredient_stocks')) {
+        return [[{ id: 1, quantite: quantity }], []];
+      }
+      if (sql.includes('UPDATE restaurant_ingredient_stocks SET quantite')) {
+        quantity = Number(params[0]);
+        return [{ affectedRows: 1 }, []];
+      }
+      if (sql.includes('INSERT INTO restaurant_ingredient_stock_movements')) {
+        movements.push(params);
+        return [{ insertId: movements.length }, []];
+      }
+      throw new Error(`Unexpected query in recipe stock test: ${sql}`);
+    },
+  };
+
+  await consumeRestaurantRecipeIngredients(connection, {
+    ingredients: [{
+      ingredientId: 200,
+      quantity: 5,
+      unit: 'KG',
+      stockUnit: 'KG',
+      name: 'Farine',
+    }],
+    productId: 100,
+    productName: 'Pizza',
+    userId: 1,
+  });
+
+  assert.equal(quantity, 5);
+  assert.equal(movements.length, 1);
+  assert.equal(movements[0][2], 'SORTIE');
+  assert.equal(movements[0][3], 5);
+});
+
+test('la création de recette est refusée si le stock cuisine est insuffisant', async () => {
+  let movementCreated = false;
+  const connection = {
+    query: async (sql) => {
+      if (sql.includes('SELECT quantite FROM restaurant_ingredient_stocks')) {
+        return [[{ quantite: 4 }], []];
+      }
+      if (sql.includes('INSERT INTO restaurant_ingredient_stock_movements')) {
+        movementCreated = true;
+        return [{ insertId: 1 }, []];
+      }
+      throw new Error(`Unexpected query in insufficient recipe stock test: ${sql}`);
+    },
+  };
+
+  await assert.rejects(
+    consumeRestaurantRecipeIngredients(connection, {
+      ingredients: [{
+        ingredientId: 200,
+        quantity: 5,
+        unit: 'KG',
+        stockUnit: 'KG',
+        name: 'Farine',
+      }],
+      productId: 100,
+      productName: 'Pizza',
+    }),
+    { status: 409, message: /Stock insuffisant pour Farine/ }
+  );
+  assert.equal(movementCreated, false);
 });
