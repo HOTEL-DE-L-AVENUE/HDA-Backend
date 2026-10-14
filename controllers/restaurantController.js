@@ -337,6 +337,112 @@ async function createRestaurantIngredientHandler(req, res) {
   return created(res, { message: 'Ingrédient créé avec succès' });
 }
 
+async function updateRestaurantIngredientHandler(req, res) {
+  await resto.ensureRestaurantSchema();
+  const ingredientId = Number(req.params.id);
+  const { nom, unite, prix_achat, quantite, location_id } = req.body || {};
+
+  if (!Number.isInteger(ingredientId) || ingredientId <= 0) {
+    throw ApiError.badRequest('Identifiant d’ingrédient invalide');
+  }
+  if (typeof nom !== 'string' || !nom.trim()) {
+    throw ApiError.badRequest('Le nom de l’ingrédient est requis');
+  }
+  if (typeof unite !== 'string' || !unite.trim()) {
+    throw ApiError.badRequest('L’unité est requise');
+  }
+  const price = Number(prix_achat);
+  const quantity = Number(quantite);
+  const locationId = Number(location_id);
+  if (!Number.isFinite(price) || price < 0) {
+    throw ApiError.badRequest('Le prix d’achat doit être un nombre positif ou nul');
+  }
+  if (!Number.isFinite(quantity) || quantity < 0) {
+    throw ApiError.badRequest('La quantité doit être un nombre positif ou nul');
+  }
+  if (!Number.isInteger(locationId) || locationId <= 0) {
+    throw ApiError.badRequest('Emplacement de stock invalide');
+  }
+
+  const updatedIngredient = await withTransaction(async (conn) => {
+    const [[ingredient]] = await conn.query(
+      'SELECT id, unite FROM restaurant_ingredients WHERE id = ? AND actif = 1 FOR UPDATE',
+      [ingredientId]
+    );
+    if (!ingredient) throw ApiError.notFound(`Ingrédient #${ingredientId} introuvable`);
+
+    const newUnit = unite.trim();
+    if (newUnit !== ingredient.unite) {
+      const [recipeUnits] = await conn.query(
+        `SELECT ri.unite
+           FROM recipe_items ri
+           JOIN recipes r ON r.id = ri.recipe_id
+          WHERE ri.ingredient_id = ?`,
+        [ingredientId]
+      );
+      const incompatibleRecipe = recipeUnits.find(
+        (recipe) => convertQuantity(1, recipe.unite || ingredient.unite, newUnit) === null
+      );
+      if (incompatibleRecipe) {
+        throw ApiError.badRequest(
+          `Impossible de modifier l’unité : elle est incompatible avec une unité utilisée dans les recettes (${incompatibleRecipe.unite || ingredient.unite}).`
+        );
+      }
+    }
+
+    const [[currentStock]] = await conn.query(
+      `SELECT id, quantite FROM restaurant_ingredient_stocks
+        WHERE ingredient_id = ? AND location_id = ? FOR UPDATE`,
+      [ingredientId, locationId]
+    );
+    const previousQuantity = Number(currentStock?.quantite || 0);
+    await conn.query(
+      'UPDATE restaurant_ingredients SET nom = ?, unite = ?, prix_achat = ? WHERE id = ?',
+      [nom.trim(), newUnit, price, ingredientId]
+    );
+    if (currentStock) {
+      await conn.query(
+        'UPDATE restaurant_ingredient_stocks SET quantite = ? WHERE id = ?',
+        [quantity, currentStock.id]
+      );
+    } else {
+      await conn.query(
+        'INSERT INTO restaurant_ingredient_stocks (ingredient_id, location_id, quantite) VALUES (?, ?, ?)',
+        [ingredientId, locationId, quantity]
+      );
+    }
+
+    const unitChanged = newUnit !== ingredient.unite;
+    const delta = quantity - previousQuantity;
+    if (unitChanged || delta !== 0) {
+      const movementType = unitChanged ? 'AJUSTEMENT' : delta > 0 ? 'ENTREE' : 'SORTIE';
+      const movementQuantity = unitChanged ? quantity : Math.abs(delta);
+      const movementNote = unitChanged
+        ? `Modification de l’unité (${ingredient.unite} → ${newUnit}) et du stock`
+        : 'Modification de la quantité du stock';
+      await conn.query(
+        `INSERT INTO restaurant_ingredient_stock_movements
+           (ingredient_id, location_id, type_mouvement, quantite, source_module,
+            created_at, stock_after, motif, user_id)
+         VALUES (?, ?, ?, ?, 'MANUEL', NOW(), ?, ?, ?)`,
+        [
+          ingredientId,
+          locationId,
+          movementType,
+          movementQuantity,
+          quantity,
+          movementNote,
+          req.user?.id_admin ?? null,
+        ]
+      );
+    }
+
+    return { id: ingredientId, nom: nom.trim(), unite: newUnit, prix_achat: price, quantite: quantity };
+  });
+
+  return ok(res, updatedIngredient);
+}
+
 async function listRestaurantRecipesHandler(req, res) {
   await resto.ensureRestaurantSchema();
   const [rows] = await pool.query(
@@ -701,36 +807,25 @@ async function adjustRestaurantStockHandler(req, res) {
   if (!ingredient_id && !product_id) {
     throw ApiError.badRequest('ingredient_id ou product_id requis');
   }
+  if (ingredient_id) {
+    throw ApiError.badRequest('Modifiez un ingrédient depuis son action « Modifier » dans le stock Restaurant.');
+  }
   if (!location_id) throw ApiError.badRequest('location_id requis');
   if (!type_mouvement || !['ENTREE', 'SORTIE', 'AJUSTEMENT'].includes(type_mouvement)) {
     throw ApiError.badRequest('type_mouvement doit être ENTREE, SORTIE ou AJUSTEMENT');
   }
   if (!quantite || Number(quantite) <= 0) throw ApiError.badRequest('quantite doit être positive');
 
-  if (ingredient_id) {
-    await withTransaction(async (conn) => {
-      await resto.recordRestaurantIngredientMovement(conn, {
-        ingredientId: Number(ingredient_id),
-        locationId: Number(location_id),
-        type: type_mouvement,
-        quantite: Number(quantite),
-        sourceModule: source_module || 'MANUEL',
-        motif,
-        userId: req.user?.id_admin,
-      });
-    });
-  } else {
-    await stock.recordMovement({
-      productId: Number(product_id),
-      locationId: Number(location_id),
-      type: type_mouvement,
-      quantite: Number(quantite),
-      sourceModule: source_module || 'MANUEL',
-      motif,
-      userId: req.user?.id_admin,
-      allowNegative: true,
-    });
-  }
+  await stock.recordMovement({
+    productId: Number(product_id),
+    locationId: Number(location_id),
+    type: type_mouvement,
+    quantite: Number(quantite),
+    sourceModule: source_module || 'MANUEL',
+    motif,
+    userId: req.user?.id_admin,
+    allowNegative: true,
+  });
 
   return ok(res, { message: 'Stock ajusté avec succès' });
 }
@@ -1087,7 +1182,7 @@ module.exports = {
   createOrderHandler, updateOrderHandler, orderDetailHandler, orderInvoiceHandler, ordersInProgressHandler,
   orderInvoicePdfHandler, closeAllRestaurantOrdersHandler,
   restaurantStockHandler, restaurantStockMovementsHandler,
-  restaurantIngredientsHandler, createRestaurantIngredientHandler, listRestaurantRecipesHandler, getRestaurantProductRecipeHandler, saveRestaurantProductRecipeHandler,
+  restaurantIngredientsHandler, createRestaurantIngredientHandler, updateRestaurantIngredientHandler, listRestaurantRecipesHandler, getRestaurantProductRecipeHandler, saveRestaurantProductRecipeHandler,
   adjustRestaurantStockHandler, removeRestaurantStockHandler, consumeRestaurantPortionHandler,
   getRestaurantPurchasesHandler, getRestaurantPurchaseByIdHandler,
   listRestaurantPurchasesHandler, restaurantPurchaseDetailHandler, createRestaurantPurchaseHandler,

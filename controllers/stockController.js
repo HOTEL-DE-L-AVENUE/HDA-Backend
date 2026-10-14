@@ -1,5 +1,6 @@
 // controllers/stockController.js
 const stock = require('../models/stockModel');
+const restaurant = require('../models/restaurantModel');
 const { withTransaction } = require('../config/db');
 const { createCrudController } = require('./controllerFactory');
 const ApiError = require('../utils/ApiError');
@@ -279,6 +280,7 @@ async function lowStockHandler(req, res, next) {
  */
 async function stockOverviewHandler(req, res, next) {
   try {
+    await restaurant.ensureRestaurantSchema();
     const rows = await stock.stockOverview();
     return ok(res, rows);
   } catch (err) {
@@ -288,6 +290,7 @@ async function stockOverviewHandler(req, res, next) {
 
 // Actions de la page Stock sur une ligne de la vue consolidée (clé BAR-x ou STK-x)
 async function stockItemDetailsHandler(req, res) {
+  await restaurant.ensureRestaurantSchema();
   return ok(res, await stock.stockItemDetails(req.params.cle));
 }
 
