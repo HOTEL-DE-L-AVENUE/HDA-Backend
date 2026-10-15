@@ -10,6 +10,7 @@ const { RH_DOCUMENTS_DIR, RH_ATTENDANCE_PHOTOS_DIR } = require('../middlewares/u
 const { isDescriptor, findBestMatch, MIN_ENROLL_SAMPLES, MAX_ENROLL_SAMPLES } = require('../utils/face');
 const model = require('../models/rhModel');
 const { logAction } = require('../models/adminModel');
+const { madagascarDate } = require('../utils/timezone');
 
 const numericFields = ['salary', 'prime', 'pourboire', 'irsa', 'dependents'];
 const renderEmployee = (row) => ({ ...row, salary: Number(row.salary || 0), prime: Number(row.prime || 0), pourboire: Number(row.pourboire || 0), dependents: Number(row.dependents || 0), cnaps: Number(row.cnaps || 0), ostie: Number(row.ostie || 0), irsa: Number(row.irsa || 0), ...(row.presence_days !== undefined ? { presence_days: Number(row.presence_days || 0) } : {}), ...(row.face_samples !== undefined ? { face_samples: Number(row.face_samples || 0) } : {}), status: String(row.status || '').toUpperCase() });
@@ -85,7 +86,7 @@ async function updateEmployee(req, res) {
     const reason = String(body.departure_reason ?? '').trim();
     if (!reason) throw ApiError.badRequest('La raison est obligatoire pour un employé retraité, renvoyé ou démissionnaire');
     body.departure_reason = reason;
-    body.departure_date = body.departure_date || existing.departure_date || new Date().toISOString().slice(0, 10);
+    body.departure_date = body.departure_date || existing.departure_date || madagascarDate();
   } else if (body.status && DEPARTURE_STATUSES.includes(existing.status)) {
     // Réintégration : on efface la sortie précédente.
     body.departure_reason = null; body.departure_date = null;
@@ -102,7 +103,7 @@ async function offboardEmployee(req, res) {
   const { reason, departure_date } = req.body || {};
   if (!reason?.trim()) throw ApiError.badRequest('Un motif de sortie est obligatoire');
   const existing = await model.employees.findById(req.params.id); if (!existing) throw ApiError.notFound('Employé introuvable');
-  const row = await model.employees.update(req.params.id, { status: 'SORTI', departure_reason: reason.trim(), departure_date: departure_date || new Date().toISOString().slice(0, 10) });
+  const row = await model.employees.update(req.params.id, { status: 'SORTI', departure_reason: reason.trim(), departure_date: departure_date || madagascarDate() });
   await audit(req, 'OFFBOARD_HR_EMPLOYEE', 'rh_employees', row.id, { reason: row.departure_reason, departure_date: row.departure_date });
   return ok(res, renderEmployee(row));
 }
@@ -218,7 +219,7 @@ async function evaluationList(req, res) {
   return ok(res, result.rows, result.meta);
 }
 async function budgetList(req, res) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = madagascarDate();
   const from = req.query.from || `${today.slice(0, 7)}-01`; const to = req.query.to || today;
   if (!isIsoDate(from) || !isIsoDate(to)) throw ApiError.badRequest('Dates invalides (format YYYY-MM-DD)');
   try { const result = await model.listDepartmentBudgets({ from, to, departments: DEPARTMENTS }); return ok(res, result.rows, { months: result.months, from: result.from, to: result.to }); } catch (err) { businessError(err); }

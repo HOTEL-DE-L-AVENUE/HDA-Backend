@@ -14,6 +14,11 @@ const Rooms = createCrudModel({
   fields: ['room_type_id', 'numero', 'capacite', 'prix_nuit', 'statut', 'etage'],
   sortable: ['id', 'numero', 'statut', 'prix_nuit', 'etage'],
 });
+const roomsFindAll = Rooms.findAll;
+Rooms.findAll = async function (options) {
+  await syncRoomReservationStatuses();
+  return roomsFindAll.call(this, options);
+};
 
 const Equipments = createCrudModel({
   table: 'equipments', pk: 'id',
@@ -208,7 +213,7 @@ Reservations.create = async function (data) {
 Reservations.update = async function (id, data, modifiedBy = null) {
   const willComplete = String(data?.statut || '').toUpperCase() === 'TERMINEE';
   const changesAmount = Object.prototype.hasOwnProperty.call(data || {}, 'montant_total');
-  const [[before]] = await pool.query('SELECT statut FROM reservations WHERE id = ? LIMIT 1', [id]);
+  const [[before]] = await pool.query('SELECT room_id, statut FROM reservations WHERE id = ? LIMIT 1', [id]);
   const wasCompleted = String(before?.statut || '').toUpperCase() === 'TERMINEE';
   // Encaissement = passage à TERMINEE, ou nouvel encaissement explicite (avec mode de
   // paiement) d'une réservation déjà terminée qui a reçu des rectifications. Une simple
@@ -248,10 +253,11 @@ Reservations.update = async function (id, data, modifiedBy = null) {
       await pool.query('UPDATE reservations SET statut = ? WHERE id = ?', [before.statut, id]);
     }
   }
+  if (before?.room_id) await syncRoomReservationStatuses(before.room_id);
   return findReservationWithDetails(id);
 };
 Reservations.remove = async function (id) {
-  return withTransaction(async (conn) => {
+  const result = await withTransaction(async (conn) => {
     const [rows] = await conn.query('SELECT room_id FROM reservations WHERE id = ? LIMIT 1', [id]);
     if (!rows[0]) return false;
 
@@ -263,13 +269,12 @@ Reservations.remove = async function (id) {
     );
     await conn.query('DELETE FROM reservation_payments WHERE reservation_id = ?', [id]).catch(() => {});
     const [result] = await conn.query('DELETE FROM reservations WHERE id = ?', [id]);
-    await conn.query(
-      'UPDATE rooms SET statut = "LIBRE" WHERE id = ? AND statut = "RESERVEE"',
-      [rows[0].room_id]
-    );
 
-    return result.affectedRows > 0;
+    return { deleted: result.affectedRows > 0, roomId: rows[0].room_id };
   });
+  if (!result) return false;
+  if (result.deleted) await syncRoomReservationStatuses(result.roomId);
+  return result.deleted;
 };
 
 Rooms.remove = async function (id) {
@@ -480,7 +485,7 @@ async function isRoomAvailable(roomId, dateArrivee, dateDepart, excludeReservati
 
 // Crée une réservation + ses accompagnants dans une transaction
 async function createReservationWithGuests({ clientId, roomId, dateArrivee, dateDepart, pdjInclus = false, montantTotal, montantBrut, remisePourcentage, montantRemise, statut, guests = [], typeReservation = 'BOOKING', laundryIncluded = false, laundryPrice = 0, manualPrice = 0, createdBy = null, servicesExtras = null, servicesExtrasTotal = 0 }) {
-  return withTransaction(async (conn) => {
+  const reservation = await withTransaction(async (conn) => {
     // Utilise le statut envoyé par le contrôleur ou 'EN_COURS' par défaut
     const statusValue = statut || 'EN_COURS';
 
@@ -516,10 +521,11 @@ async function createReservationWithGuests({ clientId, roomId, dateArrivee, date
         [reservationId, g.nom, g.prenom || null, g.date_naissance || null, g.type_piece || null, g.numero_piece || null]
       );
     }
-    await conn.query('UPDATE rooms SET statut = "RESERVEE" WHERE id = ?', [roomId]);
     const [row] = await conn.query('SELECT * FROM reservations WHERE id = ?', [reservationId]);
     return row[0];
   });
+  await syncRoomReservationStatuses(roomId);
+  return reservation;
 }
 
 async function validateReservationDiscount(id, validatedBy) {
@@ -961,6 +967,12 @@ async function refreshRoomOperationalStatus(conn, roomId) {
      WHERE r.room_id = ? AND s.checkout_at IS NULL AND r.statut IN ('CHECKED_IN','EN_COURS')`,
     [roomId]
   );
+  const [[reservation]] = await conn.query(
+    `SELECT COUNT(*) AS total FROM reservations
+     WHERE room_id = ? AND statut IN ('EN_ATTENTE', 'CONFIRMEE', 'CHECKED_IN', 'EN_COURS')
+       AND date_arrivee <= CURDATE() AND date_depart > CURDATE()`,
+    [roomId]
+  );
   const [[housekeeping]] = await conn.query(
     "SELECT COUNT(*) AS total FROM housekeeping_tasks WHERE room_id = ? AND statut = 'EN_COURS'",
     [roomId]
@@ -968,7 +980,7 @@ async function refreshRoomOperationalStatus(conn, roomId) {
   const [[room]] = await conn.query('SELECT statut FROM rooms WHERE id = ? FOR UPDATE', [roomId]);
   const nextStatus = Number(stay.total) > 0
     ? 'OCCUPEE'
-    : room?.statut === 'RESERVEE'
+    : Number(reservation.total) > 0
       ? 'RESERVEE'
       : Number(maintenance.total) > 0
         ? 'MAINTENANCE'
@@ -982,6 +994,41 @@ async function refreshRoomOperationalStatus(conn, roomId) {
       [roomId, room.statut, nextStatus]
     );
   }
+}
+
+async function syncRoomReservationStatuses(roomId = null) {
+  return withTransaction(async (conn) => {
+    const activeReservation = `EXISTS (
+      SELECT 1 FROM reservations reservation
+      WHERE reservation.room_id = room.id
+        AND reservation.statut IN ('EN_ATTENTE', 'CONFIRMEE', 'CHECKED_IN', 'EN_COURS')
+        AND reservation.date_arrivee <= CURDATE()
+        AND reservation.date_depart > CURDATE()
+    )`;
+    let sql = `SELECT room.id, room.statut, ${activeReservation} AS has_active_reservation
+      FROM rooms room
+      WHERE room.statut IN ('LIBRE', 'RESERVEE')
+        AND ((room.statut = 'LIBRE' AND ${activeReservation})
+          OR (room.statut = 'RESERVEE' AND NOT ${activeReservation}))`;
+    const params = [];
+    if (roomId) {
+      sql += ' AND room.id = ?';
+      params.push(roomId);
+    }
+    sql += ' FOR UPDATE';
+
+    const [rooms] = await conn.query(sql, params);
+    for (const room of rooms) {
+      const nextStatus = Number(room.has_active_reservation) ? 'RESERVEE' : 'LIBRE';
+      await conn.query('UPDATE rooms SET statut = ? WHERE id = ?', [nextStatus, room.id]);
+      await conn.query(
+        `INSERT INTO room_status_history (room_id, ancien_statut, nouveau_statut, changed_at)
+         VALUES (?, ?, ?, NOW())`,
+        [room.id, room.statut, nextStatus]
+      );
+    }
+    return rooms.length;
+  });
 }
 
 function quantitiesByProduct(items) {
@@ -1289,6 +1336,7 @@ async function updateRoomEquipmentStatus(id, statut) {
 
 // Statistiques agrégées sur le parc de chambres
 async function getRoomStats() {
+  await syncRoomReservationStatuses();
   const [totals] = await pool.query('SELECT COUNT(*) AS total FROM rooms');
   const [parStatut] = await pool.query('SELECT statut, COUNT(*) AS total FROM rooms GROUP BY statut');
   const [parType] = await pool.query(
@@ -1333,6 +1381,7 @@ async function getHousekeepingStats() {
 }
 
 async function availableRooms({ typeId } = {}) {
+  await syncRoomReservationStatuses();
   let sql = `SELECT * FROM rooms WHERE statut = 'LIBRE'`;
   const params = [];
   if (typeId) {
@@ -1548,7 +1597,7 @@ module.exports = {
   createReservationPayment, applyReservationPaymentTransaction, listReservationPayments, getReservationCollectionReport, checkIn, checkOut, availableRooms,
   updateMaintenanceStatus, getMaintenanceStats, getReservationStats,
   updateRoomStatus, getEquipmentByCode, getEquipmentCategories, getEquipmentStats,
-  updateRoomEquipmentStatus, getRoomStats, saveMaintenance, saveHousekeepingTask,
+  updateRoomEquipmentStatus, getRoomStats, syncRoomReservationStatuses, saveMaintenance, saveHousekeepingTask,
   deleteMaintenance, deleteHousekeepingTask, updateHousekeepingStatus, getHousekeepingStats,
   transferStockToMinibar, handleMinibarConsumption, getMinibarWithAlerts, getLowStockMinibarItems, restockMinibar,
   findReservationsWithUserDetails,

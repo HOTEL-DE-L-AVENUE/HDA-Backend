@@ -12,6 +12,7 @@ const ApiError = require('../utils/ApiError');
 const { ok, created } = require('../utils/apiResponse');
 const { pool } = require('../config/db');
 const { getPagination, getSort, buildWhere } = require('../utils/queryHelpers');
+const { madagascarDate } = require('../utils/timezone');
 
 const NIVEAUX_RISQUE = ['FAIBLE', 'MOYEN', 'ELEVE'];
 
@@ -112,7 +113,7 @@ async function saveKyc(req, res) {
 
   const date_verification = (req.body.date_verification && String(req.body.date_verification).trim())
     ? req.body.date_verification
-    : new Date().toISOString().slice(0, 10);
+    : madagascarDate();
 
   const kyc = await upsertKyc(req.params.id, {
     ...req.body,

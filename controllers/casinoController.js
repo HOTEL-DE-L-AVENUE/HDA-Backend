@@ -20,6 +20,7 @@
 const { randomUUID } = require('crypto');
 const { pool, withTransaction } = require('../config/db');
 const ApiError = require('../utils/ApiError');
+const { madagascarDate } = require('../utils/timezone');
 const transport = require('../utils/whatsappTransport');
 const whatsappDesktop = require('../utils/whatsappDesktop');
 
@@ -1738,7 +1739,7 @@ exports.listCavesHandler = async (req, res, next) => {
     const { date } = req.query;
     const [rows] = await pool.query(
       `SELECT * FROM casino_table_caves WHERE table_jeu_id = ? AND date_jeu = ? ORDER BY heure_mouvement ASC`,
-      [tableJeuId, date || new Date().toISOString().slice(0, 10)]
+      [tableJeuId, date || madagascarDate()]
     );
     res.json(rows);
   } catch (err) { next(err); }
@@ -1875,7 +1876,7 @@ exports.listProlongationsHandler = async (req, res, next) => {
     const { date } = req.query;
     const [rows] = await pool.query(
       `SELECT * FROM casino_table_prolongations WHERE table_jeu_id = ? AND DATE(created_at) = ? ORDER BY created_at ASC`,
-      [tableJeuId, date || new Date().toISOString().slice(0, 10)]
+      [tableJeuId, date || madagascarDate()]
     );
     res.json(rows);
   } catch (err) { next(err); }
@@ -1935,7 +1936,7 @@ exports.listPourboiresHandler = async (req, res, next) => {
     const { date } = req.query;
     const [rows] = await pool.query(
       `SELECT * FROM casino_table_pourboires WHERE table_jeu_id = ? AND DATE(created_at) = ? ORDER BY created_at ASC`,
-      [tableJeuId, date || new Date().toISOString().slice(0, 10)]
+      [tableJeuId, date || madagascarDate()]
     );
     res.json(rows);
   } catch (err) { next(err); }
@@ -1951,7 +1952,7 @@ exports.feuilleTableHandler = async (req, res, next) => {
   try {
     const { id: tableJeuId } = req.params;
     const { date } = req.query;
-    const jour = date || new Date().toISOString().slice(0, 10);
+    const jour = date || madagascarDate();
  
     const [[table]] = await pool.query(
       `SELECT tj.*, r.nom AS salle FROM casino_tables_jeu tj
@@ -2248,7 +2249,7 @@ exports.tempsJeuJoueurHandler = async (req, res, next) => {
 // détail par table.
 exports.tempsJeuJourHandler = async (req, res, next) => {
   try {
-    const jour = req.query.date || new Date().toISOString().slice(0, 10);
+    const jour = req.query.date || madagascarDate();
     const [rows] = await pool.query(
       `SELECT tv.table_jeu_id, tj.numero AS table_numero,
               TIMESTAMPDIFF(MINUTE, tv.entree_at, COALESCE(tv.sortie_at, NOW())) AS minutes

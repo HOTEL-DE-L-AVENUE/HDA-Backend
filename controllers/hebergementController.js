@@ -16,6 +16,20 @@ function isAdmin(req) {
   return String(req.user?.role || '').toLowerCase() === 'admin';
 }
 
+function calculateReservationGross({ typeReservation, manualPrice, nights, exchangeRate, roomPrice, laundryIncluded, laundryPrice }) {
+  if (typeReservation === 'GRATUIT') return 0;
+
+  let gross;
+  if (typeReservation === 'BOOKING' && manualPrice > 0) {
+    const totalEur = Number(manualPrice) * nights;
+    gross = totalEur * (Number(exchangeRate) || 39.76);
+  } else {
+    gross = Number(roomPrice || 0) * nights;
+  }
+  if (laundryIncluded) gross += Number(laundryPrice || 0);
+  return gross;
+}
+
 const roomTypesCrud = createCrudController(heb.RoomTypes, {});
 const roomsCrud = createCrudController(heb.Rooms, { filterable: ['statut', 'room_type_id'] });
 
@@ -440,6 +454,10 @@ async function createReservationHandler(req, res) {
   if (!client_id || !room_id || !date_arrivee || !date_depart) {
     throw ApiError.badRequest('client_id, room_id, date_arrivee, date_depart sont requis');
   }
+  const reservationType = String(type_reservation).toUpperCase();
+  if (!['BOOKING', 'ON_SITE', 'GRATUIT'].includes(reservationType)) {
+    throw ApiError.badRequest('type_reservation doit être BOOKING, ON_SITE ou GRATUIT');
+  }
   const disponible = await heb.isRoomAvailable(room_id, date_arrivee, date_depart);
   if (!disponible) throw ApiError.conflict('Chambre non disponible sur cette période');
 
@@ -450,23 +468,16 @@ async function createReservationHandler(req, res) {
   const room = await heb.Rooms.findById(room_id);
   const nights = Math.ceil((new Date(date_depart) - new Date(date_arrivee)) / 86400000);
   if (!room || nights <= 0) throw ApiError.badRequest('Dates ou chambre invalides');
-  
-  let gross = 0;
-  
-  // For Booking.com, manual_price is per night in EUR, so: per_night_price × nights × exchange_rate
-  if (type_reservation === 'BOOKING' && manual_price > 0) {
-    const rate = Number(exchange_rate) || 39.76;
-    const totalEur = Number(manual_price) * nights;
-    gross = totalEur * rate;
-  } else {
-    // For On-site, use room's normal price
-    gross = Number(room.prix_nuit || 0) * nights;
-  }
-  
-  // Add laundry price if included
-  if (laundry_included) {
-    gross += Number(laundry_price || 0);
-  }
+
+  const gross = calculateReservationGross({
+    typeReservation: reservationType,
+    manualPrice: manual_price,
+    nights,
+    exchangeRate: exchange_rate,
+    roomPrice: room.prix_nuit,
+    laundryIncluded: laundry_included,
+    laundryPrice: laundry_price,
+  });
   
   const discountAmount = Math.round(gross * discount / 100);
   // Transferts et excursions : ajoutés au total, hors remise.
@@ -486,7 +497,7 @@ async function createReservationHandler(req, res) {
     montantRemise: discountAmount,
     statut: statut || 'EN_COURS',
     guests: guests || [],
-    typeReservation: type_reservation,
+    typeReservation: reservationType,
     laundryIncluded: laundry_included,
     laundryPrice: laundry_price,
     manualPrice: manual_price,
@@ -1031,6 +1042,7 @@ async function sendHotelReportWhatsappHandler(req, res) {
 }
 
 module.exports = {
+  calculateReservationGross,
   roomTypesCrud, roomsCrud, equipmentsCrud, roomEquipmentsCrud, roomMaintenanceCrud, maintenanceWorkersCrud,
   roomMinibarCrud, roomStatusHistoryCrud, reservationsCrud, reservationGuestsCrud,
   staysCrud, housekeepingCrud, lostAndFoundCrud, minibarConsumptionsCrud,
