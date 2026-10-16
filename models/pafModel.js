@@ -1,5 +1,6 @@
 const { pool, withTransaction } = require('../config/db');
 const { randomUUID } = require('crypto');
+const { madagascarDate } = require('../utils/timezone');
 
 const PAF_PRICES = [20000, 10000, 5000, 0];
 const PAYMENT_METHODS = ['ESPECES', 'CREDIT', 'TPE', 'ORANGE_MONEY', 'MVOLA', 'GRATUIT'];
@@ -211,7 +212,8 @@ async function closeCurrentSession(userId) {
     );
     const operations = rows.map(mapOperation);
     const summary = summarizeOperations(operations);
-    const reference = `PAF-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${session.id}-${randomUUID().slice(0, 8).toUpperCase()}`;
+    const referenceDate = madagascarDate(new Date()).replace(/-/g, '');
+    const reference = `PAF-${referenceDate}-${session.id}-${randomUUID().slice(0, 8).toUpperCase()}`;
 
     const [closureResult] = await connection.query(
       `INSERT INTO paf_clotures

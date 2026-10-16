@@ -36,7 +36,7 @@ async function createOrLinkEmployeeFromUser(user) {
     email: user.email || null,
     department: 'Administration',
     position: user.role || 'Employé',
-    joined_at: new Date().toISOString().slice(0, 10),
+    joined_at: madagascarDate(),
     contract_type: 'CDI',
     salary: 0,
     status: 'ACTIF',

@@ -12,6 +12,7 @@ const { checkConnection } = require('./config/db');
 const apiRoutes = require('./routes');
 const { notFoundHandler, errorHandler } = require('./middlewares/errorHandler');
 const { startHotelReportDispatcher } = require('./services/hotelReportDispatcher');
+const { startRoomReservationStatusSync } = require('./services/roomReservationStatusSync');
 
 const app = express();
 
@@ -69,6 +70,8 @@ async function start() {
     // Envoi WhatsApp du rapport de nuitée : boucle inactive tant que
     // HOTEL_REPORT_WHATSAPP_ENABLED ne vaut pas "true".
     startHotelReportDispatcher();
+    // Actualise le statut des chambres en fonction de la date d'arrivée prévue.
+    startRoomReservationStatusSync();
   } catch (err) {
     console.error('[server] Échec de démarrage :', err.message);
     process.exit(1);
