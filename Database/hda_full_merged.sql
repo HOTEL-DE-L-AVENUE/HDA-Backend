@@ -2875,6 +2875,7 @@ CREATE TABLE `bar_products` (
   `nom` varchar(150) NOT NULL,
   `ingredients` text DEFAULT NULL,
   `prix` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `prix_achat` decimal(15,2) NOT NULL DEFAULT 0.00,
   `categorie` varchar(50) DEFAULT 'Bar',
   `alcool` tinyint(1) DEFAULT 0,
   `type_produit` varchar(50) DEFAULT 'PRODUIT_FINI',

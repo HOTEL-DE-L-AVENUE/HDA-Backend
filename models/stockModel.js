@@ -228,7 +228,7 @@ async function stockOverview() {
   const [rows] = await pool.query(
     `SELECT CONCAT('BAR-', p.id) AS cle, 'BAR' AS module, 'Bar & Lounge' AS emplacement,
             p.id AS product_id, NULL AS ingredient_id, 'PRODUCT' AS item_type, NULL AS location_id,
-            p.nom, NULL AS code, p.categorie, NULL AS prix_achat,
+            p.nom, NULL AS code, p.categorie, p.prix_achat,
             COALESCE(s.quantite, 0) AS quantite, COALESCE(s.seuil_minimum, 0) AS seuil_minimum,
             COALESCE(s.unite, 'unités') AS unite, s.updated_at
        FROM bar_products p
@@ -305,7 +305,7 @@ async function stockItemDetails(cle) {
     const [[item]] = await pool.query(
       `SELECT CONCAT('BAR-', p.id) AS cle, 'BAR' AS module, 'Bar & Lounge' AS emplacement,
               p.id AS product_id, NULL AS ingredient_id, 'PRODUCT' AS item_type, NULL AS location_id,
-              p.nom, NULL AS code, p.categorie, p.prix AS prix_vente, NULL AS prix_achat,
+              p.nom, NULL AS code, p.categorie, p.prix AS prix_vente, p.prix_achat,
               IF(p.alcool, 'Avec alcool', 'Sans alcool') AS type_produit,
               COALESCE(s.quantite, 0) AS quantite, COALESCE(s.seuil_minimum, 0) AS seuil_minimum,
               COALESCE(s.unite, 'unités') AS unite, s.updated_at
@@ -352,7 +352,7 @@ async function stockItemDetails(cle) {
   return { item, history };
 }
 
-async function updateStockItem(cle, { quantite, seuil_minimum, unite }, userId = null) {
+async function updateStockItem(cle, { quantite, seuil_minimum, unite, prix_achat }, userId = null) {
   const { kind, id } = parseOverviewKey(cle);
   const qty = Number(quantite);
   const threshold = Number(seuil_minimum);
@@ -365,8 +365,15 @@ async function updateStockItem(cle, { quantite, seuil_minimum, unite }, userId =
       if (!Number.isInteger(qty) || !Number.isInteger(threshold)) {
         throw ApiError.badRequest('Les quantités du bar doivent être des nombres entiers');
       }
+      const purchasePrice = prix_achat === undefined ? undefined : Number(prix_achat);
+      if (purchasePrice !== undefined && (!Number.isFinite(purchasePrice) || purchasePrice < 0)) {
+        throw ApiError.badRequest('Le prix d’achat doit être un nombre positif ou nul');
+      }
       const [[product]] = await conn.query('SELECT id FROM bar_products WHERE id = ? FOR UPDATE', [id]);
       if (!product) throw ApiError.notFound('Article introuvable');
+      if (purchasePrice !== undefined) {
+        await conn.query('UPDATE bar_products SET prix_achat = ? WHERE id = ?', [purchasePrice, id]);
+      }
       await conn.query(
         `INSERT INTO bar_stock (product_id, quantite, seuil_minimum, unite) VALUES (?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE quantite = VALUES(quantite), seuil_minimum = VALUES(seuil_minimum), unite = VALUES(unite)`,

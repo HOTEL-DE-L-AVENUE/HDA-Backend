@@ -32,6 +32,9 @@ function validateStockPayload(body) {
   if (body.seuil_minimum !== undefined && (!Number.isFinite(Number(body.seuil_minimum)) || Number(body.seuil_minimum) < 0)) {
     throw ApiError.badRequest('Le seuil minimum doit être positif ou nul');
   }
+  if (body.prix_achat !== undefined && (!Number.isFinite(Number(body.prix_achat)) || Number(body.prix_achat) < 0)) {
+    throw ApiError.badRequest('Le prix d’achat doit être positif ou nul');
+  }
 }
 
 async function createStockHandler(req, res) {
