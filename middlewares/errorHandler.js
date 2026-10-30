@@ -23,7 +23,11 @@ function errorHandler(err, req, res, next) {
     return fail(res, 409, 'Suppression impossible : la ressource est référencée ailleurs.', err.sqlMessage);
   }
   if (err && err.code === 'ER_BAD_FIELD_ERROR') {
-    return fail(res, 500, 'Schéma casino incomplet : exécutez la migration des tables de jeu sur la base en ligne.', err.sqlMessage);
+    const isCasinoRoute = String(req.originalUrl || '').startsWith('/api/casino/');
+    const message = isCasinoRoute
+      ? 'Schéma casino incomplet : vérifiez les migrations des tables de jeu sur la base en ligne.'
+      : 'Schéma de base incomplet : vérifiez les migrations sur la base en ligne.';
+    return fail(res, 500, message, err.sqlMessage);
   }
   if (err && err.code === 'ER_NO_DEFAULT_FOR_FIELD') {
     return fail(res, 400, 'Champ obligatoire manquant dans la base casino. Vérifiez la migration du schéma.', err.sqlMessage);
