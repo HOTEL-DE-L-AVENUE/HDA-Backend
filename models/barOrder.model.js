@@ -1,6 +1,43 @@
-const { pool, withTransaction } = require('../config/db');
+﻿const { pool, withTransaction } = require('../config/db');
 const { createOrder, ensureBarTransactionsSchema } = require('./barTransaction.model');
+const stockModel = require('./stockModel');
 const ApiError = require('../utils/ApiError');
+const restaurantModel = require('./restaurantModel');
+
+const isRestaurantItem = (item) => String(item.source_module || '').toUpperCase() === 'RESTAURANT';
+
+async function validateRestaurantMenuItems(conn, items) {
+  const productIds = [...new Set(items.filter(isRestaurantItem).map((item) => Number(item.product_id ?? item.source_product_id ?? item.id)).filter((id) => Number.isInteger(id) && id > 0))];
+  if (!productIds.length) return;
+  const [products] = await conn.query(
+    `SELECT p.id
+       FROM products p
+       JOIN categories c ON c.id = p.category_id
+      WHERE p.id IN (?) AND p.actif = 1 AND p.type_produit = 'PRODUIT_FINI'
+        AND (p.source_module = 'RESTAURANT' OR p.source_module IS NULL)
+        AND UPPER(TRIM(c.nom)) IN ('PIZZA', 'CARTE SELECTIONNER', 'CARTE SELECTIONNEE')`,
+    [productIds]
+  );
+  const validIds = new Set(products.map((product) => Number(product.id)));
+  const missingIds = productIds.filter((id) => !validIds.has(id));
+  if (missingIds.length) throw ApiError.badRequest(`Plat Restaurant indisponible : ${missingIds.join(', ')}.`);
+}
+
+async function syncRestaurantItems(conn, orderId, fromItems, toItems, motif) {
+  const restaurantItems = (items) => items.filter(isRestaurantItem).map((item) => ({
+    product_id: Number(item.product_id ?? item.source_product_id ?? item.id),
+    quantite: Number(item.quantite || 0),
+  }));
+  const before = restaurantItems(fromItems);
+  const after = restaurantItems(toItems);
+  if (!before.length && !after.length) return;
+  await restaurantModel.syncOrderIngredients(conn, {
+    orderId,
+    fromItems: before,
+    toItems: after,
+    motif,
+  });
+}
 
 async function findOrCreateClient(name, connection) {
   const clientName = String(name || '').trim();
@@ -37,12 +74,23 @@ async function ensureBarOrderTables() {
       nom VARCHAR(150) DEFAULT NULL,
       quantite INT DEFAULT 1,
       prix DECIMAL(10,2) DEFAULT 0.00,
+      source_module VARCHAR(20) NOT NULL DEFAULT 'BAR',
+      source_product_id BIGINT UNSIGNED DEFAULT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (id),
       KEY idx_bar_order_items_order_id (order_id),
       CONSTRAINT fk_bar_order_items_order FOREIGN KEY (order_id) REFERENCES bar_orders(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
+
+  const [itemColumns] = await pool.query('SHOW COLUMNS FROM bar_order_items');
+  const existingItemColumns = new Set(itemColumns.map((column) => column.Field));
+  if (!existingItemColumns.has('source_module')) {
+    await pool.query("ALTER TABLE bar_order_items ADD COLUMN source_module VARCHAR(20) NOT NULL DEFAULT 'BAR' AFTER prix");
+  }
+  if (!existingItemColumns.has('source_product_id')) {
+    await pool.query('ALTER TABLE bar_order_items ADD COLUMN source_product_id BIGINT UNSIGNED DEFAULT NULL AFTER source_module');
+  }
 
   const [columns] = await pool.query('SHOW COLUMNS FROM bar_orders');
   const existing = new Set(columns.map((column) => column.Field));
@@ -118,6 +166,8 @@ async function listBarOrders({ createdBy } = {}) {
     room_guest_name: order.room_guest_name || null,
     room_account_paid: Boolean(order.room_account_paid),
     items: (grouped[order.id] || []).map((item) => ({
+      product_id: item.source_product_id == null ? undefined : Number(item.source_product_id),
+      source_module: item.source_module || 'BAR',
       nom: item.nom,
       quantite: Number(item.quantite || 1),
       prix: Number(item.prix || 0),
@@ -148,7 +198,13 @@ async function listBarHistory() {
     room_id: order.room_id ?? null,
     room_guest_name: order.room_guest_name || null,
     room_account_paid: Boolean(order.room_account_paid),
-    items: (grouped[order.id] || []).map((item) => ({ nom: item.nom, quantite: Number(item.quantite || 1), prix: Number(item.prix || 0) })),
+    items: (grouped[order.id] || []).map((item) => ({
+      product_id: item.source_product_id == null ? undefined : Number(item.source_product_id),
+      source_module: item.source_module || 'BAR',
+      nom: item.nom,
+      quantite: Number(item.quantite || 1),
+      prix: Number(item.prix || 0),
+    })),
   }));
 }
 
@@ -164,10 +220,14 @@ async function createBarOrder({ clientName, tableId, nombrePersonnes = 1, moyenP
       const productId = Number(item.product_id ?? item.id);
       const quantity = Number(item.quantite);
       if (!Number.isInteger(productId) || productId <= 0 || !Number.isFinite(quantity) || quantity <= 0) {
-        throw ApiError.badRequest('Chaque article doit avoir un produit et une quantité positive.');
+        throw ApiError.badRequest('Chaque article doit avoir un produit et une quantitÃ© positive.');
       }
-      requestedQuantities.set(productId, (requestedQuantities.get(productId) || 0) + quantity);
+      if (String(item.source_module || '').toUpperCase() !== 'RESTAURANT') {
+        requestedQuantities.set(productId, (requestedQuantities.get(productId) || 0) + quantity);
+      }
     }
+
+    await validateRestaurantMenuItems(conn, items || []);
 
     for (const [productId, quantity] of requestedQuantities) {
       const [stocks] = await conn.query(
@@ -193,6 +253,8 @@ async function createBarOrder({ clientName, tableId, nombrePersonnes = 1, moyenP
 
     const orderId = result.insertId;
 
+    await syncRestaurantItems(conn, orderId, [], items || [], `Vente restaurant via commande Bar #${orderId}`);
+
     for (const [productId, quantity] of requestedQuantities) {
       await conn.query(
         'UPDATE bar_stock SET quantite = quantite - ? WHERE product_id = ?',
@@ -200,19 +262,22 @@ async function createBarOrder({ clientName, tableId, nombrePersonnes = 1, moyenP
       );
     }
 
-    // Sortie de stock datée : sans cette écriture, la consommation de stock du
+    // Sortie de stock datÃ©e : sans cette Ã©criture, la consommation de stock du
     // Bar n'a aucune trace temporelle (bar_stock n'a pas d'historique), ce qui
-    // la rend invisible du reporting mensuel par département.
-    if (total > 0) {
+    // la rend invisible du reporting mensuel par dÃ©partement.
+    const barStockTotal = (items || []).reduce((sum, item) => (
+      isRestaurantItem(item) ? sum : sum + Number(item.quantite || 1) * Number(item.prix || 0)
+    ), 0);
+    if (barStockTotal > 0) {
       await conn.query(
         `INSERT INTO financial_transactions
            (module, type_flux, montant, reference_id, ref_flux_global, description, statut_sync, created_at)
          VALUES ('BAR', 'SORTIE', ?, ?, ?, ?, 'SYNCED', NOW())`,
-        [total, orderId, `BAR-ORDER-${orderId}-STOCK`, `Sortie de stock — commande bar #${orderId}`]
+        [barStockTotal, orderId, `BAR-ORDER-${orderId}-STOCK`, `Sortie de stock â€” commande bar #${orderId}`]
       );
     }
 
-    const transactionItems = (items || []).map((item) => ({
+    const transactionItems = (items || []).filter((item) => !isRestaurantItem(item)).map((item) => ({
       product_id: item.product_id ?? item.id,
       quantite: Number(item.quantite || 1),
       prix_unitaire: Number(item.prix_unitaire ?? item.prix ?? 0),
@@ -227,10 +292,14 @@ async function createBarOrder({ clientName, tableId, nombrePersonnes = 1, moyenP
       connection: conn,
     });
 
+    // Copie historisÃ©e de la vente dans le journal du stock Bar (le stock a
+    // dÃ©jÃ  Ã©tÃ© dÃ©crÃ©mentÃ© ci-dessus : aucune double dÃ©crÃ©mentation).
+    await stockModel.appendBarSaleMovements(conn, orderId, transactionItems);
+
     for (const item of items || []) {
       await conn.query(
-        'INSERT INTO bar_order_items (order_id, nom, quantite, prix, created_at) VALUES (?, ?, ?, ?, NOW())',
-        [orderId, item.nom || null, Number(item.quantite || 1), Number(item.prix || 0)]
+        'INSERT INTO bar_order_items (order_id, nom, quantite, prix, source_module, source_product_id, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())',
+        [orderId, item.nom || null, Number(item.quantite || 1), Number(item.prix || 0), isRestaurantItem(item) ? 'RESTAURANT' : 'BAR', Number(item.product_id ?? item.id) || null]
       );
     }
 
@@ -244,6 +313,8 @@ async function createBarOrder({ clientName, tableId, nombrePersonnes = 1, moyenP
       statut: 'EN_ATTENTE',
       total,
       items: (items || []).map((item) => ({
+        product_id: Number(item.product_id ?? item.id),
+        source_module: isRestaurantItem(item) ? 'RESTAURANT' : 'BAR',
         nom: item.nom,
         quantite: Number(item.quantite || 1),
         prix: Number(item.prix || 0),
@@ -266,13 +337,14 @@ async function updateBarOrder(id, { clientName, tableId, nombrePersonnes = 1, mo
     }
 
     const [existingOrderItems] = await conn.query(
-      'SELECT nom, quantite, prix FROM bar_order_items WHERE order_id = ?',
+      'SELECT nom, quantite, prix, source_module, source_product_id FROM bar_order_items WHERE order_id = ?',
       [id]
     );
 
     const normalizedItems = (items || [])
       .map((item) => ({
-        product_id: Number(item.product_id ?? item.id),
+        product_id: Number(item.product_id ?? item.source_product_id ?? item.id),
+        source_module: isRestaurantItem(item) ? 'RESTAURANT' : 'BAR',
         nom: item.nom,
         quantite: Number(item.quantite || 1),
         prix: Number(item.prix_unitaire ?? item.prix ?? 0),
@@ -284,19 +356,28 @@ async function updateBarOrder(id, { clientName, tableId, nombrePersonnes = 1, mo
     }
 
     const existingByName = new Map();
+    const existingByProduct = new Map();
     for (const row of existingOrderItems || []) {
       const key = String(row.nom || '').trim().toLowerCase();
       existingByName.set(key, Number(row.quantite || 0));
+      if (row.source_product_id != null) {
+        existingByProduct.set(`${row.source_module || 'BAR'}:${Number(row.source_product_id)}`, Number(row.quantite || 0));
+      }
     }
 
     const additions = normalizedItems
       .map((item) => {
-        const key = String(item.nom || '').trim().toLowerCase();
-        const alreadyAdded = existingByName.get(key) || 0;
+        const key = `${item.source_module}:${item.product_id}`;
+        const legacyNameKey = String(item.nom || '').trim().toLowerCase();
+        const alreadyAdded = existingByProduct.get(key)
+          ?? (!isRestaurantItem(item) ? existingByName.get(legacyNameKey) : 0)
+          ?? 0;
         const increment = Math.max(0, item.quantite - alreadyAdded);
         return increment > 0 ? { ...item, quantite: increment } : null;
       })
       .filter(Boolean);
+
+    await validateRestaurantMenuItems(conn, additions);
 
     if (!additions.length) {
       const currentOrder = orders[0];
@@ -329,7 +410,7 @@ async function updateBarOrder(id, { clientName, tableId, nombrePersonnes = 1, mo
 
     const requestedQuantities = new Map();
     for (const item of additions) {
-      if (item.product_id > 0) {
+      if (item.product_id > 0 && item.source_module !== 'RESTAURANT') {
         requestedQuantities.set(item.product_id, (requestedQuantities.get(item.product_id) || 0) + item.quantite);
       }
     }
@@ -363,10 +444,12 @@ async function updateBarOrder(id, { clientName, tableId, nombrePersonnes = 1, mo
       [clientValue, tableValue, guestValue, paymentValue, observationValue, nextTotal, id]
     );
 
+    await syncRestaurantItems(conn, id, [], additions, `Vente restaurant via commande Bar #${id}`);
+
     for (const item of additions) {
       await conn.query(
-        'INSERT INTO bar_order_items (order_id, nom, quantite, prix, created_at) VALUES (?, ?, ?, ?, NOW())',
-        [id, item.nom || null, item.quantite, item.prix]
+        'INSERT INTO bar_order_items (order_id, nom, quantite, prix, source_module, source_product_id, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())',
+        [id, item.nom || null, item.quantite, item.prix, item.source_module, item.product_id]
       );
     }
 
@@ -377,19 +460,22 @@ async function updateBarOrder(id, { clientName, tableId, nombrePersonnes = 1, mo
       );
     }
 
-    // Sortie de stock datée pour les articles ajoutés à une commande existante
-    // (voir la même écriture dans createBarOrder pour le contexte).
-    if (totalNewItems > 0) {
+    // Sortie de stock datÃ©e pour les articles ajoutÃ©s Ã  une commande existante
+    // (voir la mÃªme Ã©criture dans createBarOrder pour le contexte).
+    const barStockTotal = additions.reduce((sum, item) => (
+      isRestaurantItem(item) ? sum : sum + item.quantite * item.prix
+    ), 0);
+    if (barStockTotal > 0) {
       await conn.query(
         `INSERT INTO financial_transactions
            (module, type_flux, montant, reference_id, ref_flux_global, description, statut_sync, created_at)
          VALUES ('BAR', 'SORTIE', ?, ?, ?, ?, 'SYNCED', NOW())`,
-        [totalNewItems, id, `BAR-ORDER-${id}-STOCK`, `Sortie de stock — ajout commande bar #${id}`]
+        [barStockTotal, id, `BAR-ORDER-${id}-STOCK`, `Sortie de stock â€” ajout commande bar #${id}`]
       );
     }
 
     const clientId = await findOrCreateClient(clientValue, conn);
-    const transactionItems = additions.map((item) => ({
+    const transactionItems = additions.filter((item) => item.source_module !== 'RESTAURANT').map((item) => ({
       product_id: item.product_id,
       quantite: item.quantite,
       prix_unitaire: item.prix,
@@ -404,6 +490,8 @@ async function updateBarOrder(id, { clientName, tableId, nombrePersonnes = 1, mo
       connection: conn,
     });
 
+    await stockModel.appendBarSaleMovements(conn, id, transactionItems);
+
     return {
       id: Number(id),
       client: clientValue,
@@ -415,6 +503,8 @@ async function updateBarOrder(id, { clientName, tableId, nombrePersonnes = 1, mo
       total: Number(nextTotal),
       created_at: currentOrder.created_at,
       items: normalizedItems.map((item) => ({
+        product_id: item.product_id,
+        source_module: item.source_module,
         nom: item.nom,
         quantite: item.quantite,
         prix: item.prix,
@@ -431,6 +521,12 @@ async function deleteBarOrder(id) {
     const [orders] = await conn.query('SELECT id FROM bar_orders WHERE id = ? FOR UPDATE', [id]);
     if (!orders.length) return false;
 
+    const [restaurantItems] = await conn.query(
+      "SELECT source_module, source_product_id, quantite FROM bar_order_items WHERE order_id = ? AND source_module = 'RESTAURANT'",
+      [id]
+    );
+    await syncRestaurantItems(conn, id, restaurantItems, [], `Annulation commande Bar #${id}`);
+
     const [transactions] = await conn.query(
       'SELECT product_id, quantite FROM bar_transactions WHERE order_id = ?',
       [id]
@@ -441,6 +537,8 @@ async function deleteBarOrder(id) {
         [transaction.quantite, transaction.product_id]
       );
     }
+    // La commande disparaÃ®t : ses lignes de journal de vente aussi.
+    await stockModel.removeBarSaleMovements(conn, id);
     await conn.query('DELETE FROM bar_transactions WHERE order_id = ?', [id]);
     await conn.query(
       `DELETE FROM financial_transactions

@@ -32,6 +32,9 @@ function validateStockPayload(body) {
   if (body.seuil_minimum !== undefined && (!Number.isFinite(Number(body.seuil_minimum)) || Number(body.seuil_minimum) < 0)) {
     throw ApiError.badRequest('Le seuil minimum doit être positif ou nul');
   }
+  if (body.prix_achat !== undefined && (!Number.isFinite(Number(body.prix_achat)) || Number(body.prix_achat) < 0)) {
+    throw ApiError.badRequest('Le prix d’achat doit être positif ou nul');
+  }
 }
 
 async function createStockHandler(req, res) {
@@ -281,17 +284,17 @@ async function lowStockHandler(req, res, next) {
 async function stockOverviewHandler(req, res, next) {
   try {
     await restaurant.ensureRestaurantSchema();
-    const rows = await stock.stockOverview();
-    return ok(res, rows);
+    const rows = await stock.stockOverview(req.query.month || null);
+    return ok(res, rows, { month: req.query.month || null });
   } catch (err) {
     next(err);
   }
 }
 
-// Actions de la page Stock sur une ligne de la vue consolidée (clé BAR-x ou STK-x)
+// Actions de la page Stock sur une ligne de la vue consolidée (clé BAR-x, STK-x ou ING-x-y)
 async function stockItemDetailsHandler(req, res) {
   await restaurant.ensureRestaurantSchema();
-  return ok(res, await stock.stockItemDetails(req.params.cle));
+  return ok(res, await stock.stockItemDetails(req.params.cle, req.query.month || null));
 }
 
 async function updateStockItemHandler(req, res) {
@@ -302,6 +305,43 @@ async function updateStockItemHandler(req, res) {
 async function deleteStockItemHandler(req, res) {
   const userId = req.user?.id_admin || req.user?.id || null;
   return ok(res, await stock.deleteStockItem(req.params.cle, userId));
+}
+
+async function createItemMovementHandler(req, res) {
+  const userId = req.user?.id_admin || req.user?.id || null;
+  return created(res, await stock.recordItemMovement(req.params.cle, req.body || {}, userId));
+}
+
+async function createInventoryHandler(req, res) {
+  const userId = req.user?.id_admin || req.user?.id || null;
+  return created(res, await stock.createInventory(req.params.cle, req.body || {}, userId));
+}
+
+async function listInventoriesHandler(req, res) {
+  const rows = await stock.listInventories({
+    month: req.query.month || null,
+    cle: req.query.cle || null,
+    limit: req.query.limit,
+    offset: req.query.offset,
+  });
+  return ok(res, rows);
+}
+
+async function listHistoryHandler(req, res) {
+  const rows = await stock.listStockHistory({
+    month: req.query.month || null,
+    cle: req.query.cle || null,
+    module: req.query.module || null,
+    type: req.query.type || null,
+    limit: req.query.limit,
+    offset: req.query.offset,
+  });
+  return ok(res, rows);
+}
+
+async function createArticleHandler(req, res) {
+  const userId = req.user?.id_admin || req.user?.id || null;
+  return created(res, await stock.createArticle(req.body || {}, userId));
 }
 
 /**
@@ -576,6 +616,11 @@ module.exports = {
   stockItemDetailsHandler,
   updateStockItemHandler,
   deleteStockItemHandler,
+  createItemMovementHandler,
+  createInventoryHandler,
+  listInventoriesHandler,
+  listHistoryHandler,
+  createArticleHandler,
   stockByProductHandler,
   getProductsWithStockHandler,
   createStockHandler,

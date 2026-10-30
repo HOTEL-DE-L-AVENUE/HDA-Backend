@@ -702,6 +702,7 @@ module.exports = {
   TablesRestaurant, Orders, OrderItems,
   RestaurantCashiers, RestaurantSessions,
   createOrderWithItems, updateOrderWithItems, orderWithItems, ordersByTable, ensureRestaurantSchema, ingredientNeeds,
+  syncOrderIngredients,
   recordRestaurantIngredientMovement, consumeRestaurantRecipeIngredients,
   closeAllRestaurantOrders, updateOrderStatus,
 };
