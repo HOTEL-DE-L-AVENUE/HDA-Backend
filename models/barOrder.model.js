@@ -1,5 +1,6 @@
 const { pool, withTransaction } = require('../config/db');
 const { createOrder, ensureBarTransactionsSchema } = require('./barTransaction.model');
+const stockModel = require('./stockModel');
 const ApiError = require('../utils/ApiError');
 
 async function findOrCreateClient(name, connection) {
@@ -227,6 +228,10 @@ async function createBarOrder({ clientName, tableId, nombrePersonnes = 1, moyenP
       connection: conn,
     });
 
+    // Copie historisée de la vente dans le journal du stock Bar (le stock a
+    // déjà été décrémenté ci-dessus : aucune double décrémentation).
+    await stockModel.appendBarSaleMovements(conn, orderId, transactionItems);
+
     for (const item of items || []) {
       await conn.query(
         'INSERT INTO bar_order_items (order_id, nom, quantite, prix, created_at) VALUES (?, ?, ?, ?, NOW())',
@@ -404,6 +409,8 @@ async function updateBarOrder(id, { clientName, tableId, nombrePersonnes = 1, mo
       connection: conn,
     });
 
+    await stockModel.appendBarSaleMovements(conn, id, transactionItems);
+
     return {
       id: Number(id),
       client: clientValue,
@@ -441,6 +448,8 @@ async function deleteBarOrder(id) {
         [transaction.quantite, transaction.product_id]
       );
     }
+    // La commande disparaît : ses lignes de journal de vente aussi.
+    await stockModel.removeBarSaleMovements(conn, id);
     await conn.query('DELETE FROM bar_transactions WHERE order_id = ?', [id]);
     await conn.query(
       `DELETE FROM financial_transactions
