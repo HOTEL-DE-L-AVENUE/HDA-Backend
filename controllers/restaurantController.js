@@ -307,11 +307,22 @@ async function createRestaurantIngredientHandler(req, res) {
   
   if (!nom || !nom.trim()) throw ApiError.badRequest('Le nom de l\'ingrédient est requis');
   if (!unite || !unite.trim()) throw ApiError.badRequest('L\'unité est requise');
-  if (!quantite || Number(quantite) < 0) throw ApiError.badRequest('La quantité doit être positive');
+  const initialQuantity = Number(quantite);
+  if (quantite === undefined || quantite === null || !Number.isFinite(initialQuantity) || initialQuantity < 0) {
+    throw ApiError.badRequest('La quantité doit être un nombre positif ou nul');
+  }
   
   const locationId = Number(location_id) || 2;
   
-  await withTransaction(async (conn) => {
+  const ingredient = await withTransaction(async (conn) => {
+    const [existingRows] = await conn.query(
+      'SELECT id FROM restaurant_ingredients WHERE LOWER(TRIM(nom)) = LOWER(TRIM(?)) AND actif = 1 LIMIT 1 FOR UPDATE',
+      [nom.trim()]
+    );
+    if (existingRows.length > 0) {
+      throw ApiError.conflict(`L'ingrédient « ${nom.trim()} » existe déjà.`);
+    }
+
     const [result] = await conn.query(
       `INSERT INTO restaurant_ingredients (nom, unite, prix_achat, actif)
        VALUES (?, ?, ?, 1)`,
@@ -322,13 +333,13 @@ async function createRestaurantIngredientHandler(req, res) {
     await conn.query(
       `INSERT INTO restaurant_ingredient_stocks (ingredient_id, location_id, quantite)
        VALUES (?, ?, ?)`,
-      [ingredientId, locationId, Number(quantite)]
+      [ingredientId, locationId, initialQuantity]
     );
     
     await conn.query(
       `INSERT INTO restaurant_ingredient_stock_movements (ingredient_id, location_id, type_mouvement, quantite, source_module, created_at, stock_after, motif)
        VALUES (?, ?, 'ENTREE', ?, 'MANUEL', NOW(), ?, ?)`,
-      [ingredientId, locationId, Number(quantite), Number(quantite), 'Création ingrédient']
+      [ingredientId, locationId, initialQuantity, initialQuantity, 'Création ingrédient']
     );
     
     const [[ingredient]] = await conn.query(
@@ -338,7 +349,7 @@ async function createRestaurantIngredientHandler(req, res) {
     return ingredient;
   });
   
-  return created(res, { message: 'Ingrédient créé avec succès' });
+  return created(res, ingredient);
 }
 
 async function updateRestaurantIngredientHandler(req, res) {
