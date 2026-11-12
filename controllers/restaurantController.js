@@ -314,6 +314,10 @@ async function createRestaurantIngredientHandler(req, res) {
   if (quantite === undefined || quantite === null || !Number.isFinite(initialQuantity) || initialQuantity < 0) {
     throw ApiError.badRequest('La quantité doit être un nombre positif ou nul');
   }
+  const purchasePrice = Number(prix_achat ?? 0);
+  if (!Number.isFinite(purchasePrice) || purchasePrice < 0) {
+    throw ApiError.badRequest('Le prix d’achat doit être un nombre positif ou nul');
+  }
   
   const locationId = Number(location_id) || 2;
   
@@ -329,7 +333,7 @@ async function createRestaurantIngredientHandler(req, res) {
     const [result] = await conn.query(
       `INSERT INTO restaurant_ingredients (nom, unite, prix_achat, actif)
        VALUES (?, ?, ?, 1)`,
-      [nom.trim(), unite.trim(), Number(prix_achat) || 0]
+      [nom.trim(), unite.trim(), purchasePrice]
     );
     const ingredientId = result.insertId;
     
