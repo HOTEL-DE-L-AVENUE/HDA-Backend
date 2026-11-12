@@ -173,6 +173,7 @@ async function nextRestaurantProductCode() {
 const productsCrud = {
   ...createCrudController(stock.Products, { filterable: ['category_id', 'subcategory_id', 'actif'] }),
   list: async (req, res) => {
+    await resto.ensureRestaurantSchema();
     const { category_id, subcategory_id, actif } = req.query;
     let whereSql = "WHERE p.type_produit = 'PRODUIT_FINI' AND p.source_module = 'RESTAURANT'";
     const params = [];
@@ -210,6 +211,7 @@ const productsCrud = {
   },
   nextCode: async (req, res) => ok(res, { code: await nextRestaurantProductCode() }),
   create: async (req, res) => {
+    await resto.ensureRestaurantSchema();
     const productName = String(req.body?.nom || '').trim();
     if (!productName) throw ApiError.badRequest('Le nom du produit est requis');
     if (req.body?.ingredients !== undefined && !Array.isArray(req.body.ingredients)) {
@@ -269,6 +271,7 @@ const productsCrud = {
     return created(res, product);
   },
   update: async (req, res) => {
+    await resto.ensureRestaurantSchema();
     const product = await stock.Products.findById(req.params.id);
     if (!product || product.source_module !== 'RESTAURANT') {
       throw ApiError.notFound(`Produit restaurant #${req.params.id} introuvable`);
