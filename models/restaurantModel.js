@@ -15,7 +15,9 @@ async function ensureRestaurantSchema() {
     restaurantSchemaReady = (async () => {
       const [productColumns] = await pool.query('SHOW COLUMNS FROM products');
       if (!productColumns.some((column) => column.Field === 'afficher_dans_bar')) {
-        await pool.query('ALTER TABLE products ADD COLUMN afficher_dans_bar TINYINT(1) NOT NULL DEFAULT 0');
+        throw new Error(
+          'La migration Database/migrations/20261112_restaurant_products_bar_visibility.sql doit être appliquée avant d’utiliser le module Restaurant.'
+        );
       }
 
       const [orderColumns] = await pool.query('SHOW COLUMNS FROM orders');
