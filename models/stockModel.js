@@ -34,7 +34,7 @@ const Units = createCrudModel({
 
 const Products = createCrudModel({
   table: 'products', pk: 'id',
-  fields: ['category_id', 'subcategory_id', 'code', 'nom', 'unite', 'prix_achat', 'prix_vente', 'actif', 'type_produit', 'portion_size', 'portion_unite', 'source_module'],
+  fields: ['category_id', 'subcategory_id', 'code', 'nom', 'unite', 'prix_achat', 'prix_vente', 'actif', 'type_produit', 'portion_size', 'portion_unite', 'source_module', 'afficher_dans_bar'],
   sortable: ['id', 'nom', 'code', 'prix_vente'],
   filterable: ['category_id', 'subcategory_id', 'actif', 'type_produit'],
 });

@@ -13,6 +13,11 @@ let restaurantSchemaReady;
 async function ensureRestaurantSchema() {
   if (!restaurantSchemaReady) {
     restaurantSchemaReady = (async () => {
+      const [productColumns] = await pool.query('SHOW COLUMNS FROM products');
+      if (!productColumns.some((column) => column.Field === 'afficher_dans_bar')) {
+        await pool.query('ALTER TABLE products ADD COLUMN afficher_dans_bar TINYINT(1) NOT NULL DEFAULT 0');
+      }
+
       const [orderColumns] = await pool.query('SHOW COLUMNS FROM orders');
       if (!orderColumns.some((column) => column.Field === 'table_id')) {
         await pool.query('ALTER TABLE orders ADD COLUMN table_id BIGINT UNSIGNED NULL AFTER client_id');
