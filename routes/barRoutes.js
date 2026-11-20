@@ -1,4 +1,4 @@
-// routes/barRoutes.js
+﻿// routes/barRoutes.js
 const express = require('express');
 const ctrl = require('../controllers/barController');
 const { createCrudRouter } = require('./routeFactory');
@@ -27,21 +27,25 @@ router.use(requireAuth, (req, res, next) => {
 	}
 	if (!Array.isArray(modules)) modules = [];
 	modules = modules.map((item) => typeof item === 'string' ? item : item?.id).filter(Boolean);
-	if (!modules.includes('bar')) return next(require('../utils/ApiError').forbidden('Le module Bar n’est pas attribué à cet utilisateur'));
+	const canReadRestaurantDrinkMenu = role === 'serveur'
+		&& modules.includes('restaurant')
+		&& req.method === 'GET'
+		&& /^\/products(?:\/\d+)?$/.test(req.path);
+	if (!modules.includes('bar') && !canReadRestaurantDrinkMenu) return next(require('../utils/ApiError').forbidden('AccÃ¨s au menu des boissons refusÃ©'));
 	const method = req.method;
 	const path = req.path;
 	if (role === 'caisse' || role === 'caissier') {
 		if (method === 'GET' && ['/products', '/stock', '/orders', '/transactions', '/sessions/open', '/cashier-status'].includes(path)) return next();
 		if (method === 'PUT' && /^\/orders\/\d+\/status$/.test(path)) return next();
 		if (method === 'POST' && ['/orders/close-all', '/sessions/open', '/sessions/close'].includes(path)) return next();
-		return next(require('../utils/ApiError').forbidden('Le rôle caisse est limité aux chiffres et aux opérations d’encaissement du Bar'));
+		return next(require('../utils/ApiError').forbidden('Le rÃ´le caisse est limitÃ© aux chiffres et aux opÃ©rations dâ€™encaissement du Bar'));
 	}
 	const canViewProducts = method === 'GET' && (/^\/products(?:\/\d+)?$/.test(path) || path === '/stock' || path === '/tables');
 	const canManageOrders = /^\/orders(?:\/\d+)?(?:\/status)?$/.test(path) && (
 		method === 'GET' || method === 'POST' && path === '/orders' || method === 'PUT'
 	);
 	if (canViewProducts || canManageOrders) return next();
-	return next(require('../utils/ApiError').forbidden('Le rôle serveur est limité aux produits et aux commandes'));
+	return next(require('../utils/ApiError').forbidden('Le rÃ´le serveur est limitÃ© aux produits et aux commandes'));
 });
 
 // Stock bar
@@ -55,10 +59,10 @@ router.get('/products', ctrl.productsCrud.list);
 router.get('/products/:id', ctrl.productsCrud.getOne);
 router.use('/products', managementRoles, createCrudRouter(ctrl.productsCrud));
 
-// Équipements propres au Bar — accès réservé à l'administrateur.
+// Ã‰quipements propres au Bar â€” accÃ¨s rÃ©servÃ© Ã  l'administrateur.
 router.use('/equipments', adminOnly, createCrudRouter(ctrl.barEquipmentsCrud));
 
-// Tables — stats route BEFORE CRUD so it doesn't get caught by/:id wildcard
+// Tables â€” stats route BEFORE CRUD so it doesn't get caught by/:id wildcard
 router.get('/tables/stats', ctrl.tablesStatsHandler);
 router.get('/tables', ctrl.tablesCrud.list);
 router.get('/tables/:id', ctrl.tablesCrud.getOne);
@@ -72,7 +76,7 @@ router.get('/cashiers', ctrl.cashiersCrud.list);
 router.get('/cashiers/:id', ctrl.cashiersCrud.getOne);
 router.use('/cashiers', managementRoles, createCrudRouter(ctrl.cashiersCrud));
 
-// Sessions — all specific routes BEFORE CRUD middleware
+// Sessions â€” all specific routes BEFORE CRUD middleware
 router.post('/sessions/open', cashierRoles, ctrl.openCashierHandler);
 router.post('/sessions/close', cashierRoles, ctrl.closeCashierHandler);
 router.get('/sessions/open', ctrl.openSessionsHandler);
@@ -96,7 +100,7 @@ router.put('/orders/:id/status', orderStatusRoles, ctrl.updateBarOrderStatusHand
 router.post('/orders/close-all', cashierRoles, ctrl.closeAllBarOrdersHandler);
 router.delete('/orders/:id', requireRole('admin', 'manager'), ctrl.deleteBarOrderHandler);
 
-// Transactions — commandes caisse
+// Transactions â€” commandes caisse
 router.get('/transactions', ctrl.listTransactionsHandler);
 router.post('/transactions', cashierRoles, ctrl.addTransactionHandler);
 router.get('/transactions/latest', ctrl.latestTransactionsByProductHandler);
