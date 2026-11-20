@@ -31,7 +31,7 @@ router.use(requireAuth, (req, res, next) => {
 	const method = req.method;
 	const path = req.path;
 	if (role === 'caisse' || role === 'caissier') {
-		if (method === 'GET' && ['/products', '/stock', '/orders', '/sessions/open', '/cashier-status'].includes(path)) return next();
+		if (method === 'GET' && ['/products', '/stock', '/orders', '/transactions', '/sessions/open', '/cashier-status'].includes(path)) return next();
 		if (method === 'PUT' && /^\/orders\/\d+\/status$/.test(path)) return next();
 		if (method === 'POST' && ['/orders/close-all', '/sessions/open', '/sessions/close'].includes(path)) return next();
 		return next(require('../utils/ApiError').forbidden('Le rôle caisse est limité aux chiffres et aux opérations d’encaissement du Bar'));
