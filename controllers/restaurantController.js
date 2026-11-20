@@ -538,13 +538,24 @@ async function createOrderHandler(req, res) {
       if (!tableRow) throw ApiError.badRequest(`table_id ${table_id} introuvable`);
     }
 
-    const productIds = items.map((it) => Number(it.product_id)).filter(Boolean);
-    if (!productIds.length) throw ApiError.badRequest('Chaque ligne doit contenir product_id valide');
-    const placeholders = productIds.map(() => '?').join(',');
-    const [foundProducts] = await pool.query(`SELECT id FROM products WHERE id IN (${placeholders})`, productIds);
+    const restaurantItems = items.filter((item) => String(item.source_module || 'RESTAURANT').toUpperCase() !== 'BAR');
+    const barItems = items.filter((item) => String(item.source_module || '').toUpperCase() === 'BAR');
+    const productIds = restaurantItems.map((item) => Number(item.product_id)).filter(Boolean);
+    const barProductIds = barItems.map((item) => Number(item.source_product_id)).filter(Boolean);
+    if (!productIds.length && !barProductIds.length) throw ApiError.badRequest('Chaque ligne doit contenir un produit valide');
+    if (productIds.length !== restaurantItems.length || barProductIds.length !== barItems.length) throw ApiError.badRequest('Identifiant produit invalide dans la commande');
+    const [foundProducts] = productIds.length
+      ? await pool.query(`SELECT id FROM products WHERE id IN (?)`, [productIds])
+      : [[]];
     const foundIds = new Set(foundProducts.map((p) => Number(p.id)));
     const missing = productIds.filter((id) => !foundIds.has(id));
     if (missing.length) throw ApiError.badRequest(`product_id introuvable: ${missing.join(',')}`);
+    const [foundBarProducts] = barProductIds.length
+      ? await pool.query('SELECT bp.id FROM bar_products bp JOIN bar_stock bs ON bs.product_id = bp.id WHERE bp.id IN (?)', [barProductIds])
+      : [[]];
+    const foundBarIds = new Set(foundBarProducts.map((product) => Number(product.id)));
+    const missingBar = barProductIds.filter((id) => !foundBarIds.has(id));
+    if (missingBar.length) throw ApiError.badRequest(`Boisson introuvable ou sans stock: ${missingBar.join(',')}`);
   } catch (err) {
     if (err instanceof ApiError) throw err;
     console.error('[restaurant] validation error', err);
@@ -559,12 +570,24 @@ async function updateOrderHandler(req, res) {
   const { client_id, table_id, items, notes, location_type, special_person_name } = req.body;
   if (!Array.isArray(items) || !items.length) throw ApiError.badRequest('items requis (au moins une ligne)');
 
-  const productIds = items.map((item) => Number(item.product_id)).filter(Boolean);
-  const placeholders = productIds.map(() => '?').join(',');
-  const [foundProducts] = await pool.query(`SELECT id FROM products WHERE id IN (${placeholders})`, productIds);
+  const restaurantItems = items.filter((item) => String(item.source_module || 'RESTAURANT').toUpperCase() !== 'BAR');
+  const barItems = items.filter((item) => String(item.source_module || '').toUpperCase() === 'BAR');
+  const productIds = restaurantItems.map((item) => Number(item.product_id)).filter(Boolean);
+  const barProductIds = barItems.map((item) => Number(item.source_product_id)).filter(Boolean);
+  if (!productIds.length && !barProductIds.length) throw ApiError.badRequest('Chaque ligne doit contenir un produit valide');
+  if (productIds.length !== restaurantItems.length || barProductIds.length !== barItems.length) throw ApiError.badRequest('Identifiant produit invalide dans la commande');
+  const [foundProducts] = productIds.length
+    ? await pool.query('SELECT id FROM products WHERE id IN (?)', [productIds])
+    : [[]];
   const foundIds = new Set(foundProducts.map((product) => Number(product.id)));
   const missing = productIds.filter((id) => !foundIds.has(id));
   if (missing.length) throw ApiError.badRequest(`product_id introuvable: ${missing.join(',')}`);
+  const [foundBarProducts] = barProductIds.length
+    ? await pool.query('SELECT bp.id FROM bar_products bp JOIN bar_stock bs ON bs.product_id = bp.id WHERE bp.id IN (?)', [barProductIds])
+    : [[]];
+  const foundBarIds = new Set(foundBarProducts.map((product) => Number(product.id)));
+  const missingBar = barProductIds.filter((id) => !foundBarIds.has(id));
+  if (missingBar.length) throw ApiError.badRequest(`Boisson introuvable ou sans stock: ${missingBar.join(',')}`);
 
   const order = await resto.updateOrderWithItems({
     orderId: req.params.id,
@@ -1023,21 +1046,7 @@ async function updateOrderStatusHandler(req, res) {
     
     // Si on annule une commande avec stock déduit, rétablir le stock
     if (statut === 'ANNULEE' && order.stock_deducted_at && order.statut !== 'ANNULEE') {
-      const [orderItems] = await conn.query(
-        'SELECT product_id, quantite FROM order_items WHERE order_id = ?',
-        [req.params.id]
-      );
-      await resto.syncOrderIngredients(conn, {
-        orderId: Number(req.params.id),
-        fromItems: orderItems,
-        toItems: [],
-        motif: `Annulation commande restaurant #${req.params.id}`,
-        includeRecipeIngredients: Boolean(order.order_ingredients_deducted),
-      });
-      await conn.query(
-        'UPDATE orders SET stock_deducted_at = NULL, order_ingredients_deducted = 0 WHERE id = ?',
-        [req.params.id]
-      );
+      await resto.restoreOrderIngredients(conn, Number(req.params.id), `Annulation commande restaurant #${req.params.id}`);
     }
     
     await conn.query(
@@ -1086,10 +1095,12 @@ async function historyTotalHandler(req, res) {
     const placeholders = orderIds.map(() => '?').join(', ');
     [items] = await pool.query(
       `SELECT oi.id, oi.order_id, oi.quantite, oi.prix_unitaire,
-              p.nom AS product_nom, c.nom AS category_nom
+              COALESCE(oi.product_nom, p.nom, bp.nom) AS product_nom,
+              COALESCE(c.nom, bp.categorie) AS category_nom
          FROM order_items oi
          LEFT JOIN products p ON p.id = oi.product_id
          LEFT JOIN categories c ON c.id = p.category_id
+         LEFT JOIN bar_products bp ON bp.id = oi.source_product_id AND oi.source_module = 'BAR'
         WHERE oi.order_id IN (${placeholders})
         ORDER BY oi.order_id, oi.id`,
       orderIds
@@ -1204,12 +1215,15 @@ async function statsHandler(req, res) {
   );
 
   const [[topItems]] = await pool.query(
-    `SELECT oi.product_id, p.nom AS product_nom, SUM(oi.quantite) AS total_quantity
+    `SELECT COALESCE(oi.source_product_id, oi.product_id) AS product_id,
+            COALESCE(oi.product_nom, p.nom, bp.nom) AS product_nom,
+            SUM(oi.quantite) AS total_quantity
        FROM order_items oi
        JOIN orders o ON o.id = oi.order_id
-       JOIN products p ON p.id = oi.product_id
+       LEFT JOIN products p ON p.id = oi.product_id
+       LEFT JOIN bar_products bp ON bp.id = oi.source_product_id AND oi.source_module = 'BAR'
       WHERE o.source_module = 'RESTAURANT' ${dateFrom ? ' AND o.created_at >= ?' : ''} ${dateTo ? ' AND o.created_at <= ?' : ''}
-      GROUP BY oi.product_id, p.nom
+      GROUP BY COALESCE(oi.source_product_id, oi.product_id), COALESCE(oi.product_nom, p.nom, bp.nom)
       ORDER BY total_quantity DESC
       LIMIT 10`,
     dateFrom && dateTo ? [dateFrom, dateTo] : []
