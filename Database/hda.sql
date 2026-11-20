@@ -1434,7 +1434,7 @@ CREATE TABLE `users` (
   `prenom` varchar(100) NOT NULL,
   `email` varchar(150) NOT NULL,
   `mot_de_passe` varchar(255) NOT NULL,
-  `role` enum('admin','manager','receptioniste','caisse','water','housekeeping') NOT NULL DEFAULT 'admin',
+  `role` enum('admin','manager','receptioniste','caisse','water','housekeeping','croupier','hotesse','serveur') NOT NULL DEFAULT 'admin',
   `statut` enum('actif','inactif') NOT NULL DEFAULT 'actif',
   `date_creation` datetime NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
