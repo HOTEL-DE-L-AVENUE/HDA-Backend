@@ -21,16 +21,16 @@ async function getProductHistory({ dateFrom, dateTo, productName } = {}) {
     params.push(dateTo);
   }
   if (productName && String(productName).trim()) {
-    conditions.push('p.nom LIKE ?');
+    conditions.push('COALESCE(oi.product_nom, p.nom, bp.nom) LIKE ?');
     params.push(`%${String(productName).trim()}%`);
   }
 
   const sql = `
     SELECT
       DATE(o.created_at) AS date_vente,
-      oi.product_id AS product_id,
-      COALESCE(p.nom, CONCAT('Produit #', oi.product_id)) AS produit,
-      COALESCE(c.nom, 'Autre') AS categorie,
+      COALESCE(oi.source_product_id, oi.product_id) AS product_id,
+      COALESCE(oi.product_nom, p.nom, bp.nom, CONCAT('Produit #', oi.product_id)) AS produit,
+      COALESCE(c.nom, bp.categorie, 'Autre') AS categorie,
       SUM(oi.quantite) AS quantite_totale,
       SUM(oi.quantite * oi.prix_unitaire) AS montant_total,
       COUNT(DISTINCT o.id) AS nb_commandes
@@ -38,8 +38,9 @@ async function getProductHistory({ dateFrom, dateTo, productName } = {}) {
     INNER JOIN orders o ON o.id = oi.order_id
     LEFT JOIN products p ON p.id = oi.product_id
     LEFT JOIN categories c ON c.id = p.category_id
+    LEFT JOIN bar_products bp ON bp.id = oi.source_product_id AND oi.source_module = 'BAR'
     WHERE ${conditions.join(' AND ')}
-    GROUP BY DATE(o.created_at), oi.product_id, p.nom, c.nom
+    GROUP BY DATE(o.created_at), COALESCE(oi.source_product_id, oi.product_id), COALESCE(oi.product_nom, p.nom, bp.nom), COALESCE(c.nom, bp.categorie)
     ORDER BY date_vente DESC, quantite_totale DESC
   `;
 

@@ -73,6 +73,15 @@ async function ensureRestaurantSchema() {
       if (!orderItemColumns.some((column) => column.Field === 'cuisson')) {
         await pool.query('ALTER TABLE order_items ADD COLUMN cuisson VARCHAR(50) NULL AFTER prix_unitaire');
       }
+      if (!orderItemColumns.some((column) => column.Field === 'source_module')) {
+        await pool.query("ALTER TABLE order_items ADD COLUMN source_module VARCHAR(20) NOT NULL DEFAULT 'RESTAURANT' AFTER cuisson");
+      }
+      if (!orderItemColumns.some((column) => column.Field === 'source_product_id')) {
+        await pool.query('ALTER TABLE order_items ADD COLUMN source_product_id BIGINT UNSIGNED NULL AFTER source_module');
+      }
+      if (!orderItemColumns.some((column) => column.Field === 'product_nom')) {
+        await pool.query('ALTER TABLE order_items ADD COLUMN product_nom VARCHAR(150) NULL AFTER source_product_id');
+      }
 
       const [recipeItemColumns] = await pool.query('SHOW COLUMNS FROM recipe_items');
       if (!recipeItemColumns.some((column) => column.Field === 'unite')) {
@@ -448,7 +457,8 @@ async function restoreOrderIngredients(conn, orderId, motif) {
     [orderId]
   );
   if (!order?.stock_deducted_at) return;
-  const [items] = await conn.query('SELECT product_id, quantite FROM order_items WHERE order_id = ?', [orderId]);
+  const [items] = await conn.query('SELECT product_id, quantite, source_module, source_product_id FROM order_items WHERE order_id = ?', [orderId]);
+  await syncBarDrinkStock(conn, items, [], orderId, motif);
   await syncOrderIngredients(conn, {
     orderId,
     fromItems: items,
@@ -460,6 +470,41 @@ async function restoreOrderIngredients(conn, orderId, motif) {
     'UPDATE orders SET stock_deducted_at = NULL, order_ingredients_deducted = 0 WHERE id = ?',
     [orderId]
   );
+}
+
+async function syncBarDrinkStock(conn, fromItems, toItems, orderId, motif) {
+  const sumByProduct = (items) => {
+    const totals = new Map();
+    for (const item of items || []) {
+      if (String(item.source_module || 'RESTAURANT').toUpperCase() !== 'BAR') continue;
+      const id = Number(item.source_product_id);
+      const quantity = Number(item.quantite || 0);
+      if (id > 0 && quantity > 0) totals.set(id, (totals.get(id) || 0) + quantity);
+    }
+    return totals;
+  };
+  const before = sumByProduct(fromItems);
+  const after = sumByProduct(toItems);
+  for (const id of new Set([...before.keys(), ...after.keys()])) {
+    const delta = (after.get(id) || 0) - (before.get(id) || 0);
+    if (!delta) continue;
+    const [[stock]] = await conn.query('SELECT quantite FROM bar_stock WHERE product_id = ? FOR UPDATE', [id]);
+    if (!stock) throw ApiError.badRequest(`Stock introuvable pour la boisson #${id}.`);
+    const next = Number(stock.quantite) - delta;
+    if (next < 0) throw ApiError.badRequest(`Stock insuffisant pour la boisson #${id}. Disponible : ${stock.quantite}.`);
+    await conn.query('UPDATE bar_stock SET quantite = ? WHERE product_id = ?', [next, id]);
+  }
+  await stockModel.removeBarSaleMovements(conn, orderId);
+  for (const [id, quantity] of after) {
+    const [[stock]] = await conn.query('SELECT quantite FROM bar_stock WHERE product_id = ?', [id]);
+    await conn.query(
+      `INSERT INTO bar_stock_movements
+         (product_id, location_id, type_mouvement, quantite, source_module, reference_id,
+          date_operation, created_at, stock_after, motif)
+       VALUES (?, 3, 'SORTIE', ?, 'VENTE_BAR', ?, CURDATE(), NOW(), ?, ?)`,
+      [id, quantity, orderId, Number(stock.quantite), motif]
+    );
+  }
 }
 
 const RestaurantCashiers = createCrudModel({
@@ -491,10 +536,11 @@ async function createOrderWithItems({ clientId, tableId, items, notes, locationT
 
     for (const it of items) {
       await conn.query(
-        `INSERT INTO order_items (order_id, product_id, quantite, prix_unitaire, cuisson) VALUES (?, ?, ?, ?, ?)`,
-        [orderId, it.product_id, it.quantite, it.prix_unitaire, it.cuisson || null]
+        `INSERT INTO order_items (order_id, product_id, quantite, prix_unitaire, cuisson, source_module, source_product_id, product_nom) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [orderId, it.source_module === 'BAR' ? null : it.product_id, it.quantite, it.prix_unitaire, it.cuisson || null, it.source_module || 'RESTAURANT', it.source_module === 'BAR' ? it.source_product_id : null, it.nom || null]
       );
     }
+    await syncBarDrinkStock(conn, [], items, orderId, `Vente boisson Restaurant #${orderId}`);
     await syncOrderIngredients(conn, {
       orderId,
       fromItems: [],
@@ -518,7 +564,7 @@ async function updateOrderWithItems({ orderId, clientId, tableId, items, notes, 
     );
     if (!existingRows[0]) return null;
     // Seul l'écart entre l'ancienne et la nouvelle commande passe dans le stock.
-    const [previousItems] = await conn.query('SELECT product_id, quantite FROM order_items WHERE order_id = ?', [orderId]);
+    const [previousItems] = await conn.query('SELECT product_id, quantite, source_module, source_product_id FROM order_items WHERE order_id = ?', [orderId]);
     const deducted = Boolean(existingRows[0].stock_deducted_at);
     if (deducted && Boolean(existingRows[0].order_ingredients_deducted)) {
       await syncOrderIngredients(conn, {
@@ -530,6 +576,7 @@ async function updateOrderWithItems({ orderId, clientId, tableId, items, notes, 
       });
     }
     if (deducted || existingRows[0].statut !== 'ANNULEE') {
+      await syncBarDrinkStock(conn, deducted ? previousItems : [], items, Number(orderId), `Vente boisson Restaurant #${orderId}`);
       await syncOrderIngredients(conn, {
         orderId,
         fromItems: deducted ? previousItems : [],
@@ -550,15 +597,16 @@ async function updateOrderWithItems({ orderId, clientId, tableId, items, notes, 
     await conn.query('DELETE FROM order_items WHERE order_id = ?', [orderId]);
     for (const item of items) {
       await conn.query(
-        `INSERT INTO order_items (order_id, product_id, quantite, prix_unitaire, cuisson) VALUES (?, ?, ?, ?, ?)`,
-        [orderId, item.product_id, item.quantite, item.prix_unitaire, item.cuisson || null]
+        `INSERT INTO order_items (order_id, product_id, quantite, prix_unitaire, cuisson, source_module, source_product_id, product_nom) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [orderId, item.source_module === 'BAR' ? null : item.product_id, item.quantite, item.prix_unitaire, item.cuisson || null, item.source_module || 'RESTAURANT', item.source_module === 'BAR' ? item.source_product_id : null, item.nom || null]
       );
     }
 
     const [orders] = await conn.query('SELECT * FROM orders WHERE id = ?', [orderId]);
     const [orderItems] = await conn.query(
-      `SELECT oi.*, p.nom AS product_nom FROM order_items oi
+      `SELECT oi.*, COALESCE(oi.product_nom, p.nom, bp.nom) AS product_nom FROM order_items oi
        LEFT JOIN products p ON p.id = oi.product_id
+       LEFT JOIN bar_products bp ON bp.id = oi.source_product_id AND oi.source_module = 'BAR'
        WHERE oi.order_id = ?`,
       [orderId]
     );
@@ -576,8 +624,9 @@ async function orderWithItems(orderId) {
   );
   if (!orderRows[0]) return null;
   const [items] = await pool.query(
-    `SELECT oi.*, p.nom AS product_nom FROM order_items oi
+    `SELECT oi.*, COALESCE(oi.product_nom, p.nom, bp.nom) AS product_nom FROM order_items oi
      LEFT JOIN products p ON p.id = oi.product_id
+     LEFT JOIN bar_products bp ON bp.id = oi.source_product_id AND oi.source_module = 'BAR'
      WHERE oi.order_id = ?`,
     [orderId]
   );
@@ -708,7 +757,7 @@ async function ordersByTable(statutFilter = 'EN_COURS') {
 module.exports = {
   TablesRestaurant, Orders, OrderItems,
   RestaurantCashiers, RestaurantSessions,
-  createOrderWithItems, updateOrderWithItems, orderWithItems, ordersByTable, ensureRestaurantSchema, ingredientNeeds,
+  createOrderWithItems, updateOrderWithItems, orderWithItems, ordersByTable, ensureRestaurantSchema, ingredientNeeds, restoreOrderIngredients,
   syncOrderIngredients,
   recordRestaurantIngredientMovement, consumeRestaurantRecipeIngredients,
   closeAllRestaurantOrders, updateOrderStatus,
