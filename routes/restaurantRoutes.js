@@ -7,17 +7,27 @@ const { requireAuth, requireRole } = require('../middlewares/auth');
 const ApiError = require('../utils/ApiError');
 
 const router = express.Router();
+const assignedModules = (raw) => {
+  if (Array.isArray(raw)) return raw.map((item) => typeof item === 'string' ? item : item?.id).filter(Boolean);
+  if (typeof raw !== 'string') return [];
+  try { const parsed = JSON.parse(raw); return Array.isArray(parsed) ? parsed.map((item) => typeof item === 'string' ? item : item?.id).filter(Boolean) : []; }
+  catch { return raw.split(',').map((item) => item.trim()).filter(Boolean); }
+};
 // Restaurant scope for the two restricted roles. Admin and the existing roles
 // keep their current route policies; these checks also protect direct API calls.
 router.use(requireAuth, (req, res, next) => {
   const role = String(req.user?.role || '').toLowerCase();
   const path = req.path;
   const method = req.method;
+  const hasRestaurant = assignedModules(req.user?.module).includes('restaurant');
   if (role === 'caisse' || role === 'caissier') {
+    if (!hasRestaurant) return next(ApiError.forbidden('Le module Restaurant n’est pas attribué à cet utilisateur'));
     if (method === 'GET' && (path === '/orders' || path === '/stats')) return next();
-    return next(ApiError.forbidden('Le rôle caisse peut consulter les chiffres du restaurant uniquement'));
+    if (method === 'POST' && ['/payments', '/orders/close-all', '/cashier/open', '/cashier/close'].includes(path)) return next();
+    return next(ApiError.forbidden('Le rôle caisse est limité aux chiffres et aux opérations d’encaissement du restaurant'));
   }
   if (role === 'serveur') {
+    if (!hasRestaurant) return next(ApiError.forbidden('Le module Restaurant n’est pas attribué à ce serveur'));
     const canReadProducts = method === 'GET' && (
       path === '/products' || path === '/categories' || path === '/tables'
     );

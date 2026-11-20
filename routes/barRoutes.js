@@ -8,7 +8,7 @@ const router = express.Router();
 const managementRoles = requireRole('admin', 'manager', 'stock_manager');
 const adminOnly = requireRole('admin');
 const cashierRoles = requireRole('admin', 'manager', 'caisse', 'caissier');
-const orderRoles = requireRole('admin', 'manager', 'caisse', 'caissier', 'water', 'barman', 'hotesse');
+const orderRoles = requireRole('admin', 'manager', 'caisse', 'caissier', 'water', 'barman', 'hotesse', 'serveur');
 const tableRoles = requireRole('admin', 'manager', 'stock_manager', 'water', 'barman', 'caisse', 'caissier');
 
 const orderStatusRoles = (req, res, next) => {
@@ -18,7 +18,31 @@ const orderStatusRoles = (req, res, next) => {
 	return middleware(req, res, next);
 };
 
-router.use(requireAuth);
+router.use(requireAuth, (req, res, next) => {
+	const role = String(req.user?.role || '').toLowerCase();
+	if (!['serveur', 'caisse', 'caissier'].includes(role)) return next();
+	let modules = req.user?.module;
+	if (typeof modules === 'string') {
+		try { modules = JSON.parse(modules); } catch { modules = modules.split(',').map((item) => item.trim()); }
+	}
+	if (!Array.isArray(modules)) modules = [];
+	modules = modules.map((item) => typeof item === 'string' ? item : item?.id).filter(Boolean);
+	if (!modules.includes('bar')) return next(require('../utils/ApiError').forbidden('Le module Bar n’est pas attribué à cet utilisateur'));
+	const method = req.method;
+	const path = req.path;
+	if (role === 'caisse' || role === 'caissier') {
+		if (method === 'GET' && ['/products', '/stock', '/orders', '/sessions/open', '/cashier-status'].includes(path)) return next();
+		if (method === 'PUT' && /^\/orders\/\d+\/status$/.test(path)) return next();
+		if (method === 'POST' && ['/orders/close-all', '/sessions/open', '/sessions/close'].includes(path)) return next();
+		return next(require('../utils/ApiError').forbidden('Le rôle caisse est limité aux chiffres et aux opérations d’encaissement du Bar'));
+	}
+	const canViewProducts = method === 'GET' && (/^\/products(?:\/\d+)?$/.test(path) || path === '/stock' || path === '/tables');
+	const canManageOrders = /^\/orders(?:\/\d+)?(?:\/status)?$/.test(path) && (
+		method === 'GET' || method === 'POST' && path === '/orders' || method === 'PUT'
+	);
+	if (canViewProducts || canManageOrders) return next();
+	return next(require('../utils/ApiError').forbidden('Le rôle serveur est limité aux produits et aux commandes'));
+});
 
 // Stock bar
 router.get('/stock', ctrl.getBarStockHandler);
