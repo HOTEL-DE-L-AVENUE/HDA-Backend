@@ -4,8 +4,35 @@ const ctrl = require('../controllers/restaurantController');
 const { createCrudRouter } = require('./routeFactory');
 const stockCtrl = require('../controllers/stockController');
 const { requireAuth, requireRole } = require('../middlewares/auth');
+const ApiError = require('../utils/ApiError');
 
 const router = express.Router();
+// Restaurant scope for the two restricted roles. Admin and the existing roles
+// keep their current route policies; these checks also protect direct API calls.
+router.use(requireAuth, (req, res, next) => {
+  const role = String(req.user?.role || '').toLowerCase();
+  const path = req.path;
+  const method = req.method;
+  if (role === 'caisse' || role === 'caissier') {
+    if (method === 'GET' && (path === '/orders' || path === '/stats')) return next();
+    return next(ApiError.forbidden('Le rôle caisse peut consulter les chiffres du restaurant uniquement'));
+  }
+  if (role === 'serveur') {
+    const canReadProducts = method === 'GET' && (
+      path === '/products' || path === '/categories' || path === '/tables'
+    );
+    const isOrderPath = /^\/orders(?:\/[^/]+(?:\/(?:status|detail|invoice(?:\.pdf)?))?)?$/.test(path);
+    const canHandleOrders = isOrderPath && (
+      (method === 'GET') ||
+      (method === 'POST' && path === '/orders') ||
+      (method === 'PUT' && (/^\/orders\/[^/]+$/.test(path) || /^\/orders\/[^/]+\/status$/.test(path))) ||
+      (method === 'DELETE' && /^\/orders\/[^/]+$/.test(path))
+    );
+    if (canReadProducts || canHandleOrders) return next();
+    return next(ApiError.forbidden('Le rôle serveur est limité aux produits et aux commandes'));
+  }
+  return next();
+});
 router.get('/reports/:date', requireAuth, ctrl.getRestaurantReportHandler);
 router.post('/reports', requireAuth, requireRole('admin', 'manager', 'caisse', 'caissier'), ctrl.saveRestaurantReportHandler);
 router.get('/product-history', requireAuth, requireRole('admin'), ctrl.getProductHistoryHandler);
