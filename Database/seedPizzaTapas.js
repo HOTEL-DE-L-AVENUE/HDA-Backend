@@ -158,8 +158,8 @@ async function seedRestaurantProducts() {
   }
 }
 
-async function seedBarProducts() {
-  for (const item of barItems) {
+async function seedBarProducts(items = barItems) {
+  for (const item of items) {
     const [existing] = await pool.query(
       'SELECT id FROM bar_products WHERE nom = ? LIMIT 1',
       [item.nom]
@@ -187,13 +187,18 @@ async function seedBarProducts() {
     const [stockCheck] = await pool.query('SELECT id FROM bar_stock WHERE product_id = ?', [productId]);
 
     if (stockCheck.length > 0) {
-      await pool.query('UPDATE bar_stock SET quantite = ?, unite = ? WHERE product_id = ?', [item.stock, item.unite, productId]);
+      // Ne pas réinitialiser le stock réel lors des exécutions suivantes du seed.
+      await pool.query('UPDATE bar_stock SET unite = ? WHERE product_id = ?', [item.unite, productId]);
     } else {
       await pool.query('INSERT INTO bar_stock (product_id, quantite, seuil_minimum, unite) VALUES (?, ?, ?, ?)', [productId, item.stock, 0, item.unite]);
     }
 
     console.log(`✅ Produit bar prêt: ${item.nom}`);
   }
+}
+
+async function seedBarTapas() {
+  return seedBarProducts(barItems.filter((item) => item.categorie === 'Tapas'));
 }
 
 async function seedPizzaTapas() {
@@ -217,4 +222,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { seedPizzaTapas };
+module.exports = { seedPizzaTapas, seedBarProducts, seedBarTapas };

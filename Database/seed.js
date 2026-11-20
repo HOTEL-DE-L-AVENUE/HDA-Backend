@@ -9,6 +9,7 @@ const SeedQuintanaSkyDrinks = require('./seedQuintanaSkyDrinks');
 const SeedBillardExtras = require('./seedBillardExtras');
 const SeedBottleExtras = require('./seedBottleExtras');
 const SeedRestaurantPizzas = require('./seedRestaurantPizzas');
+const { seedBarTapas } = require('./seedPizzaTapas');
 
 /**
  * Script principal pour exécuter tous les seeders
@@ -44,6 +45,9 @@ async function runAllSeeders() {
     // 7. Seeder des boissons Quintana Sky (Bar)
     const seedBarProducts = new SeedQuintanaSkyDrinks();
     await seedBarProducts.run();
+
+    // 7b. Menu Tapas disponible dans les commandes du Bar
+    await seedBarTapas();
 
     // 8. Seeder des extras Billard
     await SeedBillardExtras();
