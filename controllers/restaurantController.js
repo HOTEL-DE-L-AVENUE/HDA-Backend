@@ -793,13 +793,12 @@ async function ordersInProgressHandler(req, res) {
 }
 
 async function closeAllRestaurantOrdersHandler(req, res) {
-  const [result] = await pool.query(
-    `UPDATE orders
-       SET statut = 'PAYEE', cloturee = 1, cloture_at = NOW()
-      WHERE source_module = 'RESTAURANT'
-        AND statut = 'EN_COURS'`
-  );
-  return ok(res, { message: `${result.affectedRows} commandes clôturées` });
+  const { order_ids } = req.body || {};
+  if (!Array.isArray(order_ids) || order_ids.length === 0) {
+    throw ApiError.badRequest('order_ids doit contenir les commandes encaissées à clôturer');
+  }
+  const result = await resto.closeAllRestaurantOrders(order_ids);
+  return ok(res, { message: `${result.closed_orders} commandes clôturées`, ...result });
 }
 
 async function restaurantStockHandler(req, res) {

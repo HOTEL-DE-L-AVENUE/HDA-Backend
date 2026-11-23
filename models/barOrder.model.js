@@ -610,12 +610,19 @@ async function closeAllBarOrders(orderIds = []) {
   await ensureBarTransactionsSchema();
 
   return withTransaction(async (conn) => {
-    const ids = [...new Set(orderIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))];
-    const targetIds = ids.length > 0
-      ? ids
-      : (await conn.query("SELECT id FROM bar_orders WHERE statut <> 'CLOTUREE'"))[0].map((row) => row.id);
+    const targetIds = [...new Set(orderIds.map(Number))];
+    if (targetIds.length === 0 || targetIds.some((id) => !Number.isInteger(id) || id <= 0)) {
+      throw ApiError.badRequest('La liste des commandes à clôturer est invalide.');
+    }
+    const [orders] = await conn.query(
+      'SELECT id, statut FROM bar_orders WHERE id IN (?) FOR UPDATE',
+      [targetIds]
+    );
+    if (orders.length !== targetIds.length || orders.some((order) => !['ENCAISSEE', 'CLOTUREE'].includes(String(order.statut).toUpperCase()))) {
+      throw ApiError.conflict('Toutes les commandes doivent être encaissées avant la clôture de la caisse.');
+    }
     if (targetIds.length > 0) {
-      await conn.query("UPDATE bar_orders SET statut = 'CLOTUREE', cloture_at = NOW() WHERE id IN (?) AND statut <> 'CLOTUREE'", [targetIds]);
+      await conn.query("UPDATE bar_orders SET statut = 'CLOTUREE', cloture_at = NOW() WHERE id IN (?) AND statut = 'ENCAISSEE'", [targetIds]);
     }
     return { closed_orders: targetIds.length, archived: true };
   });

@@ -729,20 +729,27 @@ async function updateOrderStatus(orderId, statut) {
 async function closeAllRestaurantOrders(orderIds = []) {
   await ensureRestaurantSchema();
   return withTransaction(async (conn) => {
-    const ids = [...new Set(orderIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))];
-    let affectedRows = 0;
-    if (ids.length > 0) {
-      const [res] = await conn.query(
-        'UPDATE orders SET cloturee = 1, cloture_at = NOW() WHERE id IN (?) AND (cloturee = 0 OR cloturee IS NULL)',
-        [ids]
-      );
-      affectedRows = res.affectedRows;
-    } else {
-      const [res] = await conn.query(
-        "UPDATE orders SET cloturee = 1, cloture_at = NOW() WHERE (source_module = 'RESTAURANT' OR source_module IS NULL) AND (cloturee = 0 OR cloturee IS NULL)"
-      );
-      affectedRows = res.affectedRows;
+    const ids = [...new Set(orderIds.map(Number))];
+    if (ids.length === 0 || ids.some((id) => !Number.isInteger(id) || id <= 0)) {
+      throw ApiError.badRequest('La liste des commandes à clôturer est invalide.');
     }
+
+    const [orders] = await conn.query(
+      `SELECT id, statut FROM orders
+       WHERE id IN (?) AND (source_module = 'RESTAURANT' OR source_module IS NULL)
+       FOR UPDATE`,
+      [ids]
+    );
+    if (orders.length !== ids.length || orders.some((order) => !['PAYE', 'PAYEE'].includes(String(order.statut).toUpperCase()))) {
+      throw ApiError.conflict('Toutes les commandes doivent être encaissées avant la clôture de la caisse.');
+    }
+
+    const [res] = await conn.query(
+      `UPDATE orders SET cloturee = 1, cloture_at = NOW()
+       WHERE id IN (?) AND (cloturee = 0 OR cloturee IS NULL)`,
+      [ids]
+    );
+    const affectedRows = res.affectedRows;
 
     await conn.query(
       "UPDATE financial_transactions SET cloturee = 1, cloture_at = NOW() WHERE UPPER(COALESCE(module, '')) = 'RESTAURANT' AND (cloturee = 0 OR cloturee IS NULL)"
