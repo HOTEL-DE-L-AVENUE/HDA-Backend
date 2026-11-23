@@ -100,7 +100,7 @@ router.post('/orders', createOrderRoles, ctrl.createBarOrderHandler);
 router.put('/orders/:id', orderRoles, ctrl.updateBarOrderHandler);
 router.put('/orders/:id/status', orderStatusRoles, ctrl.updateBarOrderStatusHandler);
 router.post('/orders/close-all', cashierRoles, ctrl.closeAllBarOrdersHandler);
-router.delete('/orders/:id', requireRole('admin', 'manager'), ctrl.deleteBarOrderHandler);
+router.delete('/orders/:id', adminOnly, ctrl.deleteBarOrderHandler);
 
 // Transactions â€” commandes caisse
 router.get('/transactions', ctrl.listTransactionsHandler);
