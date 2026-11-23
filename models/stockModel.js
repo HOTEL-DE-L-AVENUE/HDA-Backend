@@ -1127,6 +1127,69 @@ async function removeBarSaleMovements(conn, orderId) {
   );
 }
 
+// Keep older deployments usable when the stock journal migration has not yet
+// been applied. Called before order transactions, never from inside one.
+let barStockMovementsReady;
+let stockMovementsReady;
+async function ensureStockMovementsSchema() {
+  if (!stockMovementsReady) {
+    stockMovementsReady = (async () => {
+      const [columns] = await pool.query('SHOW COLUMNS FROM stock_movements');
+      const existing = new Set(columns.map((column) => column.Field));
+      const additions = [
+        ['date_operation', 'DATE NULL'],
+        ['stock_after', 'DECIMAL(15,3) NULL'],
+        ['motif', 'VARCHAR(255) NULL'],
+        ['user_id', 'BIGINT UNSIGNED NULL'],
+        ['reference_externe', 'VARCHAR(100) NULL'],
+        ['commentaire', 'VARCHAR(500) NULL'],
+        ['supplier_id', 'BIGINT UNSIGNED NULL'],
+      ];
+      for (const [name, definition] of additions) {
+        if (!existing.has(name)) {
+          await pool.query(`ALTER TABLE stock_movements ADD COLUMN \`${name}\` ${definition}`);
+        }
+      }
+    })().catch((error) => {
+      stockMovementsReady = undefined;
+      throw error;
+    });
+  }
+  await stockMovementsReady;
+}
+
+async function ensureBarStockMovementsSchema() {
+  if (!barStockMovementsReady) {
+    barStockMovementsReady = pool.query(`
+      CREATE TABLE IF NOT EXISTS bar_stock_movements (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+        product_id BIGINT UNSIGNED NOT NULL,
+        location_id BIGINT UNSIGNED NOT NULL DEFAULT 3,
+        type_mouvement VARCHAR(20) NOT NULL,
+        quantite INT NOT NULL,
+        source_module VARCHAR(50) NULL,
+        reference_id BIGINT UNSIGNED NULL,
+        reference_externe VARCHAR(100) NULL,
+        date_operation DATE NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        stock_after INT NULL,
+        motif VARCHAR(255) NULL,
+        commentaire VARCHAR(500) NULL,
+        user_id BIGINT UNSIGNED NULL,
+        supplier_id BIGINT UNSIGNED NULL,
+        PRIMARY KEY (id),
+        KEY idx_bar_stock_movements_product_date (product_id, date_operation, created_at),
+        KEY idx_bar_stock_movements_source (source_module, reference_id),
+        CONSTRAINT fk_bar_stock_movements_product FOREIGN KEY (product_id) REFERENCES bar_products (id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `).catch((error) => {
+      barStockMovementsReady = undefined;
+      throw error;
+    });
+  }
+  await barStockMovementsReady;
+}
+
 // --- Inventaires physiques --------------------------------------------------
 async function createInventory(cle, payload = {}, userId = null) {
   const { kind, id, locationId } = parseOverviewKey(cle);
@@ -1575,6 +1638,6 @@ module.exports = {
   recordMovement, createPurchaseWithItems, lowStock, stockByProduct, stockOverview, stockItemDetails,
   updateStockItem, deleteStockItem, getProductsWithStock, consumePortion, getStockQuantity,
   recordBarMovement, recordIngredientMovement, recordItemMovement,
-  appendBarSaleMovements, removeBarSaleMovements,
+  appendBarSaleMovements, removeBarSaleMovements, ensureBarStockMovementsSchema, ensureStockMovementsSchema,
   createInventory, listInventories, createArticle, listStockHistory,
 };

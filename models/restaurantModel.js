@@ -20,6 +20,9 @@ async function ensureRestaurantSchema() {
         );
       }
 
+      await stockModel.ensureBarStockMovementsSchema();
+      await stockModel.ensureStockMovementsSchema();
+
       const [orderColumns] = await pool.query('SHOW COLUMNS FROM orders');
       if (!orderColumns.some((column) => column.Field === 'table_id')) {
         await pool.query('ALTER TABLE orders ADD COLUMN table_id BIGINT UNSIGNED NULL AFTER client_id');
@@ -485,6 +488,9 @@ async function syncBarDrinkStock(conn, fromItems, toItems, orderId, motif) {
   };
   const before = sumByProduct(fromItems);
   const after = sumByProduct(toItems);
+  // Restaurant-only orders do not touch the Bar inventory or its movement
+  // journal. Avoid querying Bar tables for orders with no Bar products.
+  if (before.size === 0 && after.size === 0) return;
   for (const id of new Set([...before.keys(), ...after.keys()])) {
     const delta = (after.get(id) || 0) - (before.get(id) || 0);
     if (!delta) continue;
