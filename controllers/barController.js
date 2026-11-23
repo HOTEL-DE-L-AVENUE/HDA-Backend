@@ -192,7 +192,7 @@ async function listTransactionsHandler(req, res) {
      FROM bar_transactions t
      JOIN bar_products bp ON bp.id = t.product_id
      JOIN bar_orders bo ON bo.id = t.order_id
-     WHERE t.statut = 'PAYEE' AND bo.statut <> 'CLOTUREE'
+     WHERE t.statut = 'PAYEE'
      ORDER BY t.created_at DESC LIMIT 50`
   );
   return ok(res, rows);
@@ -321,6 +321,9 @@ async function updateBarOrderStatusHandler(req, res) {
   const allowedPayments = ['ESPECES', 'CREDIT', 'TPE', 'ORANGE_MONEY', 'MVOLA', 'GRATUIT'];
   if (moyen_paiement && !allowedPayments.includes(moyen_paiement)) {
     throw ApiError.badRequest('Mode de paiement invalide');
+  }
+  if (!['EN_ATTENTE', 'EN_PREPARATION', 'PRETE', 'SERVIE', 'ENCAISSEE', 'ANNULEE'].includes(statut)) {
+    throw ApiError.badRequest('Statut de commande invalide');
   }
   const order = await updateBarOrderStatus(req.params.id, statut, moyen_paiement);
   if (!order) throw ApiError.notFound(`Commande #${req.params.id} introuvable`);

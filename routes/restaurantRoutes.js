@@ -24,7 +24,7 @@ router.use(requireAuth, (req, res, next) => {
     if (!hasRestaurant) return next(ApiError.forbidden('Le module Restaurant n’est pas attribué à cet utilisateur'));
     if (method === 'GET' && ['/orders', '/stats', '/menu', '/products', '/categories', '/tables'].includes(path)) return next();
     if (method === 'POST' && path === '/orders') return next();
-    if (method === 'GET' && /^\/orders\/[^/]+\/invoice(?:\.pdf)?$/.test(path)) return next();
+    if (method === 'GET' && /^\/orders\/[^/]+\/(?:detail|invoice(?:\.pdf)?)$/.test(path)) return next();
     if (method === 'POST' && ['/payments', '/orders/close-all', '/cashier/open', '/cashier/close'].includes(path)) return next();
     return next(ApiError.forbidden('Le rôle caisse est limité aux chiffres et aux opérations d’encaissement du restaurant'));
   }
@@ -37,8 +37,7 @@ router.use(requireAuth, (req, res, next) => {
     const canHandleOrders = isOrderPath && (
       (method === 'GET') ||
       (method === 'POST' && path === '/orders') ||
-      (method === 'PUT' && (/^\/orders\/[^/]+$/.test(path) || /^\/orders\/[^/]+\/status$/.test(path))) ||
-      (method === 'DELETE' && /^\/orders\/[^/]+$/.test(path))
+      (method === 'PUT' && (/^\/orders\/[^/]+$/.test(path) || /^\/orders\/[^/]+\/status$/.test(path)))
     );
     if (canReadProducts || canHandleOrders) return next();
     return next(ApiError.forbidden('Le rôle serveur est limité aux produits et aux commandes'));
@@ -89,7 +88,7 @@ router.get('/orders/:id/invoice.pdf', ctrl.orderInvoicePdfHandler);
 router.get('/orders/:id/detail', ctrl.orderDetailHandler);
 router.put('/orders/:id', ctrl.updateOrderHandler);
 router.put('/orders/:id/status', requireRole('admin', 'manager', 'serveur'), ctrl.updateOrderStatusHandler);
-router.delete('/orders/:id', ctrl.removeOrderHandler);
+router.delete('/orders/:id', requireRole('admin'), ctrl.removeOrderHandler);
 router.use('/orders', createCrudRouter(ctrl.ordersCrud));
 router.use('/order-items', createCrudRouter(ctrl.orderItemsCrud));
 
