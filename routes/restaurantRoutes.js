@@ -22,7 +22,9 @@ router.use(requireAuth, (req, res, next) => {
   const hasRestaurant = assignedModules(req.user?.module).includes('restaurant');
   if (role === 'caisse' || role === 'caissier') {
     if (!hasRestaurant) return next(ApiError.forbidden('Le module Restaurant n’est pas attribué à cet utilisateur'));
-    if (method === 'GET' && (path === '/orders' || path === '/stats')) return next();
+    if (method === 'GET' && ['/orders', '/stats', '/menu', '/products', '/categories', '/tables'].includes(path)) return next();
+    if (method === 'POST' && path === '/orders') return next();
+    if (method === 'GET' && /^\/orders\/[^/]+\/invoice(?:\.pdf)?$/.test(path)) return next();
     if (method === 'POST' && ['/payments', '/orders/close-all', '/cashier/open', '/cashier/close'].includes(path)) return next();
     return next(ApiError.forbidden('Le rôle caisse est limité aux chiffres et aux opérations d’encaissement du restaurant'));
   }

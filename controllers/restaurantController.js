@@ -1059,6 +1059,14 @@ async function updateOrderStatusHandler(req, res) {
 }
 
 async function removeOrderHandler(req, res) {
+  const role = String(req.user?.role || '').toLowerCase();
+  if (role !== 'admin') {
+    const [[order]] = await pool.query('SELECT statut FROM orders WHERE id = ? AND source_module = "RESTAURANT" LIMIT 1', [req.params.id]);
+    if (!order) throw ApiError.notFound('Commande introuvable');
+    if (['EN_COURS', 'PRETE', 'SERVIE', 'PAYE', 'PAYEE'].includes(String(order.statut).toUpperCase())) {
+      throw ApiError.forbidden('Seul un administrateur peut supprimer une commande déjà démarrée ou servie');
+    }
+  }
   const deleted = await resto.Orders.remove(req.params.id);
   if (!deleted) throw ApiError.notFound('Commande introuvable');
   return noContent(res);
