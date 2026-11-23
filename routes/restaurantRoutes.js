@@ -88,7 +88,7 @@ router.get('/orders/:id/invoice', ctrl.orderInvoiceHandler);
 router.get('/orders/:id/invoice.pdf', ctrl.orderInvoicePdfHandler);
 router.get('/orders/:id/detail', ctrl.orderDetailHandler);
 router.put('/orders/:id', ctrl.updateOrderHandler);
-router.put('/orders/:id/status', ctrl.updateOrderStatusHandler);
+router.put('/orders/:id/status', requireRole('admin', 'manager', 'serveur'), ctrl.updateOrderStatusHandler);
 router.delete('/orders/:id', ctrl.removeOrderHandler);
 router.use('/orders', createCrudRouter(ctrl.ordersCrud));
 router.use('/order-items', createCrudRouter(ctrl.orderItemsCrud));

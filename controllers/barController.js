@@ -187,7 +187,9 @@ async function latestTransactionsByProductHandler(req, res) {
 async function listTransactionsHandler(req, res) {
   const { pool } = require('../config/db');
   const [rows] = await pool.query(
-    `SELECT t.*, bp.nom, bp.prix, bp.categorie FROM bar_transactions t
+    `SELECT t.*, bp.nom, bp.prix, bp.categorie,
+            bo.client_name, bo.moyen_paiement
+     FROM bar_transactions t
      JOIN bar_products bp ON bp.id = t.product_id
      JOIN bar_orders bo ON bo.id = t.order_id
      WHERE t.statut = 'PAYEE' AND bo.statut <> 'CLOTUREE'
