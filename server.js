@@ -9,6 +9,7 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 
 const { checkConnection } = require('./config/db');
+const { runDatabaseMigrations } = require('./services/databaseMigrations');
 const apiRoutes = require('./routes');
 const { notFoundHandler, errorHandler } = require('./middlewares/errorHandler');
 const { startHotelReportDispatcher } = require('./services/hotelReportDispatcher');
@@ -61,6 +62,7 @@ const PORT = process.env.PORT || 4000;
 async function start() {
   try {
     await checkConnection();
+    await runDatabaseMigrations();
     const server = app.listen(PORT, () => console.log(`[server] API HDA démarrée sur http://localhost:${PORT}/api`));
     // Pas de délai maximal pour recevoir le corps d'une requête : les pièces jointes RH
     // n'ont pas de limite de taille et peuvent prendre plus de 5 min (défaut Node) à envoyer.

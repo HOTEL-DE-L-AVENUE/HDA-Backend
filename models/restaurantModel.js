@@ -20,6 +20,9 @@ async function ensureRestaurantSchema() {
         );
       }
 
+      await stockModel.ensureBarStockMovementsSchema();
+      await stockModel.ensureStockMovementsSchema();
+
       const [orderColumns] = await pool.query('SHOW COLUMNS FROM orders');
       if (!orderColumns.some((column) => column.Field === 'table_id')) {
         await pool.query('ALTER TABLE orders ADD COLUMN table_id BIGINT UNSIGNED NULL AFTER client_id');
@@ -485,6 +488,9 @@ async function syncBarDrinkStock(conn, fromItems, toItems, orderId, motif) {
   };
   const before = sumByProduct(fromItems);
   const after = sumByProduct(toItems);
+  // Restaurant-only orders do not touch the Bar inventory or its movement
+  // journal. Avoid querying Bar tables for orders with no Bar products.
+  if (before.size === 0 && after.size === 0) return;
   for (const id of new Set([...before.keys(), ...after.keys()])) {
     const delta = (after.get(id) || 0) - (before.get(id) || 0);
     if (!delta) continue;
@@ -723,20 +729,27 @@ async function updateOrderStatus(orderId, statut) {
 async function closeAllRestaurantOrders(orderIds = []) {
   await ensureRestaurantSchema();
   return withTransaction(async (conn) => {
-    const ids = [...new Set(orderIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))];
-    let affectedRows = 0;
-    if (ids.length > 0) {
-      const [res] = await conn.query(
-        'UPDATE orders SET cloturee = 1, cloture_at = NOW() WHERE id IN (?) AND (cloturee = 0 OR cloturee IS NULL)',
-        [ids]
-      );
-      affectedRows = res.affectedRows;
-    } else {
-      const [res] = await conn.query(
-        "UPDATE orders SET cloturee = 1, cloture_at = NOW() WHERE (source_module = 'RESTAURANT' OR source_module IS NULL) AND (cloturee = 0 OR cloturee IS NULL)"
-      );
-      affectedRows = res.affectedRows;
+    const ids = [...new Set(orderIds.map(Number))];
+    if (ids.length === 0 || ids.some((id) => !Number.isInteger(id) || id <= 0)) {
+      throw ApiError.badRequest('La liste des commandes à clôturer est invalide.');
     }
+
+    const [orders] = await conn.query(
+      `SELECT id, statut FROM orders
+       WHERE id IN (?) AND (source_module = 'RESTAURANT' OR source_module IS NULL)
+       FOR UPDATE`,
+      [ids]
+    );
+    if (orders.length !== ids.length || orders.some((order) => !['PAYE', 'PAYEE'].includes(String(order.statut).toUpperCase()))) {
+      throw ApiError.conflict('Toutes les commandes doivent être encaissées avant la clôture de la caisse.');
+    }
+
+    const [res] = await conn.query(
+      `UPDATE orders SET cloturee = 1, cloture_at = NOW()
+       WHERE id IN (?) AND (cloturee = 0 OR cloturee IS NULL)`,
+      [ids]
+    );
+    const affectedRows = res.affectedRows;
 
     await conn.query(
       "UPDATE financial_transactions SET cloturee = 1, cloture_at = NOW() WHERE UPPER(COALESCE(module, '')) = 'RESTAURANT' AND (cloturee = 0 OR cloturee IS NULL)"

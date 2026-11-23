@@ -552,6 +552,7 @@ async function deleteBarOrder(id) {
 
 async function updateBarOrderStatus(id, statut, moyenPaiement) {
   await ensureBarOrderTables();
+  if (statut === 'ANNULEE') await stockModel.ensureBarStockMovementsSchema();
   const allowedTransitions = {
     EN_ATTENTE: 'EN_PREPARATION',
     EN_PREPARATION: 'PRETE',
@@ -567,6 +568,42 @@ async function updateBarOrderStatus(id, statut, moyenPaiement) {
     if (!orders.length) return null;
 
     const currentStatus = orders[0].statut;
+    if (statut === 'ANNULEE') {
+      if (!['EN_ATTENTE', 'EN_PREPARATION'].includes(currentStatus)) {
+        throw ApiError.badRequest('Seules les commandes en attente ou en cours peuvent être annulées.');
+      }
+
+      const [orderItems] = await conn.query(
+        'SELECT source_module, source_product_id, quantite FROM bar_order_items WHERE order_id = ?',
+        [id]
+      );
+      await syncRestaurantItems(conn, id, orderItems, [], `Annulation commande Bar #${id}`);
+
+      const [transactions] = await conn.query(
+        'SELECT product_id, quantite FROM bar_transactions WHERE order_id = ?',
+        [id]
+      );
+      for (const transaction of transactions) {
+        await stockModel.recordBarMovement({
+          productId: Number(transaction.product_id),
+          type: 'ENTREE',
+          quantite: Number(transaction.quantite),
+          sourceModule: 'ANNULATION_BAR',
+          referenceId: Number(id),
+          motif: `Retour de stock – commande Bar #${id} annulée`,
+          conn,
+        });
+      }
+      await stockModel.removeBarSaleMovements(conn, id);
+      await conn.query("UPDATE bar_transactions SET statut = 'ANNULEE' WHERE order_id = ?", [id]);
+      await conn.query(
+        "DELETE FROM financial_transactions WHERE module = 'BAR' AND ref_flux_global = ?",
+        [`BAR-ORDER-${id}-STOCK`]
+      );
+      await conn.query("UPDATE bar_orders SET statut = 'ANNULEE' WHERE id = ?", [id]);
+      return { id: Number(id), statut };
+    }
+
     if (allowedTransitions[currentStatus] !== statut) {
       throw ApiError.badRequest('Transition de statut de commande invalide.');
     }
@@ -610,12 +647,19 @@ async function closeAllBarOrders(orderIds = []) {
   await ensureBarTransactionsSchema();
 
   return withTransaction(async (conn) => {
-    const ids = [...new Set(orderIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))];
-    const targetIds = ids.length > 0
-      ? ids
-      : (await conn.query("SELECT id FROM bar_orders WHERE statut <> 'CLOTUREE'"))[0].map((row) => row.id);
+    const targetIds = [...new Set(orderIds.map(Number))];
+    if (targetIds.length === 0 || targetIds.some((id) => !Number.isInteger(id) || id <= 0)) {
+      throw ApiError.badRequest('La liste des commandes à clôturer est invalide.');
+    }
+    const [orders] = await conn.query(
+      'SELECT id, statut FROM bar_orders WHERE id IN (?) FOR UPDATE',
+      [targetIds]
+    );
+    if (orders.length !== targetIds.length || orders.some((order) => !['ENCAISSEE', 'CLOTUREE'].includes(String(order.statut).toUpperCase()))) {
+      throw ApiError.conflict('Toutes les commandes doivent être encaissées avant la clôture de la caisse.');
+    }
     if (targetIds.length > 0) {
-      await conn.query("UPDATE bar_orders SET statut = 'CLOTUREE', cloture_at = NOW() WHERE id IN (?) AND statut <> 'CLOTUREE'", [targetIds]);
+      await conn.query("UPDATE bar_orders SET statut = 'CLOTUREE', cloture_at = NOW() WHERE id IN (?) AND statut = 'ENCAISSEE'", [targetIds]);
     }
     return { closed_orders: targetIds.length, archived: true };
   });

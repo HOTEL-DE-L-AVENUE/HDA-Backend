@@ -8,7 +8,8 @@ const router = express.Router();
 const managementRoles = requireRole('admin', 'manager', 'stock_manager');
 const adminOnly = requireRole('admin');
 const cashierRoles = requireRole('admin', 'manager', 'caisse', 'caissier');
-const orderRoles = requireRole('admin', 'manager', 'caisse', 'caissier', 'water', 'barman', 'hotesse', 'serveur');
+	const orderRoles = requireRole('admin', 'manager', 'water', 'barman', 'hotesse', 'serveur');
+	const createOrderRoles = requireRole('admin', 'manager', 'caisse', 'caissier', 'water', 'barman', 'hotesse', 'serveur');
 const tableRoles = requireRole('admin', 'manager', 'stock_manager', 'water', 'barman', 'caisse', 'caissier');
 
 const orderStatusRoles = (req, res, next) => {
@@ -35,7 +36,8 @@ router.use(requireAuth, (req, res, next) => {
 	const method = req.method;
 	const path = req.path;
 	if (role === 'caisse' || role === 'caissier') {
-		if (method === 'GET' && ['/products', '/stock', '/orders', '/transactions', '/sessions/open', '/cashier-status'].includes(path)) return next();
+		if (method === 'GET' && ['/products', '/stock', '/tables', '/orders', '/transactions', '/sessions/open', '/cashier-status'].includes(path)) return next();
+		if (method === 'POST' && path === '/orders') return next();
 		if (method === 'PUT' && /^\/orders\/\d+\/status$/.test(path)) return next();
 		if (method === 'POST' && ['/orders/close-all', '/sessions/open', '/sessions/close'].includes(path)) return next();
 		return next(require('../utils/ApiError').forbidden('Le rÃ´le caisse est limitÃ© aux chiffres et aux opÃ©rations dâ€™encaissement du Bar'));
@@ -94,11 +96,11 @@ router.post('/reports', orderRoles, ctrl.saveBarReportHandler);
 router.get('/product-history', adminOnly, ctrl.getProductHistoryHandler);
 
 router.get('/orders', ctrl.listBarOrdersHandler);
-router.post('/orders', orderRoles, ctrl.createBarOrderHandler);
+router.post('/orders', createOrderRoles, ctrl.createBarOrderHandler);
 router.put('/orders/:id', orderRoles, ctrl.updateBarOrderHandler);
 router.put('/orders/:id/status', orderStatusRoles, ctrl.updateBarOrderStatusHandler);
 router.post('/orders/close-all', cashierRoles, ctrl.closeAllBarOrdersHandler);
-router.delete('/orders/:id', requireRole('admin', 'manager'), ctrl.deleteBarOrderHandler);
+router.delete('/orders/:id', adminOnly, ctrl.deleteBarOrderHandler);
 
 // Transactions â€” commandes caisse
 router.get('/transactions', ctrl.listTransactionsHandler);
