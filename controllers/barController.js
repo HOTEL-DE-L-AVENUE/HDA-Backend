@@ -1,5 +1,5 @@
 // controllers/barController.js
-const { BarTables, tablesStats, ensureDefaultBarTables } = require('../models/barTables.model');
+const { BarTables, tablesStats, ensureDefaultBarTables, reconcileBarTableStatuses } = require('../models/barTables.model');
 const { BarCashiers, openCashierSession, closeCashierSession, getCurrentSession } = require('../models/barCashier.model');
 const { BarSessions, sessionStats } = require('../models/barSession.model');
 const barProductModel = require('../models/barProduct.model');
@@ -16,6 +16,7 @@ const tablesCrud = {
   ...createCrudController(BarTables, { filterable: ['statut'] }),
   list: async (req, res) => {
     await ensureDefaultBarTables();
+    await reconcileBarTableStatuses();
     return createCrudController(BarTables, { filterable: ['statut'] }).list(req, res);
   },
 };
@@ -325,7 +326,7 @@ async function updateBarOrderStatusHandler(req, res) {
   if (!['EN_ATTENTE', 'EN_PREPARATION', 'PRETE', 'SERVIE', 'ENCAISSEE', 'ANNULEE'].includes(statut)) {
     throw ApiError.badRequest('Statut de commande invalide');
   }
-  const order = await updateBarOrderStatus(req.params.id, statut, moyen_paiement);
+  const order = await updateBarOrderStatus(req.params.id, statut, moyen_paiement, req.user?.role);
   if (!order) throw ApiError.notFound(`Commande #${req.params.id} introuvable`);
   return ok(res, order);
 }

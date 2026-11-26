@@ -13,9 +13,15 @@ const cashierRoles = requireRole('admin', 'manager', 'caisse', 'caissier');
 const tableRoles = requireRole('admin', 'manager', 'stock_manager', 'water', 'barman', 'caisse', 'caissier');
 
 const orderStatusRoles = (req, res, next) => {
-	const middleware = req.body?.statut === 'ENCAISSEE'
-		? requireRole('admin', 'manager', 'caisse', 'caissier')
-		: orderRoles;
+	const statut = String(req.body?.statut || '').toUpperCase();
+	const rolesByStatus = {
+		ENCAISSEE: ['admin', 'manager', 'caisse', 'caissier'],
+		EN_PREPARATION: ['admin', 'manager', 'barman', 'water', 'hotesse', 'serveur', 'caisse', 'caissier'],
+		PRETE: ['admin', 'manager', 'barman', 'water', 'serveur'],
+		SERVIE: ['admin', 'manager', 'hotesse', 'serveur', 'caisse', 'caissier'],
+		ANNULEE: ['admin', 'manager', 'caisse', 'caissier', 'barman', 'water', 'hotesse', 'serveur'],
+	};
+	const middleware = requireRole(...(rolesByStatus[statut] || ['admin', 'manager']));
 	return middleware(req, res, next);
 };
 

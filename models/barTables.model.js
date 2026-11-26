@@ -39,4 +39,18 @@ async function tablesStats() {
   return rows[0];
 }
 
-module.exports = { BarTables, tablesStats, ensureDefaultBarTables };
+async function reconcileBarTableStatuses() {
+  await require('../config/db').pool.query(`
+    UPDATE bar_tables bt
+       SET bt.statut = CASE
+         WHEN EXISTS (
+           SELECT 1 FROM bar_orders bo
+            WHERE bo.table_id = bt.id
+              AND bo.statut NOT IN ('ENCAISSEE', 'CLOTUREE', 'ANNULEE')
+         ) THEN 'OCCUPEE'
+         ELSE 'LIBRE'
+       END
+  `);
+}
+
+module.exports = { BarTables, tablesStats, ensureDefaultBarTables, reconcileBarTableStatuses };

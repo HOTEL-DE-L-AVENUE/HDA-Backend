@@ -239,6 +239,18 @@ TablesRestaurant.findAll = async function(options) {
     'INSERT INTO tables_restaurant (id, numero, capacite, statut) VALUES ? ON DUPLICATE KEY UPDATE id = id',
     [tableRows]
   );
+  await pool.query(`
+    UPDATE tables_restaurant tr
+       SET tr.statut = CASE
+         WHEN EXISTS (
+           SELECT 1 FROM orders o
+            WHERE o.table_id = tr.id
+              AND o.source_module = 'RESTAURANT'
+              AND o.statut NOT IN ('PAYEE', 'PAYE', 'ANNULEE')
+         ) THEN 'OCCUPEE'
+         ELSE 'LIBRE'
+       END
+  `);
   return tablesRestaurantFindAll.call(this, options);
 };
 
@@ -551,7 +563,7 @@ async function createOrderWithItems({ clientId, tableId, items, notes, locationT
            AND statut NOT IN ('PAYEE', 'PAYE', 'ANNULEE')`,
         [tableId]
       );
-      if (Number(activeOrder.total) > 0 || String(tableRow.statut).toUpperCase() === 'OCCUPEE') {
+      if (Number(activeOrder.total) > 0) {
         throw ApiError.conflict('Cette table est encore occupée. Attendez son encaissement.');
       }
     }
@@ -609,7 +621,7 @@ async function updateOrderWithItems({ orderId, clientId, tableId, items, notes, 
            AND statut NOT IN ('PAYEE', 'PAYE', 'ANNULEE')`,
         [nextTableId, orderId]
       );
-      if (Number(activeOrder.total) > 0 || String(tableRow.statut).toUpperCase() === 'OCCUPEE') {
+      if (Number(activeOrder.total) > 0) {
         throw ApiError.conflict('Cette table est encore occupée. Attendez son encaissement.');
       }
     }

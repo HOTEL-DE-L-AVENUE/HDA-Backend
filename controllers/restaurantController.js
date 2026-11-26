@@ -792,10 +792,13 @@ async function orderInvoicePdfHandler(req, res) {
 
 async function ordersInProgressHandler(req, res) {
   const [rows] = await pool.query(
-    `SELECT o.*, c.nom as client_nom, c.prenom as client_prenom, t.numero as table_numero
+    `SELECT o.*, c.nom as client_nom, c.prenom as client_prenom,
+            t.numero as table_numero,
+            u.nom as creator_nom, u.prenom as creator_prenom
        FROM orders o
        LEFT JOIN clients c ON c.id = o.client_id
        LEFT JOIN tables_restaurant t ON t.id = o.table_id
+       LEFT JOIN users u ON u.id_admin = o.created_by
       WHERE o.source_module = 'RESTAURANT' AND o.statut != 'ANNULEE' AND o.statut != 'PAYEE'
       ORDER BY o.created_at ASC`
   );

@@ -260,7 +260,7 @@ async function createBarOrder({ clientName, tableId, nombrePersonnes = 1, moyenP
          WHERE table_id = ? AND statut NOT IN ('ENCAISSEE', 'CLOTUREE', 'ANNULEE')`,
         [tableId]
       );
-      if (Number(activeOrder.total) > 0 || String(tableRow.statut).toUpperCase() === 'OCCUPEE') {
+      if (Number(activeOrder.total) > 0) {
         throw ApiError.conflict('Cette table est encore occupée. Attendez son encaissement.');
       }
     }
@@ -403,7 +403,7 @@ async function updateBarOrder(id, { clientName, tableId, nombrePersonnes = 1, mo
          WHERE table_id = ? AND id <> ? AND statut NOT IN ('ENCAISSEE', 'CLOTUREE', 'ANNULEE')`,
         [nextTableId, id]
       );
-      if (Number(activeOrder.total) > 0 || String(tableRow.statut).toUpperCase() === 'OCCUPEE') {
+      if (Number(activeOrder.total) > 0) {
         throw ApiError.conflict('Cette table est encore occupée. Attendez son encaissement.');
       }
     }
@@ -629,9 +629,13 @@ async function deleteBarOrder(id) {
   });
 }
 
-async function updateBarOrderStatus(id, statut, moyenPaiement) {
+async function updateBarOrderStatus(id, statut, moyenPaiement, actorRole = null) {
   await ensureBarOrderTables();
   if (statut === 'ANNULEE') await stockModel.ensureBarStockMovementsSchema();
+  const role = String(actorRole || '').toLowerCase();
+  const isCashier = ['caisse', 'caissier'].includes(role);
+  const isPreparationRole = ['admin', 'manager', 'barman', 'water', 'hotesse', 'serveur', 'caisse', 'caissier'].includes(role);
+  const isServingRole = ['admin', 'manager', 'hotesse', 'serveur', 'caisse', 'caissier'].includes(role);
   const allowedTransitions = {
     EN_ATTENTE: 'EN_PREPARATION',
     EN_PREPARATION: 'PRETE',
@@ -647,6 +651,21 @@ async function updateBarOrderStatus(id, statut, moyenPaiement) {
     if (!orders.length) return null;
 
     const currentStatus = orders[0].statut;
+    if (role && isCashier && !['EN_PREPARATION', 'SERVIE', 'ENCAISSEE', 'ANNULEE'].includes(statut)) {
+      throw ApiError.forbidden('Le rôle caisse peut démarrer, servir, encaisser ou annuler les commandes.');
+    }
+    if (role && statut === 'EN_PREPARATION' && !isPreparationRole) {
+      throw ApiError.forbidden('Votre rôle ne peut pas démarrer cette commande.');
+    }
+    if (role && statut === 'PRETE' && !['admin', 'manager', 'barman', 'water', 'serveur'].includes(role)) {
+      throw ApiError.forbidden('Seule la préparation peut marquer une commande comme prête.');
+    }
+    if (role && statut === 'SERVIE' && !isServingRole) {
+      throw ApiError.forbidden('Votre rôle ne peut pas marquer cette commande comme servie.');
+    }
+    if (role && statut === 'ENCAISSEE' && !['admin', 'manager', 'caisse', 'caissier'].includes(role)) {
+      throw ApiError.forbidden('Votre rôle ne peut pas encaisser cette commande.');
+    }
     if (statut === 'ANNULEE') {
       if (!['EN_ATTENTE', 'EN_PREPARATION'].includes(currentStatus)) {
         throw ApiError.badRequest('Seules les commandes en attente ou en cours peuvent être annulées.');
@@ -686,7 +705,15 @@ async function updateBarOrderStatus(id, statut, moyenPaiement) {
       return { id: Number(id), statut };
     }
 
-    if (allowedTransitions[currentStatus] !== statut) {
+    let expectedStatus = allowedTransitions[currentStatus];
+    if (
+      currentStatus === 'EN_PREPARATION'
+      && statut === 'SERVIE'
+      && ['hotesse', 'serveur', 'caisse', 'caissier'].includes(role)
+    ) {
+      expectedStatus = 'SERVIE';
+    }
+    if (expectedStatus !== statut) {
       throw ApiError.badRequest('Transition de statut de commande invalide.');
     }
 
