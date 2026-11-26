@@ -14,6 +14,7 @@ const apiRoutes = require('./routes');
 const { notFoundHandler, errorHandler } = require('./middlewares/errorHandler');
 const { startHotelReportDispatcher } = require('./services/hotelReportDispatcher');
 const { startRoomReservationStatusSync } = require('./services/roomReservationStatusSync');
+const { moduleFromPath, publishChange } = require('./services/realtimeEvents');
 
 const app = express();
 
@@ -52,6 +53,19 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
   setHeaders: (res) => res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'),
 }));
 
+app.use('/api', (req, res, next) => {
+  res.once('finish', () => {
+    if (
+      ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)
+      && req.path !== '/realtime/events'
+      && res.statusCode >= 200
+      && res.statusCode < 300
+    ) {
+      publishChange({ module: moduleFromPath(req.path), action: req.method });
+    }
+  });
+  next();
+});
 app.use('/api', apiRoutes);
 
 app.use(notFoundHandler);

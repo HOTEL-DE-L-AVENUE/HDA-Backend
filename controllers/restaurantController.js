@@ -29,6 +29,24 @@ function escapeHtml(input) {
 const tablesCrud = createCrudController(resto.TablesRestaurant, { filterable: ['statut'] });
 const ordersCrud = createCrudController(resto.Orders, { filterable: ['client_id', 'statut', 'source_module'] });
 
+function canonicalOrderStatus(status) {
+  const normalized = String(status || '').toUpperCase();
+  return normalized === 'PAYE' ? 'PAYEE' : normalized;
+}
+
+function isAllowedRestaurantStatusTransition(currentStatus, nextStatus) {
+  const current = canonicalOrderStatus(currentStatus);
+  const next = canonicalOrderStatus(nextStatus);
+  if (current === next) return true;
+
+  const allowedNextStatuses = {
+    EN_ATTENTE: ['EN_COURS', 'ANNULEE'],
+    EN_COURS: ['SERVIE', 'ANNULEE'],
+    SERVIE: ['PAYEE', 'ANNULEE'],
+  };
+  return Boolean(allowedNextStatuses[current]?.includes(next));
+}
+
 async function getRestaurantReportHandler(req, res) {
   return ok(res, await getRestaurantReport(req.params.date));
 }
@@ -1056,6 +1074,12 @@ async function updateOrderStatusHandler(req, res) {
       [req.params.id]
     );
     if (!order) throw ApiError.notFound('Commande introuvable');
+    if (!isAllowedRestaurantStatusTransition(order.statut, statut)) {
+      throw ApiError.conflict(`La commande a déjà changé d’état (${order.statut}). Actualisez la liste avant de réessayer.`);
+    }
+    if (canonicalOrderStatus(order.statut) === canonicalOrderStatus(statut)) {
+      return;
+    }
     
     // Si on annule une commande avec stock déduit, rétablir le stock
     if (statut === 'ANNULEE' && order.stock_deducted_at && order.statut !== 'ANNULEE') {
@@ -1297,5 +1321,6 @@ module.exports = {
   getRestaurantPurchasesHandler, getRestaurantPurchaseByIdHandler,
   listRestaurantPurchasesHandler, restaurantPurchaseDetailHandler, createRestaurantPurchaseHandler,
   menuHandler, updateOrderStatusHandler, removeOrderHandler, historyTotalHandler, openCashierHandler, closeCashierHandler,
+  isAllowedRestaurantStatusTransition,
   cashierStatusHandler, processPaymentHandler, billToRoomHandler, statsHandler,
 };
