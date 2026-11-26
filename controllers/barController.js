@@ -200,7 +200,7 @@ async function listTransactionsHandler(req, res) {
 }
 
 async function listBarOrdersHandler(req, res) {
-  const orders = await listBarOrders({ createdBy: req.user?.role === 'hotesse' ? req.user.id_admin : undefined });
+  const orders = await listBarOrders();
   return ok(res, orders);
 }
 
@@ -300,7 +300,6 @@ async function updateBarOrderHandler(req, res) {
     moyenPaiement: normalized.moyen_paiement,
     observation: normalized.observation,
     items: normalized.items,
-    createdBy: req.user?.role === 'hotesse' ? req.user.id_admin : undefined,
     actorRole: req.user?.role,
     hotelReservationId: normalized.hotel_reservation_id,
     roomId: normalized.room_id,

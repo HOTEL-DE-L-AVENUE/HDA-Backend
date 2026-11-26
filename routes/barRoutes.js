@@ -17,7 +17,7 @@ const orderStatusRoles = (req, res, next) => {
 	const rolesByStatus = {
 		ENCAISSEE: ['admin', 'manager', 'caisse', 'caissier'],
 		EN_PREPARATION: ['admin', 'manager', 'barman', 'water', 'hotesse', 'serveur', 'caisse', 'caissier'],
-		PRETE: ['admin', 'manager', 'barman', 'water', 'serveur'],
+		PRETE: ['admin', 'manager', 'barman', 'water'],
 		SERVIE: ['admin', 'manager', 'hotesse', 'serveur', 'caisse', 'caissier'],
 		ANNULEE: ['admin', 'manager', 'caisse', 'caissier', 'barman', 'water', 'hotesse', 'serveur'],
 	};
@@ -27,18 +27,21 @@ const orderStatusRoles = (req, res, next) => {
 
 router.use(requireAuth, (req, res, next) => {
 	const role = String(req.user?.role || '').toLowerCase();
-	if (!['serveur', 'caisse', 'caissier'].includes(role)) return next();
+	if (!['serveur', 'hotesse', 'caisse', 'caissier'].includes(role)) return next();
 	let modules = req.user?.module;
 	if (typeof modules === 'string') {
 		try { modules = JSON.parse(modules); } catch { modules = modules.split(',').map((item) => item.trim()); }
 	}
 	if (!Array.isArray(modules)) modules = [];
 	modules = modules.map((item) => typeof item === 'string' ? item : item?.id).filter(Boolean);
-	const canReadRestaurantDrinkMenu = ['serveur', 'caisse', 'caissier'].includes(role)
+	const canReadRestaurantDrinkMenu = ['serveur', 'hotesse', 'caisse', 'caissier'].includes(role)
 		&& modules.includes('restaurant')
 		&& req.method === 'GET'
 		&& /^\/products(?:\/\d+)?$/.test(req.path);
-	if (!modules.includes('bar') && !canReadRestaurantDrinkMenu) return next(require('../utils/ApiError').forbidden('AccÃ¨s au menu des boissons refusÃ©'));
+	if (!modules.includes('bar')) {
+		if (canReadRestaurantDrinkMenu) return next();
+		return next(require('../utils/ApiError').forbidden('AccÃ¨s au menu des boissons refusÃ©'));
+	}
 	const method = req.method;
 	const path = req.path;
 	if (role === 'caisse' || role === 'caissier') {

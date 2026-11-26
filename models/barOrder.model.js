@@ -386,10 +386,6 @@ async function updateBarOrder(id, { clientName, tableId, nombrePersonnes = 1, mo
   return withTransaction(async (conn) => {
     const [orders] = await conn.query('SELECT * FROM bar_orders WHERE id = ? FOR UPDATE', [id]);
     if (!orders.length) return null;
-    if (createdBy !== undefined && Number(orders[0].created_by) !== Number(createdBy)) {
-      throw ApiError.forbidden('Vous pouvez uniquement modifier vos propres commandes.');
-    }
-
     const previousTableId = orders[0].table_id ? Number(orders[0].table_id) : null;
     const nextTableId = tableId !== undefined ? (tableId ? Number(tableId) : null) : previousTableId;
     if (nextTableId && nextTableId !== previousTableId) {
@@ -725,7 +721,7 @@ async function updateBarOrderStatus(id, statut, moyenPaiement, actorRole = null)
     if (role && statut === 'EN_PREPARATION' && !isPreparationRole) {
       throw ApiError.forbidden('Votre rôle ne peut pas démarrer cette commande.');
     }
-    if (role && statut === 'PRETE' && !['admin', 'manager', 'barman', 'water', 'serveur'].includes(role)) {
+    if (role && statut === 'PRETE' && !['admin', 'manager', 'barman', 'water'].includes(role)) {
       throw ApiError.forbidden('Seule la préparation peut marquer une commande comme prête.');
     }
     if (role && statut === 'SERVIE' && !isServingRole) {

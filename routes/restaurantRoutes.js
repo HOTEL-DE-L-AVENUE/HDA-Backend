@@ -29,7 +29,7 @@ router.use(requireAuth, (req, res, next) => {
     if (method === 'POST' && ['/payments', '/orders/close-all', '/cashier/open', '/cashier/close'].includes(path)) return next();
     return next(ApiError.forbidden('Le rôle caisse est limité aux chiffres et aux opérations d’encaissement du restaurant'));
   }
-  if (role === 'serveur') {
+  if (role === 'serveur' || role === 'hotesse') {
     if (!hasRestaurant) return next(ApiError.forbidden('Le module Restaurant n’est pas attribué à ce serveur'));
     const canReadProducts = method === 'GET' && (
       path === '/products' || path === '/categories' || path === '/tables'
