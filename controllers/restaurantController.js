@@ -1166,55 +1166,64 @@ async function cashierStatusHandler(req, res) {
 
 async function processPaymentHandler(req, res) {
   const { order_id, moyen_paiement, montant } = req.body;
-  const [[order]] = await pool.query(
-    'SELECT id, table_id, montant_total FROM orders WHERE id = ? AND source_module = "RESTAURANT"',
-    [order_id]
-  );
-  if (!order) throw ApiError.notFound('Commande introuvable');
-
-  const [result] = await pool.query(
-    `INSERT INTO payments (order_id, moyen_paiement, montant, date_paiement)
-     VALUES (?, ?, ?, NOW())`,
-    [order_id, moyen_paiement, montant || order.montant_total]
-  );
-
-  await pool.query(
-    'UPDATE orders SET statut = "PAYEE" WHERE id = ?',
-    [order_id]
-  );
-  if (order.table_id) {
-    const [[activeOrder]] = await pool.query(
-      `SELECT COUNT(*) AS total FROM orders
-       WHERE table_id = ? AND id <> ? AND source_module = 'RESTAURANT'
-         AND statut NOT IN ('PAYEE', 'PAYE', 'ANNULEE')`,
-      [order.table_id, order_id]
+  const result = await withTransaction(async (conn) => {
+    const [[order]] = await conn.query(
+      'SELECT id, table_id, montant_total FROM orders WHERE id = ? AND source_module = "RESTAURANT" FOR UPDATE',
+      [order_id]
     );
-    if (Number(activeOrder.total) === 0) {
-      await pool.query('UPDATE tables_restaurant SET statut = "LIBRE" WHERE id = ?', [order.table_id]);
+    if (!order) throw ApiError.notFound('Commande introuvable');
+
+    const [payment] = await conn.query(
+      `INSERT INTO payments (order_id, moyen_paiement, montant, date_paiement)
+       VALUES (?, ?, ?, NOW())`,
+      [order_id, moyen_paiement, montant || order.montant_total]
+    );
+
+    await conn.query('UPDATE orders SET statut = "PAYEE" WHERE id = ?', [order_id]);
+    if (order.table_id) {
+      const [[activeOrder]] = await conn.query(
+        `SELECT COUNT(*) AS total FROM orders
+         WHERE table_id = ? AND id <> ? AND source_module = 'RESTAURANT'
+           AND statut NOT IN ('PAYEE', 'PAYE', 'ANNULEE')`,
+        [order.table_id, order_id]
+      );
+      if (Number(activeOrder.total) === 0) {
+        await conn.query('UPDATE tables_restaurant SET statut = "LIBRE" WHERE id = ?', [order.table_id]);
+      }
     }
-  }
+    return payment;
+  });
 
   return created(res, result);
 }
 
 async function billToRoomHandler(req, res) {
   const { order_id, room_id } = req.body;
-  const [[order]] = await pool.query(
-    'SELECT id, montant_total FROM orders WHERE id = ? AND source_module = "RESTAURANT"',
-    [order_id]
-  );
-  if (!order) throw ApiError.notFound('Commande introuvable');
+  await withTransaction(async (conn) => {
+    const [[order]] = await conn.query(
+      'SELECT id, table_id, montant_total FROM orders WHERE id = ? AND source_module = "RESTAURANT" FOR UPDATE',
+      [order_id]
+    );
+    if (!order) throw ApiError.notFound('Commande introuvable');
 
-  await pool.query(
-    `INSERT INTO financial_transactions (module, type_flux, montant, reference_id, description, statut_sync, created_at)
-     VALUES ('HOTEL', 'SORTIE', ?, ?, ?, 'SYNCED', NOW())`,
-    [order.montant_total, order_id, `Facture restaurant #${order_id} vers chambre #${room_id}`]
-  );
-
-  await pool.query(
-    'UPDATE orders SET statut = "PAYEE" WHERE id = ?',
-    [order_id]
-  );
+    await conn.query(
+      `INSERT INTO financial_transactions (module, type_flux, montant, reference_id, description, statut_sync, created_at)
+       VALUES ('HOTEL', 'SORTIE', ?, ?, ?, 'SYNCED', NOW())`,
+      [order.montant_total, order_id, `Facture restaurant #${order_id} vers chambre #${room_id}`]
+    );
+    await conn.query('UPDATE orders SET statut = "PAYEE" WHERE id = ?', [order_id]);
+    if (order.table_id) {
+      const [[activeOrder]] = await conn.query(
+        `SELECT COUNT(*) AS total FROM orders
+         WHERE table_id = ? AND id <> ? AND source_module = 'RESTAURANT'
+           AND statut NOT IN ('PAYEE', 'PAYE', 'ANNULEE')`,
+        [order.table_id, order_id]
+      );
+      if (Number(activeOrder.total) === 0) {
+        await conn.query('UPDATE tables_restaurant SET statut = "LIBRE" WHERE id = ?', [order.table_id]);
+      }
+    }
+  });
 
   return ok(res, { message: 'Facture transférée à la chambre' });
 }
