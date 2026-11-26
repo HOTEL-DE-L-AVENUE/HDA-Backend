@@ -11,6 +11,28 @@ const migrations = [
       await stockModel.ensureBarStockMovementsSchema();
     },
   },
+  {
+    id: '20261126_order_creator_tracking',
+    up: async () => {
+      const [restaurantColumns] = await pool.query('SHOW COLUMNS FROM orders');
+      if (!restaurantColumns.some((column) => column.Field === 'created_by')) {
+        await pool.query('ALTER TABLE orders ADD COLUMN created_by BIGINT UNSIGNED NULL AFTER montant_total');
+        await pool.query('ALTER TABLE orders ADD KEY idx_orders_created_by (created_by)');
+      }
+      if (!restaurantColumns.some((column) => column.Field === 'moyen_paiement_prevu')) {
+        await pool.query('ALTER TABLE orders ADD COLUMN moyen_paiement_prevu VARCHAR(30) NULL AFTER montant_total');
+      }
+
+      const [barTables] = await pool.query("SHOW TABLES LIKE 'bar_orders'");
+      if (barTables.length) {
+        const [barColumns] = await pool.query('SHOW COLUMNS FROM bar_orders');
+        if (!barColumns.some((column) => column.Field === 'created_by')) {
+          await pool.query('ALTER TABLE bar_orders ADD COLUMN created_by BIGINT UNSIGNED NULL AFTER montant_total');
+          await pool.query('ALTER TABLE bar_orders ADD KEY idx_bar_orders_created_by (created_by)');
+        }
+      }
+    },
+  },
 ];
 
 async function runDatabaseMigrations() {

@@ -6,6 +6,26 @@ const restaurantModel = require('./restaurantModel');
 
 const isRestaurantItem = (item) => String(item.source_module || '').toUpperCase() === 'RESTAURANT';
 
+async function releaseBarTableIfFree(conn, tableId, excludeOrderId = null) {
+  if (!tableId) return;
+  const [active] = excludeOrderId
+    ? await conn.query(
+      `SELECT id FROM bar_orders
+       WHERE table_id = ? AND id <> ? AND statut NOT IN ('ENCAISSEE', 'CLOTUREE', 'ANNULEE')
+       LIMIT 1`,
+      [tableId, excludeOrderId]
+    )
+    : await conn.query(
+      `SELECT id FROM bar_orders
+       WHERE table_id = ? AND statut NOT IN ('ENCAISSEE', 'CLOTUREE', 'ANNULEE')
+       LIMIT 1`,
+      [tableId]
+    );
+  if (active.length === 0) {
+    await conn.query('UPDATE bar_tables SET statut = "LIBRE" WHERE id = ?', [tableId]);
+  }
+}
+
 async function validateRestaurantMenuItems(conn, items) {
   const productIds = [...new Set(items.filter(isRestaurantItem).map((item) => Number(item.product_id ?? item.source_product_id ?? item.id)).filter((id) => Number.isInteger(id) && id > 0))];
   if (!productIds.length) return;
@@ -133,7 +153,11 @@ async function listBarOrders({ createdBy } = {}) {
   await ensureBarOrderTables();
   const hasCreatorFilter = createdBy !== undefined && createdBy !== null;
   const [orders] = await pool.query(
-    `SELECT * FROM bar_orders WHERE statut <> 'CLOTUREE'${hasCreatorFilter ? ' AND created_by = ?' : ''} ORDER BY created_at DESC`,
+    `SELECT bo.*, u.nom AS creator_nom, u.prenom AS creator_prenom
+       FROM bar_orders bo
+       LEFT JOIN users u ON u.id_admin = bo.created_by
+      WHERE bo.statut <> 'CLOTUREE'${hasCreatorFilter ? ' AND bo.created_by = ?' : ''}
+      ORDER BY bo.created_at DESC`,
     hasCreatorFilter ? [createdBy] : []
   );
   const orderIds = orders.map((order) => order.id);
@@ -160,6 +184,9 @@ async function listBarOrders({ createdBy } = {}) {
     observation: order.observation || '',
     statut: order.statut,
     total: Number(order.montant_total || 0),
+    created_by: order.created_by ?? null,
+    creator_nom: order.creator_nom || null,
+    creator_prenom: order.creator_prenom || null,
     created_at: order.created_at,
     hotel_reservation_id: order.hotel_reservation_id ?? null,
     room_id: order.room_id ?? null,
@@ -177,7 +204,13 @@ async function listBarOrders({ createdBy } = {}) {
 
 async function listBarHistory() {
   await ensureBarOrderTables();
-  const [orders] = await pool.query("SELECT * FROM bar_orders WHERE statut = 'CLOTUREE' ORDER BY cloture_at DESC, created_at DESC");
+  const [orders] = await pool.query(
+    `SELECT bo.*, u.nom AS creator_nom, u.prenom AS creator_prenom
+       FROM bar_orders bo
+       LEFT JOIN users u ON u.id_admin = bo.created_by
+      WHERE bo.statut = 'CLOTUREE'
+      ORDER BY bo.cloture_at DESC, bo.created_at DESC`
+  );
   const orderIds = orders.map((order) => order.id);
   if (!orderIds.length) return [];
   const [items] = await pool.query('SELECT * FROM bar_order_items WHERE order_id IN (?) ORDER BY id ASC', [orderIds]);
@@ -192,6 +225,9 @@ async function listBarHistory() {
     observation: order.observation || '',
     statut: order.statut,
     total: Number(order.montant_total || 0),
+    created_by: order.created_by ?? null,
+    creator_nom: order.creator_nom || null,
+    creator_prenom: order.creator_prenom || null,
     created_at: order.created_at,
     cloture_at: order.cloture_at,
     hotel_reservation_id: order.hotel_reservation_id ?? null,
@@ -213,6 +249,21 @@ async function createBarOrder({ clientName, tableId, nombrePersonnes = 1, moyenP
   await ensureBarTransactionsSchema();
 
   return withTransaction(async (conn) => {
+    if (tableId) {
+      const [[tableRow]] = await conn.query(
+        'SELECT id, statut FROM bar_tables WHERE id = ? LIMIT 1 FOR UPDATE',
+        [tableId]
+      );
+      if (!tableRow) throw ApiError.badRequest('Table introuvable');
+      const [[activeOrder]] = await conn.query(
+        `SELECT COUNT(*) AS total FROM bar_orders
+         WHERE table_id = ? AND statut NOT IN ('ENCAISSEE', 'CLOTUREE', 'ANNULEE')`,
+        [tableId]
+      );
+      if (Number(activeOrder.total) > 0) {
+        throw ApiError.conflict('Cette table est encore occupée. Attendez son encaissement.');
+      }
+    }
     // Lock and validate each requested stock row before creating the order.
     // The stock decrement and order creation therefore succeed or fail together.
     const requestedQuantities = new Map();
@@ -250,6 +301,9 @@ async function createBarOrder({ clientName, tableId, nombrePersonnes = 1, moyenP
       'INSERT INTO bar_orders (client_name, table_id, nombre_personnes, moyen_paiement, observation, hotel_reservation_id, room_id, room_guest_name, room_account_paid, statut, montant_total, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())',
       [clientName || null, tableId || null, Number(nombrePersonnes) || 1, moyenPaiement || 'ESPECES', observation || null, hotelReservationId ?? null, roomId ?? null, roomGuestName || null, roomAccountPaid ? 1 : 0, 'EN_ATTENTE', total, createdBy]
     );
+    if (tableId) {
+      await conn.query('UPDATE bar_tables SET statut = "OCCUPEE" WHERE id = ?', [tableId]);
+    }
 
     const orderId = result.insertId;
 
@@ -325,21 +379,41 @@ async function createBarOrder({ clientName, tableId, nombrePersonnes = 1, moyenP
   });
 }
 
-async function updateBarOrder(id, { clientName, tableId, nombrePersonnes = 1, moyenPaiement = 'ESPECES', observation = '', items, createdBy, hotelReservationId = null, roomId = null, roomGuestName = null, roomAccountPaid = false }) {
+async function updateBarOrder(id, { clientName, tableId, nombrePersonnes = 1, moyenPaiement = 'ESPECES', observation = '', items, createdBy, actorRole = null, hotelReservationId = null, roomId = null, roomGuestName = null, roomAccountPaid = false }) {
   await ensureBarOrderTables();
   await ensureBarTransactionsSchema();
 
   return withTransaction(async (conn) => {
     const [orders] = await conn.query('SELECT * FROM bar_orders WHERE id = ? FOR UPDATE', [id]);
     if (!orders.length) return null;
-    if (createdBy !== undefined && Number(orders[0].created_by) !== Number(createdBy)) {
-      throw ApiError.forbidden('Vous pouvez uniquement modifier vos propres commandes.');
+    const previousTableId = orders[0].table_id ? Number(orders[0].table_id) : null;
+    const nextTableId = tableId !== undefined ? (tableId ? Number(tableId) : null) : previousTableId;
+    if (nextTableId && nextTableId !== previousTableId) {
+      const [[tableRow]] = await conn.query(
+        'SELECT id, statut FROM bar_tables WHERE id = ? LIMIT 1 FOR UPDATE',
+        [nextTableId]
+      );
+      if (!tableRow) throw ApiError.badRequest('Table introuvable');
+      const [[activeOrder]] = await conn.query(
+        `SELECT COUNT(*) AS total FROM bar_orders
+         WHERE table_id = ? AND id <> ? AND statut NOT IN ('ENCAISSEE', 'CLOTUREE', 'ANNULEE')`,
+        [nextTableId, id]
+      );
+      if (Number(activeOrder.total) > 0) {
+        throw ApiError.conflict('Cette table est encore occupée. Attendez son encaissement.');
+      }
     }
 
     const [existingOrderItems] = await conn.query(
       'SELECT nom, quantite, prix, source_module, source_product_id FROM bar_order_items WHERE order_id = ?',
       [id]
     );
+
+    const addOnlyRoles = ['caisse', 'caissier', 'hotesse', 'serveur'];
+    const isAddOnlyRole = addOnlyRoles.includes(String(actorRole || '').toLowerCase());
+    if (isAddOnlyRole && (items || []).some((item) => !Number.isFinite(Number(item.quantite ?? 1)) || Number(item.quantite ?? 1) <= 0)) {
+      throw ApiError.forbidden('Vous pouvez ajouter des articles, mais pas retirer ou modifier ceux de la commande.');
+    }
 
     const normalizedItems = (items || [])
       .map((item) => ({
@@ -359,9 +433,59 @@ async function updateBarOrder(id, { clientName, tableId, nombrePersonnes = 1, mo
     const existingByProduct = new Map();
     for (const row of existingOrderItems || []) {
       const key = String(row.nom || '').trim().toLowerCase();
-      existingByName.set(key, Number(row.quantite || 0));
+      existingByName.set(key, (existingByName.get(key) || 0) + Number(row.quantite || 0));
       if (row.source_product_id != null) {
-        existingByProduct.set(`${row.source_module || 'BAR'}:${Number(row.source_product_id)}`, Number(row.quantite || 0));
+        const productKey = `${row.source_module || 'BAR'}:${Number(row.source_product_id)}`;
+        existingByProduct.set(productKey, (existingByProduct.get(productKey) || 0) + Number(row.quantite || 0));
+      }
+    }
+
+    if (isAddOnlyRole) {
+      const requestedByProduct = new Map();
+      const requestedByName = new Map();
+      for (const item of normalizedItems) {
+        const nameKey = String(item.nom || '').trim().toLowerCase();
+        const namedItem = requestedByName.get(nameKey) || { quantity: 0, price: item.prix };
+        if (namedItem.price !== item.prix) {
+          namedItem.price = null;
+        }
+        namedItem.quantity += item.quantite;
+        requestedByName.set(nameKey, namedItem);
+        const productKey = `${item.source_module}:${item.product_id}`;
+        if (item.product_id > 0) {
+          const current = requestedByProduct.get(productKey) || { quantity: 0, price: item.prix };
+          if (current.price !== item.prix) {
+            throw ApiError.badRequest('Le prix d’un article déjà présent ne peut pas être modifié.');
+          }
+          current.quantity += item.quantite;
+          requestedByProduct.set(productKey, current);
+        }
+      }
+
+      const existingByIdentity = new Map();
+      for (const row of existingOrderItems || []) {
+        const sourceModule = String(row.source_module || 'BAR').toUpperCase();
+        const productId = row.source_product_id == null ? null : Number(row.source_product_id);
+        const identity = productId === null
+          ? `${sourceModule}:name:${String(row.nom || '').trim().toLowerCase()}`
+          : `${sourceModule}:${productId}`;
+        const current = existingByIdentity.get(identity) || {
+          quantity: 0,
+          price: Number(row.prix),
+          sourceProductId: productId,
+          name: String(row.nom || '').trim().toLowerCase(),
+          sourceModule,
+        };
+        current.quantity += Number(row.quantite || 0);
+        existingByIdentity.set(identity, current);
+      }
+      for (const existing of existingByIdentity.values()) {
+        const requested = existing.sourceProductId === null
+          ? requestedByName.get(existing.name)
+          : requestedByProduct.get(`${existing.sourceModule}:${existing.sourceProductId}`);
+        if (!requested || requested.quantity < existing.quantity || requested.price !== existing.price) {
+          throw ApiError.forbidden('Vous pouvez ajouter des articles, mais pas retirer ou modifier ceux de la commande.');
+        }
       }
     }
 
@@ -394,6 +518,8 @@ async function updateBarOrder(id, { clientName, tableId, nombrePersonnes = 1, mo
         'UPDATE bar_orders SET client_name = ?, table_id = ?, nombre_personnes = ?, moyen_paiement = ?, observation = ?, hotel_reservation_id = ?, room_id = ?, room_guest_name = ?, room_account_paid = ? WHERE id = ?',
         [clientValue, tableValue, guestValue, paymentValue, observationValue, hotelReservationValue, roomIdValue, roomGuestNameValue, roomAccountPaidValue, id]
       );
+      if (previousTableId && previousTableId !== nextTableId) await releaseBarTableIfFree(conn, previousTableId, id);
+      if (nextTableId) await conn.query('UPDATE bar_tables SET statut = "OCCUPEE" WHERE id = ?', [nextTableId]);
       return {
         id: Number(id),
         client: clientValue,
@@ -443,6 +569,8 @@ async function updateBarOrder(id, { clientName, tableId, nombrePersonnes = 1, mo
       'UPDATE bar_orders SET client_name = ?, table_id = ?, nombre_personnes = ?, moyen_paiement = ?, observation = ?, montant_total = ? WHERE id = ?',
       [clientValue, tableValue, guestValue, paymentValue, observationValue, nextTotal, id]
     );
+    if (previousTableId && previousTableId !== nextTableId) await releaseBarTableIfFree(conn, previousTableId, id);
+    if (nextTableId) await conn.query('UPDATE bar_tables SET statut = "OCCUPEE" WHERE id = ?', [nextTableId]);
 
     await syncRestaurantItems(conn, id, [], additions, `Vente restaurant via commande Bar #${id}`);
 
@@ -466,12 +594,24 @@ async function updateBarOrder(id, { clientName, tableId, nombrePersonnes = 1, mo
       isRestaurantItem(item) ? sum : sum + item.quantite * item.prix
     ), 0);
     if (barStockTotal > 0) {
-      await conn.query(
-        `INSERT INTO financial_transactions
-           (module, type_flux, montant, reference_id, ref_flux_global, description, statut_sync, created_at)
-         VALUES ('BAR', 'SORTIE', ?, ?, ?, ?, 'SYNCED', NOW())`,
-        [barStockTotal, id, `BAR-ORDER-${id}-STOCK`, `Sortie de stock â€” ajout commande bar #${id}`]
+      const stockTransactionRef = `BAR-ORDER-${id}-STOCK`;
+      const [[stockTransaction]] = await conn.query(
+        'SELECT id FROM financial_transactions WHERE module = ? AND ref_flux_global = ? FOR UPDATE',
+        ['BAR', stockTransactionRef]
       );
+      if (stockTransaction) {
+        await conn.query(
+          'UPDATE financial_transactions SET montant = montant + ?, description = ? WHERE id = ?',
+          [barStockTotal, `Sortie de stock — commande bar #${id}`, stockTransaction.id]
+        );
+      } else {
+        await conn.query(
+          `INSERT INTO financial_transactions
+             (module, type_flux, montant, reference_id, ref_flux_global, description, statut_sync, created_at)
+           VALUES ('BAR', 'SORTIE', ?, ?, ?, ?, 'SYNCED', NOW())`,
+          [barStockTotal, id, stockTransactionRef, `Sortie de stock — commande bar #${id}`]
+        );
+      }
     }
 
     const clientId = await findOrCreateClient(clientValue, conn);
@@ -518,7 +658,7 @@ async function deleteBarOrder(id) {
   await ensureBarTransactionsSchema();
 
   return withTransaction(async (conn) => {
-    const [orders] = await conn.query('SELECT id FROM bar_orders WHERE id = ? FOR UPDATE', [id]);
+    const [orders] = await conn.query('SELECT id, table_id FROM bar_orders WHERE id = ? FOR UPDATE', [id]);
     if (!orders.length) return false;
 
     const [restaurantItems] = await conn.query(
@@ -546,13 +686,20 @@ async function deleteBarOrder(id) {
       [`BAR-ORDER-${id}`, `BAR-ORDER-${id}-STOCK`]
     );
     await conn.query('DELETE FROM bar_orders WHERE id = ?', [id]);
+    if (orders[0].table_id) {
+      await releaseBarTableIfFree(conn, Number(orders[0].table_id), id);
+    }
     return true;
   });
 }
 
-async function updateBarOrderStatus(id, statut, moyenPaiement) {
+async function updateBarOrderStatus(id, statut, moyenPaiement, actorRole = null) {
   await ensureBarOrderTables();
   if (statut === 'ANNULEE') await stockModel.ensureBarStockMovementsSchema();
+  const role = String(actorRole || '').toLowerCase();
+  const isCashier = ['caisse', 'caissier'].includes(role);
+  const isPreparationRole = ['admin', 'manager', 'barman', 'water', 'hotesse', 'serveur', 'caisse', 'caissier'].includes(role);
+  const isServingRole = ['admin', 'manager', 'hotesse', 'serveur', 'caisse', 'caissier'].includes(role);
   const allowedTransitions = {
     EN_ATTENTE: 'EN_PREPARATION',
     EN_PREPARATION: 'PRETE',
@@ -562,12 +709,27 @@ async function updateBarOrderStatus(id, statut, moyenPaiement) {
 
   return withTransaction(async (conn) => {
     const [orders] = await conn.query(
-      'SELECT id, statut, moyen_paiement FROM bar_orders WHERE id = ? FOR UPDATE',
+      'SELECT id, table_id, statut, moyen_paiement FROM bar_orders WHERE id = ? FOR UPDATE',
       [id]
     );
     if (!orders.length) return null;
 
     const currentStatus = orders[0].statut;
+    if (role && isCashier && !['EN_PREPARATION', 'SERVIE', 'ENCAISSEE', 'ANNULEE'].includes(statut)) {
+      throw ApiError.forbidden('Le rôle caisse peut démarrer, servir, encaisser ou annuler les commandes.');
+    }
+    if (role && statut === 'EN_PREPARATION' && !isPreparationRole) {
+      throw ApiError.forbidden('Votre rôle ne peut pas démarrer cette commande.');
+    }
+    if (role && statut === 'PRETE' && !['admin', 'manager', 'barman', 'water'].includes(role)) {
+      throw ApiError.forbidden('Seule la préparation peut marquer une commande comme prête.');
+    }
+    if (role && statut === 'SERVIE' && !isServingRole) {
+      throw ApiError.forbidden('Votre rôle ne peut pas marquer cette commande comme servie.');
+    }
+    if (role && statut === 'ENCAISSEE' && !['admin', 'manager', 'caisse', 'caissier'].includes(role)) {
+      throw ApiError.forbidden('Votre rôle ne peut pas encaisser cette commande.');
+    }
     if (statut === 'ANNULEE') {
       if (!['EN_ATTENTE', 'EN_PREPARATION'].includes(currentStatus)) {
         throw ApiError.badRequest('Seules les commandes en attente ou en cours peuvent être annulées.');
@@ -601,10 +763,21 @@ async function updateBarOrderStatus(id, statut, moyenPaiement) {
         [`BAR-ORDER-${id}-STOCK`]
       );
       await conn.query("UPDATE bar_orders SET statut = 'ANNULEE' WHERE id = ?", [id]);
+      if (orders[0].table_id) {
+        await releaseBarTableIfFree(conn, Number(orders[0].table_id), id);
+      }
       return { id: Number(id), statut };
     }
 
-    if (allowedTransitions[currentStatus] !== statut) {
+    let expectedStatus = allowedTransitions[currentStatus];
+    if (
+      currentStatus === 'EN_PREPARATION'
+      && statut === 'SERVIE'
+      && ['hotesse', 'serveur', 'caisse', 'caissier'].includes(role)
+    ) {
+      expectedStatus = 'SERVIE';
+    }
+    if (expectedStatus !== statut) {
       throw ApiError.badRequest('Transition de statut de commande invalide.');
     }
 
@@ -636,6 +809,9 @@ async function updateBarOrderStatus(id, statut, moyenPaiement) {
            VALUES ('BAR', 'ENTREE', ?, ?, ?, ?, 'SYNCED', NOW())`,
           [order.montant_total, id, `BAR-ORDER-${id}`, `Encaissement commande bar #${id}`]
         );
+      }
+      if (orders[0].table_id) {
+        await releaseBarTableIfFree(conn, Number(orders[0].table_id), id);
       }
     }
     return { id: Number(id), statut };

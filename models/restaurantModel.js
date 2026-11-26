@@ -27,6 +27,13 @@ async function ensureRestaurantSchema() {
       if (!orderColumns.some((column) => column.Field === 'table_id')) {
         await pool.query('ALTER TABLE orders ADD COLUMN table_id BIGINT UNSIGNED NULL AFTER client_id');
       }
+      if (!orderColumns.some((column) => column.Field === 'created_by')) {
+        await pool.query('ALTER TABLE orders ADD COLUMN created_by BIGINT UNSIGNED NULL AFTER montant_total');
+        await pool.query('ALTER TABLE orders ADD KEY idx_orders_created_by (created_by)');
+      }
+      if (!orderColumns.some((column) => column.Field === 'moyen_paiement_prevu')) {
+        await pool.query("ALTER TABLE orders ADD COLUMN moyen_paiement_prevu VARCHAR(30) NULL AFTER montant_total");
+      }
 
       if (!orderColumns.some((column) => column.Field === 'cloturee')) {
         await pool.query('ALTER TABLE orders ADD COLUMN cloturee TINYINT(1) NOT NULL DEFAULT 0 AFTER statut');
@@ -232,6 +239,18 @@ TablesRestaurant.findAll = async function(options) {
     'INSERT INTO tables_restaurant (id, numero, capacite, statut) VALUES ? ON DUPLICATE KEY UPDATE id = id',
     [tableRows]
   );
+  await pool.query(`
+    UPDATE tables_restaurant tr
+       SET tr.statut = CASE
+         WHEN EXISTS (
+           SELECT 1 FROM orders o
+            WHERE o.table_id = tr.id
+              AND o.source_module = 'RESTAURANT'
+              AND o.statut NOT IN ('PAYEE', 'PAYE', 'ANNULEE')
+         ) THEN 'OCCUPEE'
+         ELSE 'LIBRE'
+       END
+  `);
   return tablesRestaurantFindAll.call(this, options);
 };
 
@@ -528,15 +547,31 @@ const RestaurantSessions = createCrudModel({
 // --- Logique métier -------------------------------------------------------
 
 // Crée une commande + ses lignes, calcule le montant_total automatiquement.
-async function createOrderWithItems({ clientId, tableId, items, notes, locationType, specialPersonName }) {
+async function createOrderWithItems({ clientId, tableId, items, notes, locationType, specialPersonName, moyenPaiementPrevu = null, createdBy = null }) {
   await ensureRestaurantSchema();
   return withTransaction(async (conn) => {
     const montantTotal = items.reduce((sum, it) => sum + Number(it.quantite) * Number(it.prix_unitaire), 0);
+    if (tableId) {
+      const [[tableRow]] = await conn.query(
+        'SELECT id, statut FROM tables_restaurant WHERE id = ? LIMIT 1 FOR UPDATE',
+        [tableId]
+      );
+      if (!tableRow) throw ApiError.badRequest('Table introuvable');
+      const [[activeOrder]] = await conn.query(
+        `SELECT COUNT(*) AS total FROM orders
+         WHERE table_id = ? AND source_module = 'RESTAURANT'
+           AND statut NOT IN ('PAYEE', 'PAYE', 'ANNULEE')`,
+        [tableId]
+      );
+      if (Number(activeOrder.total) > 0) {
+        throw ApiError.conflict('Cette table est encore occupée. Attendez son encaissement.');
+      }
+    }
 
     const [result] = await conn.query(
-      `INSERT INTO orders (client_id, table_id, source_module, montant_total, statut, created_at, notes, location_type, special_person_name, order_ingredients_deducted)
-      VALUES (?, ?, 'RESTAURANT', ?, 'EN_ATTENTE', NOW(), ?, ?, ?, 0)`,
-      [clientId, tableId, montantTotal, notes || null, locationType || null, specialPersonName || null]
+      `INSERT INTO orders (client_id, table_id, source_module, montant_total, moyen_paiement_prevu, created_by, statut, created_at, notes, location_type, special_person_name, order_ingredients_deducted)
+      VALUES (?, ?, 'RESTAURANT', ?, ?, ?, 'EN_ATTENTE', NOW(), ?, ?, ?, 0)`,
+      [clientId, tableId, montantTotal, moyenPaiementPrevu, createdBy, notes || null, locationType || null, specialPersonName || null]
     );
     const orderId = result.insertId;
 
@@ -555,22 +590,75 @@ async function createOrderWithItems({ clientId, tableId, items, notes, locationT
       includeRecipeIngredients: false,
     });
     await conn.query('UPDATE orders SET stock_deducted_at = NOW() WHERE id = ?', [orderId]);
+    if (tableId) {
+      await conn.query('UPDATE tables_restaurant SET statut = "OCCUPEE" WHERE id = ?', [tableId]);
+    }
     const [order] = await conn.query('SELECT * FROM orders WHERE id = ?', [orderId]);
     return order[0];
   });
 }
 
-async function updateOrderWithItems({ orderId, clientId, tableId, items, notes, locationType, specialPersonName }) {
+async function updateOrderWithItems({ orderId, clientId, tableId, items, notes, locationType, specialPersonName, moyenPaiementPrevu = null, actorRole = null }) {
   await ensureRestaurantSchema();
   return withTransaction(async (conn) => {
     const montantTotal = items.reduce((sum, item) => sum + Number(item.quantite) * Number(item.prix_unitaire), 0);
     const [existingRows] = await conn.query(
-      'SELECT id, statut, stock_deducted_at, order_ingredients_deducted FROM orders WHERE id = ? LIMIT 1 FOR UPDATE',
+      'SELECT id, table_id, statut, stock_deducted_at, order_ingredients_deducted FROM orders WHERE id = ? LIMIT 1 FOR UPDATE',
       [orderId]
     );
     if (!existingRows[0]) return null;
+    const previousTableId = existingRows[0].table_id ? Number(existingRows[0].table_id) : null;
+    const nextTableId = tableId ? Number(tableId) : null;
+    if (nextTableId && nextTableId !== previousTableId) {
+      const [[tableRow]] = await conn.query(
+        'SELECT id, statut FROM tables_restaurant WHERE id = ? LIMIT 1 FOR UPDATE',
+        [nextTableId]
+      );
+      if (!tableRow) throw ApiError.badRequest('Table introuvable');
+      const [[activeOrder]] = await conn.query(
+        `SELECT COUNT(*) AS total FROM orders
+         WHERE table_id = ? AND id <> ? AND source_module = 'RESTAURANT'
+           AND statut NOT IN ('PAYEE', 'PAYE', 'ANNULEE')`,
+        [nextTableId, orderId]
+      );
+      if (Number(activeOrder.total) > 0) {
+        throw ApiError.conflict('Cette table est encore occupée. Attendez son encaissement.');
+      }
+    }
     // Seul l'écart entre l'ancienne et la nouvelle commande passe dans le stock.
-    const [previousItems] = await conn.query('SELECT product_id, quantite, source_module, source_product_id FROM order_items WHERE order_id = ?', [orderId]);
+    const [previousItems] = await conn.query('SELECT product_id, quantite, prix_unitaire, cuisson, source_module, source_product_id FROM order_items WHERE order_id = ?', [orderId]);
+    if (['caisse', 'caissier', 'hotesse', 'serveur'].includes(String(actorRole || '').toLowerCase())) {
+      const getItemKey = (item) => {
+        const sourceModule = String(item.source_module || 'RESTAURANT').toUpperCase();
+        const productId = sourceModule === 'BAR'
+          ? Number(item.source_product_id ?? item.product_id)
+          : Number(item.product_id ?? item.source_product_id);
+        return `${sourceModule}:${productId}:${String(item.cuisson || '').trim().toLowerCase()}`;
+      };
+      const requestedByKey = new Map();
+      for (const item of items) {
+        const key = getItemKey(item);
+        const current = requestedByKey.get(key) || { quantity: 0, price: Number(item.prix_unitaire) };
+        current.quantity += Number(item.quantite);
+        if (current.price !== Number(item.prix_unitaire)) {
+          throw ApiError.badRequest('Le prix d’un article déjà présent ne peut pas être modifié.');
+        }
+        requestedByKey.set(key, current);
+      }
+      const existingByKey = new Map();
+      for (const item of previousItems) {
+        const key = getItemKey(item);
+        const current = existingByKey.get(key) || { quantity: 0, price: Number(item.prix_unitaire) };
+        current.quantity += Number(item.quantite);
+        existingByKey.set(key, current);
+      }
+      for (const [key, existing] of existingByKey) {
+        const requested = requestedByKey.get(key);
+        if (!requested || requested.quantity < existing.quantity || requested.price !== existing.price) {
+          throw ApiError.forbidden('Vous pouvez ajouter des articles, mais pas retirer ou modifier ceux de la commande.');
+        }
+      }
+    }
     const deducted = Boolean(existingRows[0].stock_deducted_at);
     if (deducted && Boolean(existingRows[0].order_ingredients_deducted)) {
       await syncOrderIngredients(conn, {
@@ -595,10 +683,10 @@ async function updateOrderWithItems({ orderId, clientId, tableId, items, notes, 
 
     await conn.query(
       `UPDATE orders
-       SET client_id = ?, table_id = ?, montant_total = ?, notes = ?, location_type = ?, special_person_name = ?,
+       SET client_id = ?, table_id = ?, montant_total = ?, moyen_paiement_prevu = ?, notes = ?, location_type = ?, special_person_name = ?,
            order_ingredients_deducted = 0
        WHERE id = ?`,
-      [clientId || null, tableId || null, montantTotal, notes || null, locationType || null, specialPersonName || null, orderId]
+      [clientId || null, tableId || null, montantTotal, moyenPaiementPrevu, notes || null, locationType || null, specialPersonName || null, orderId]
     );
     await conn.query('DELETE FROM order_items WHERE order_id = ?', [orderId]);
     for (const item of items) {
@@ -606,6 +694,20 @@ async function updateOrderWithItems({ orderId, clientId, tableId, items, notes, 
         `INSERT INTO order_items (order_id, product_id, quantite, prix_unitaire, cuisson, source_module, source_product_id, product_nom) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [orderId, item.source_module === 'BAR' ? null : item.product_id, item.quantite, item.prix_unitaire, item.cuisson || null, item.source_module || 'RESTAURANT', item.source_module === 'BAR' ? item.source_product_id : null, item.nom || null]
       );
+    }
+    if (previousTableId && previousTableId !== nextTableId) {
+      const [[activeOrder]] = await conn.query(
+        `SELECT COUNT(*) AS total FROM orders
+         WHERE table_id = ? AND id <> ? AND source_module = 'RESTAURANT'
+           AND statut NOT IN ('PAYEE', 'PAYE', 'ANNULEE')`,
+        [previousTableId, orderId]
+      );
+      if (Number(activeOrder.total) === 0) {
+        await conn.query('UPDATE tables_restaurant SET statut = "LIBRE" WHERE id = ?', [previousTableId]);
+      }
+    }
+    if (nextTableId) {
+      await conn.query('UPDATE tables_restaurant SET statut = "OCCUPEE" WHERE id = ?', [nextTableId]);
     }
 
     const [orders] = await conn.query('SELECT * FROM orders WHERE id = ?', [orderId]);
@@ -622,9 +724,11 @@ async function updateOrderWithItems({ orderId, clientId, tableId, items, notes, 
 
 async function orderWithItems(orderId) {
   const [orderRows] = await pool.query(
-    `SELECT o.*, t.numero AS table_numero
+    `SELECT o.*, t.numero AS table_numero,
+            u.nom AS creator_nom, u.prenom AS creator_prenom
      FROM orders o
      LEFT JOIN tables_restaurant t ON t.id = o.table_id
+     LEFT JOIN users u ON u.id_admin = o.created_by
      WHERE o.id = ?`,
     [orderId]
   );
@@ -640,7 +744,11 @@ async function orderWithItems(orderId) {
     'SELECT moyen_paiement FROM payments WHERE order_id = ? ORDER BY date_paiement DESC, id DESC LIMIT 1',
     [orderId]
   );
-  return { ...orderRows[0], moyen_paiement: payments[0]?.moyen_paiement || null, items };
+  return {
+    ...orderRows[0],
+    moyen_paiement: payments[0]?.moyen_paiement || orderRows[0].moyen_paiement_prevu || null,
+    items,
+  };
 }
 
 Orders.findAll = async function(options) {
@@ -715,12 +823,23 @@ Orders.remove = async function(id) {
 async function updateOrderStatus(orderId, statut) {
   await ensureRestaurantSchema();
   return withTransaction(async (conn) => {
-    const [[order]] = await conn.query('SELECT id FROM orders WHERE id = ? FOR UPDATE', [orderId]);
+    const [[order]] = await conn.query('SELECT id, table_id FROM orders WHERE id = ? FOR UPDATE', [orderId]);
     if (!order) return null;
     if (statut === 'ANNULEE') {
       await restoreOrderIngredients(conn, orderId, `Commande restaurant #${orderId} annulée`);
     }
     await conn.query('UPDATE orders SET statut = ? WHERE id = ?', [statut, orderId]);
+    if (['PAYEE', 'PAYE', 'ANNULEE'].includes(String(statut).toUpperCase()) && order.table_id) {
+      const [[activeOrder]] = await conn.query(
+        `SELECT COUNT(*) AS total FROM orders
+         WHERE table_id = ? AND id <> ? AND source_module = 'RESTAURANT'
+           AND statut NOT IN ('PAYEE', 'PAYE', 'ANNULEE')`,
+        [order.table_id, orderId]
+      );
+      if (Number(activeOrder.total) === 0) {
+        await conn.query('UPDATE tables_restaurant SET statut = "LIBRE" WHERE id = ?', [order.table_id]);
+      }
+    }
     const [[updated]] = await conn.query('SELECT * FROM orders WHERE id = ?', [orderId]);
     return updated;
   });

@@ -17,6 +17,7 @@ const signatureRoutes = require('./signatureRoutes');
 const rhRoutes = require('./rhRoutes');
 const planningRoutes = require('./planningRoutes');
 const uploadRoutes = require('./uploadRoutes');
+const realtimeRoutes = require('./realtimeRoutes');
 
 const router = express.Router();
 
@@ -45,5 +46,6 @@ router.use('/signatures', signatureRoutes);
 router.use('/rh', rhRoutes);
 router.use('/planning', planningRoutes);
 router.use('/uploads', uploadRoutes);
+router.use('/realtime', realtimeRoutes);
 
 module.exports = router;

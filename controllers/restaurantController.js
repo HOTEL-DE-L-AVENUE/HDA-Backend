@@ -29,6 +29,24 @@ function escapeHtml(input) {
 const tablesCrud = createCrudController(resto.TablesRestaurant, { filterable: ['statut'] });
 const ordersCrud = createCrudController(resto.Orders, { filterable: ['client_id', 'statut', 'source_module'] });
 
+function canonicalOrderStatus(status) {
+  const normalized = String(status || '').toUpperCase();
+  return normalized === 'PAYE' ? 'PAYEE' : normalized;
+}
+
+function isAllowedRestaurantStatusTransition(currentStatus, nextStatus) {
+  const current = canonicalOrderStatus(currentStatus);
+  const next = canonicalOrderStatus(nextStatus);
+  if (current === next) return true;
+
+  const allowedNextStatuses = {
+    EN_ATTENTE: ['EN_COURS', 'ANNULEE'],
+    EN_COURS: ['SERVIE', 'ANNULEE'],
+    SERVIE: ['PAYEE', 'ANNULEE'],
+  };
+  return Boolean(allowedNextStatuses[current]?.includes(next));
+}
+
 async function getRestaurantReportHandler(req, res) {
   return ok(res, await getRestaurantReport(req.params.date));
 }
@@ -524,7 +542,7 @@ async function saveRestaurantProductRecipeHandler(req, res) {
 
 async function createOrderHandler(req, res) {
   console.debug('[restaurant] createOrderHandler body:', JSON.stringify(req.body));
-  const { client_id, table_id, items, notes, location_type, special_person_name } = req.body;
+  const { client_id, table_id, items, notes, location_type, special_person_name, moyen_paiement } = req.body;
   if (!items || !items.length) throw ApiError.badRequest('items requis (au moins une ligne)');
 
   try {
@@ -562,12 +580,21 @@ async function createOrderHandler(req, res) {
     throw ApiError.badRequest('Données de référence invalides');
   }
 
-  const order = await resto.createOrderWithItems({ clientId: client_id, tableId: table_id, items, notes, locationType: location_type, specialPersonName: special_person_name });
+  const order = await resto.createOrderWithItems({
+    clientId: client_id,
+    tableId: table_id,
+    items,
+    notes,
+    locationType: location_type,
+    specialPersonName: special_person_name,
+    moyenPaiementPrevu: moyen_paiement || null,
+    createdBy: req.user?.id_admin ?? null,
+  });
   return created(res, order);
 }
 
 async function updateOrderHandler(req, res) {
-  const { client_id, table_id, items, notes, location_type, special_person_name } = req.body;
+  const { client_id, table_id, items, notes, location_type, special_person_name, moyen_paiement } = req.body;
   if (!Array.isArray(items) || !items.length) throw ApiError.badRequest('items requis (au moins une ligne)');
 
   const restaurantItems = items.filter((item) => String(item.source_module || 'RESTAURANT').toUpperCase() !== 'BAR');
@@ -597,6 +624,8 @@ async function updateOrderHandler(req, res) {
     notes,
     locationType: location_type,
     specialPersonName: special_person_name,
+    moyenPaiementPrevu: moyen_paiement || null,
+    actorRole: req.user?.role,
   });
   if (!order) throw ApiError.notFound(`Commande #${req.params.id} introuvable`);
   return ok(res, order);
@@ -782,10 +811,13 @@ async function orderInvoicePdfHandler(req, res) {
 
 async function ordersInProgressHandler(req, res) {
   const [rows] = await pool.query(
-    `SELECT o.*, c.nom as client_nom, c.prenom as client_prenom, t.numero as table_numero
+    `SELECT o.*, c.nom as client_nom, c.prenom as client_prenom,
+            t.numero as table_numero,
+            u.nom as creator_nom, u.prenom as creator_prenom
        FROM orders o
        LEFT JOIN clients c ON c.id = o.client_id
        LEFT JOIN tables_restaurant t ON t.id = o.table_id
+       LEFT JOIN users u ON u.id_admin = o.created_by
       WHERE o.source_module = 'RESTAURANT' AND o.statut != 'ANNULEE' AND o.statut != 'PAYEE'
       ORDER BY o.created_at ASC`
   );
@@ -1042,6 +1074,12 @@ async function updateOrderStatusHandler(req, res) {
       [req.params.id]
     );
     if (!order) throw ApiError.notFound('Commande introuvable');
+    if (!isAllowedRestaurantStatusTransition(order.statut, statut)) {
+      throw ApiError.conflict(`La commande a déjà changé d’état (${order.statut}). Actualisez la liste avant de réessayer.`);
+    }
+    if (canonicalOrderStatus(order.statut) === canonicalOrderStatus(statut)) {
+      return;
+    }
     
     // Si on annule une commande avec stock déduit, rétablir le stock
     if (statut === 'ANNULEE' && order.stock_deducted_at && order.statut !== 'ANNULEE') {
@@ -1052,6 +1090,17 @@ async function updateOrderStatusHandler(req, res) {
       'UPDATE orders SET statut = ? WHERE id = ?',
       [statut, req.params.id]
     );
+    if (['PAYEE', 'PAYE', 'ANNULEE'].includes(String(statut).toUpperCase()) && order.table_id) {
+      const [[activeOrder]] = await conn.query(
+        `SELECT COUNT(*) AS total FROM orders
+         WHERE table_id = ? AND id <> ? AND source_module = 'RESTAURANT'
+           AND statut NOT IN ('PAYEE', 'PAYE', 'ANNULEE')`,
+        [order.table_id, req.params.id]
+      );
+      if (Number(activeOrder.total) === 0) {
+        await conn.query('UPDATE tables_restaurant SET statut = "LIBRE" WHERE id = ?', [order.table_id]);
+      }
+    }
   });
   
   return ok(res, { message: 'Statut mis à jour' });
@@ -1155,44 +1204,64 @@ async function cashierStatusHandler(req, res) {
 
 async function processPaymentHandler(req, res) {
   const { order_id, moyen_paiement, montant } = req.body;
-  const [[order]] = await pool.query(
-    'SELECT id, montant_total FROM orders WHERE id = ? AND source_module = "RESTAURANT"',
-    [order_id]
-  );
-  if (!order) throw ApiError.notFound('Commande introuvable');
+  const result = await withTransaction(async (conn) => {
+    const [[order]] = await conn.query(
+      'SELECT id, table_id, montant_total FROM orders WHERE id = ? AND source_module = "RESTAURANT" FOR UPDATE',
+      [order_id]
+    );
+    if (!order) throw ApiError.notFound('Commande introuvable');
 
-  const [result] = await pool.query(
-    `INSERT INTO payments (order_id, moyen_paiement, montant, date_paiement)
-     VALUES (?, ?, ?, NOW())`,
-    [order_id, moyen_paiement, montant || order.montant_total]
-  );
+    const [payment] = await conn.query(
+      `INSERT INTO payments (order_id, moyen_paiement, montant, date_paiement)
+       VALUES (?, ?, ?, NOW())`,
+      [order_id, moyen_paiement, montant || order.montant_total]
+    );
 
-  await pool.query(
-    'UPDATE orders SET statut = "PAYEE" WHERE id = ?',
-    [order_id]
-  );
+    await conn.query('UPDATE orders SET statut = "PAYEE" WHERE id = ?', [order_id]);
+    if (order.table_id) {
+      const [[activeOrder]] = await conn.query(
+        `SELECT COUNT(*) AS total FROM orders
+         WHERE table_id = ? AND id <> ? AND source_module = 'RESTAURANT'
+           AND statut NOT IN ('PAYEE', 'PAYE', 'ANNULEE')`,
+        [order.table_id, order_id]
+      );
+      if (Number(activeOrder.total) === 0) {
+        await conn.query('UPDATE tables_restaurant SET statut = "LIBRE" WHERE id = ?', [order.table_id]);
+      }
+    }
+    return payment;
+  });
 
   return created(res, result);
 }
 
 async function billToRoomHandler(req, res) {
   const { order_id, room_id } = req.body;
-  const [[order]] = await pool.query(
-    'SELECT id, montant_total FROM orders WHERE id = ? AND source_module = "RESTAURANT"',
-    [order_id]
-  );
-  if (!order) throw ApiError.notFound('Commande introuvable');
+  await withTransaction(async (conn) => {
+    const [[order]] = await conn.query(
+      'SELECT id, table_id, montant_total FROM orders WHERE id = ? AND source_module = "RESTAURANT" FOR UPDATE',
+      [order_id]
+    );
+    if (!order) throw ApiError.notFound('Commande introuvable');
 
-  await pool.query(
-    `INSERT INTO financial_transactions (module, type_flux, montant, reference_id, description, statut_sync, created_at)
-     VALUES ('HOTEL', 'SORTIE', ?, ?, ?, 'SYNCED', NOW())`,
-    [order.montant_total, order_id, `Facture restaurant #${order_id} vers chambre #${room_id}`]
-  );
-
-  await pool.query(
-    'UPDATE orders SET statut = "PAYEE" WHERE id = ?',
-    [order_id]
-  );
+    await conn.query(
+      `INSERT INTO financial_transactions (module, type_flux, montant, reference_id, description, statut_sync, created_at)
+       VALUES ('HOTEL', 'SORTIE', ?, ?, ?, 'SYNCED', NOW())`,
+      [order.montant_total, order_id, `Facture restaurant #${order_id} vers chambre #${room_id}`]
+    );
+    await conn.query('UPDATE orders SET statut = "PAYEE" WHERE id = ?', [order_id]);
+    if (order.table_id) {
+      const [[activeOrder]] = await conn.query(
+        `SELECT COUNT(*) AS total FROM orders
+         WHERE table_id = ? AND id <> ? AND source_module = 'RESTAURANT'
+           AND statut NOT IN ('PAYEE', 'PAYE', 'ANNULEE')`,
+        [order.table_id, order_id]
+      );
+      if (Number(activeOrder.total) === 0) {
+        await conn.query('UPDATE tables_restaurant SET statut = "LIBRE" WHERE id = ?', [order.table_id]);
+      }
+    }
+  });
 
   return ok(res, { message: 'Facture transférée à la chambre' });
 }
@@ -1252,5 +1321,6 @@ module.exports = {
   getRestaurantPurchasesHandler, getRestaurantPurchaseByIdHandler,
   listRestaurantPurchasesHandler, restaurantPurchaseDetailHandler, createRestaurantPurchaseHandler,
   menuHandler, updateOrderStatusHandler, removeOrderHandler, historyTotalHandler, openCashierHandler, closeCashierHandler,
+  isAllowedRestaurantStatusTransition,
   cashierStatusHandler, processPaymentHandler, billToRoomHandler, statsHandler,
 };
