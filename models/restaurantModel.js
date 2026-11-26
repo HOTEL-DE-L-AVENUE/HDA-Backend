@@ -532,6 +532,22 @@ async function createOrderWithItems({ clientId, tableId, items, notes, locationT
   await ensureRestaurantSchema();
   return withTransaction(async (conn) => {
     const montantTotal = items.reduce((sum, it) => sum + Number(it.quantite) * Number(it.prix_unitaire), 0);
+    if (tableId) {
+      const [[tableRow]] = await conn.query(
+        'SELECT id, statut FROM tables_restaurant WHERE id = ? LIMIT 1 FOR UPDATE',
+        [tableId]
+      );
+      if (!tableRow) throw ApiError.badRequest('Table introuvable');
+      const [[activeOrder]] = await conn.query(
+        `SELECT COUNT(*) AS total FROM orders
+         WHERE table_id = ? AND source_module = 'RESTAURANT'
+           AND statut NOT IN ('PAYEE', 'PAYE', 'ANNULEE')`,
+        [tableId]
+      );
+      if (Number(activeOrder.total) > 0 || String(tableRow.statut).toUpperCase() === 'OCCUPEE') {
+        throw ApiError.conflict('Cette table est encore occupée. Attendez son encaissement.');
+      }
+    }
 
     const [result] = await conn.query(
       `INSERT INTO orders (client_id, table_id, source_module, montant_total, statut, created_at, notes, location_type, special_person_name, order_ingredients_deducted)
@@ -555,6 +571,9 @@ async function createOrderWithItems({ clientId, tableId, items, notes, locationT
       includeRecipeIngredients: false,
     });
     await conn.query('UPDATE orders SET stock_deducted_at = NOW() WHERE id = ?', [orderId]);
+    if (tableId) {
+      await conn.query('UPDATE tables_restaurant SET statut = "OCCUPEE" WHERE id = ?', [tableId]);
+    }
     const [order] = await conn.query('SELECT * FROM orders WHERE id = ?', [orderId]);
     return order[0];
   });
@@ -565,10 +584,28 @@ async function updateOrderWithItems({ orderId, clientId, tableId, items, notes, 
   return withTransaction(async (conn) => {
     const montantTotal = items.reduce((sum, item) => sum + Number(item.quantite) * Number(item.prix_unitaire), 0);
     const [existingRows] = await conn.query(
-      'SELECT id, statut, stock_deducted_at, order_ingredients_deducted FROM orders WHERE id = ? LIMIT 1 FOR UPDATE',
+      'SELECT id, table_id, statut, stock_deducted_at, order_ingredients_deducted FROM orders WHERE id = ? LIMIT 1 FOR UPDATE',
       [orderId]
     );
     if (!existingRows[0]) return null;
+    const previousTableId = existingRows[0].table_id ? Number(existingRows[0].table_id) : null;
+    const nextTableId = tableId ? Number(tableId) : null;
+    if (nextTableId && nextTableId !== previousTableId) {
+      const [[tableRow]] = await conn.query(
+        'SELECT id, statut FROM tables_restaurant WHERE id = ? LIMIT 1 FOR UPDATE',
+        [nextTableId]
+      );
+      if (!tableRow) throw ApiError.badRequest('Table introuvable');
+      const [[activeOrder]] = await conn.query(
+        `SELECT COUNT(*) AS total FROM orders
+         WHERE table_id = ? AND id <> ? AND source_module = 'RESTAURANT'
+           AND statut NOT IN ('PAYEE', 'PAYE', 'ANNULEE')`,
+        [nextTableId, orderId]
+      );
+      if (Number(activeOrder.total) > 0 || String(tableRow.statut).toUpperCase() === 'OCCUPEE') {
+        throw ApiError.conflict('Cette table est encore occupée. Attendez son encaissement.');
+      }
+    }
     // Seul l'écart entre l'ancienne et la nouvelle commande passe dans le stock.
     const [previousItems] = await conn.query('SELECT product_id, quantite, source_module, source_product_id FROM order_items WHERE order_id = ?', [orderId]);
     const deducted = Boolean(existingRows[0].stock_deducted_at);
@@ -606,6 +643,20 @@ async function updateOrderWithItems({ orderId, clientId, tableId, items, notes, 
         `INSERT INTO order_items (order_id, product_id, quantite, prix_unitaire, cuisson, source_module, source_product_id, product_nom) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [orderId, item.source_module === 'BAR' ? null : item.product_id, item.quantite, item.prix_unitaire, item.cuisson || null, item.source_module || 'RESTAURANT', item.source_module === 'BAR' ? item.source_product_id : null, item.nom || null]
       );
+    }
+    if (previousTableId && previousTableId !== nextTableId) {
+      const [[activeOrder]] = await conn.query(
+        `SELECT COUNT(*) AS total FROM orders
+         WHERE table_id = ? AND id <> ? AND source_module = 'RESTAURANT'
+           AND statut NOT IN ('PAYEE', 'PAYE', 'ANNULEE')`,
+        [previousTableId, orderId]
+      );
+      if (Number(activeOrder.total) === 0) {
+        await conn.query('UPDATE tables_restaurant SET statut = "LIBRE" WHERE id = ?', [previousTableId]);
+      }
+    }
+    if (nextTableId) {
+      await conn.query('UPDATE tables_restaurant SET statut = "OCCUPEE" WHERE id = ?', [nextTableId]);
     }
 
     const [orders] = await conn.query('SELECT * FROM orders WHERE id = ?', [orderId]);
@@ -715,12 +766,23 @@ Orders.remove = async function(id) {
 async function updateOrderStatus(orderId, statut) {
   await ensureRestaurantSchema();
   return withTransaction(async (conn) => {
-    const [[order]] = await conn.query('SELECT id FROM orders WHERE id = ? FOR UPDATE', [orderId]);
+    const [[order]] = await conn.query('SELECT id, table_id FROM orders WHERE id = ? FOR UPDATE', [orderId]);
     if (!order) return null;
     if (statut === 'ANNULEE') {
       await restoreOrderIngredients(conn, orderId, `Commande restaurant #${orderId} annulée`);
     }
     await conn.query('UPDATE orders SET statut = ? WHERE id = ?', [statut, orderId]);
+    if (['PAYEE', 'PAYE', 'ANNULEE'].includes(String(statut).toUpperCase()) && order.table_id) {
+      const [[activeOrder]] = await conn.query(
+        `SELECT COUNT(*) AS total FROM orders
+         WHERE table_id = ? AND id <> ? AND source_module = 'RESTAURANT'
+           AND statut NOT IN ('PAYEE', 'PAYE', 'ANNULEE')`,
+        [order.table_id, orderId]
+      );
+      if (Number(activeOrder.total) === 0) {
+        await conn.query('UPDATE tables_restaurant SET statut = "LIBRE" WHERE id = ?', [order.table_id]);
+      }
+    }
     const [[updated]] = await conn.query('SELECT * FROM orders WHERE id = ?', [orderId]);
     return updated;
   });

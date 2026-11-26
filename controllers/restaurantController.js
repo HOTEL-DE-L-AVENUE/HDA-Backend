@@ -1052,6 +1052,17 @@ async function updateOrderStatusHandler(req, res) {
       'UPDATE orders SET statut = ? WHERE id = ?',
       [statut, req.params.id]
     );
+    if (['PAYEE', 'PAYE', 'ANNULEE'].includes(String(statut).toUpperCase()) && order.table_id) {
+      const [[activeOrder]] = await conn.query(
+        `SELECT COUNT(*) AS total FROM orders
+         WHERE table_id = ? AND id <> ? AND source_module = 'RESTAURANT'
+           AND statut NOT IN ('PAYEE', 'PAYE', 'ANNULEE')`,
+        [order.table_id, req.params.id]
+      );
+      if (Number(activeOrder.total) === 0) {
+        await conn.query('UPDATE tables_restaurant SET statut = "LIBRE" WHERE id = ?', [order.table_id]);
+      }
+    }
   });
   
   return ok(res, { message: 'Statut mis à jour' });
@@ -1156,7 +1167,7 @@ async function cashierStatusHandler(req, res) {
 async function processPaymentHandler(req, res) {
   const { order_id, moyen_paiement, montant } = req.body;
   const [[order]] = await pool.query(
-    'SELECT id, montant_total FROM orders WHERE id = ? AND source_module = "RESTAURANT"',
+    'SELECT id, table_id, montant_total FROM orders WHERE id = ? AND source_module = "RESTAURANT"',
     [order_id]
   );
   if (!order) throw ApiError.notFound('Commande introuvable');
@@ -1171,6 +1182,17 @@ async function processPaymentHandler(req, res) {
     'UPDATE orders SET statut = "PAYEE" WHERE id = ?',
     [order_id]
   );
+  if (order.table_id) {
+    const [[activeOrder]] = await pool.query(
+      `SELECT COUNT(*) AS total FROM orders
+       WHERE table_id = ? AND id <> ? AND source_module = 'RESTAURANT'
+         AND statut NOT IN ('PAYEE', 'PAYE', 'ANNULEE')`,
+      [order.table_id, order_id]
+    );
+    if (Number(activeOrder.total) === 0) {
+      await pool.query('UPDATE tables_restaurant SET statut = "LIBRE" WHERE id = ?', [order.table_id]);
+    }
+  }
 
   return created(res, result);
 }

@@ -8,7 +8,7 @@ const router = express.Router();
 const managementRoles = requireRole('admin', 'manager', 'stock_manager');
 const adminOnly = requireRole('admin');
 const cashierRoles = requireRole('admin', 'manager', 'caisse', 'caissier');
-	const orderRoles = requireRole('admin', 'manager', 'water', 'barman', 'hotesse', 'serveur');
+	const orderRoles = requireRole('admin', 'manager', 'caisse', 'water', 'barman', 'hotesse', 'serveur');
 	const createOrderRoles = requireRole('admin', 'manager', 'caisse', 'caissier', 'water', 'barman', 'hotesse', 'serveur');
 const tableRoles = requireRole('admin', 'manager', 'stock_manager', 'water', 'barman', 'caisse', 'caissier');
 

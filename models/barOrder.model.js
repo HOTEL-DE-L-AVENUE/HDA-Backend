@@ -6,6 +6,26 @@ const restaurantModel = require('./restaurantModel');
 
 const isRestaurantItem = (item) => String(item.source_module || '').toUpperCase() === 'RESTAURANT';
 
+async function releaseBarTableIfFree(conn, tableId, excludeOrderId = null) {
+  if (!tableId) return;
+  const [active] = excludeOrderId
+    ? await conn.query(
+      `SELECT id FROM bar_orders
+       WHERE table_id = ? AND id <> ? AND statut NOT IN ('ENCAISSEE', 'CLOTUREE', 'ANNULEE')
+       LIMIT 1`,
+      [tableId, excludeOrderId]
+    )
+    : await conn.query(
+      `SELECT id FROM bar_orders
+       WHERE table_id = ? AND statut NOT IN ('ENCAISSEE', 'CLOTUREE', 'ANNULEE')
+       LIMIT 1`,
+      [tableId]
+    );
+  if (active.length === 0) {
+    await conn.query('UPDATE bar_tables SET statut = "LIBRE" WHERE id = ?', [tableId]);
+  }
+}
+
 async function validateRestaurantMenuItems(conn, items) {
   const productIds = [...new Set(items.filter(isRestaurantItem).map((item) => Number(item.product_id ?? item.source_product_id ?? item.id)).filter((id) => Number.isInteger(id) && id > 0))];
   if (!productIds.length) return;
@@ -213,6 +233,21 @@ async function createBarOrder({ clientName, tableId, nombrePersonnes = 1, moyenP
   await ensureBarTransactionsSchema();
 
   return withTransaction(async (conn) => {
+    if (tableId) {
+      const [[tableRow]] = await conn.query(
+        'SELECT id, statut FROM bar_tables WHERE id = ? LIMIT 1 FOR UPDATE',
+        [tableId]
+      );
+      if (!tableRow) throw ApiError.badRequest('Table introuvable');
+      const [[activeOrder]] = await conn.query(
+        `SELECT COUNT(*) AS total FROM bar_orders
+         WHERE table_id = ? AND statut NOT IN ('ENCAISSEE', 'CLOTUREE', 'ANNULEE')`,
+        [tableId]
+      );
+      if (Number(activeOrder.total) > 0 || String(tableRow.statut).toUpperCase() === 'OCCUPEE') {
+        throw ApiError.conflict('Cette table est encore occupée. Attendez son encaissement.');
+      }
+    }
     // Lock and validate each requested stock row before creating the order.
     // The stock decrement and order creation therefore succeed or fail together.
     const requestedQuantities = new Map();
@@ -250,6 +285,9 @@ async function createBarOrder({ clientName, tableId, nombrePersonnes = 1, moyenP
       'INSERT INTO bar_orders (client_name, table_id, nombre_personnes, moyen_paiement, observation, hotel_reservation_id, room_id, room_guest_name, room_account_paid, statut, montant_total, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())',
       [clientName || null, tableId || null, Number(nombrePersonnes) || 1, moyenPaiement || 'ESPECES', observation || null, hotelReservationId ?? null, roomId ?? null, roomGuestName || null, roomAccountPaid ? 1 : 0, 'EN_ATTENTE', total, createdBy]
     );
+    if (tableId) {
+      await conn.query('UPDATE bar_tables SET statut = "OCCUPEE" WHERE id = ?', [tableId]);
+    }
 
     const orderId = result.insertId;
 
@@ -336,6 +374,24 @@ async function updateBarOrder(id, { clientName, tableId, nombrePersonnes = 1, mo
       throw ApiError.forbidden('Vous pouvez uniquement modifier vos propres commandes.');
     }
 
+    const previousTableId = orders[0].table_id ? Number(orders[0].table_id) : null;
+    const nextTableId = tableId !== undefined ? (tableId ? Number(tableId) : null) : previousTableId;
+    if (nextTableId && nextTableId !== previousTableId) {
+      const [[tableRow]] = await conn.query(
+        'SELECT id, statut FROM bar_tables WHERE id = ? LIMIT 1 FOR UPDATE',
+        [nextTableId]
+      );
+      if (!tableRow) throw ApiError.badRequest('Table introuvable');
+      const [[activeOrder]] = await conn.query(
+        `SELECT COUNT(*) AS total FROM bar_orders
+         WHERE table_id = ? AND id <> ? AND statut NOT IN ('ENCAISSEE', 'CLOTUREE', 'ANNULEE')`,
+        [nextTableId, id]
+      );
+      if (Number(activeOrder.total) > 0 || String(tableRow.statut).toUpperCase() === 'OCCUPEE') {
+        throw ApiError.conflict('Cette table est encore occupée. Attendez son encaissement.');
+      }
+    }
+
     const [existingOrderItems] = await conn.query(
       'SELECT nom, quantite, prix, source_module, source_product_id FROM bar_order_items WHERE order_id = ?',
       [id]
@@ -394,6 +450,8 @@ async function updateBarOrder(id, { clientName, tableId, nombrePersonnes = 1, mo
         'UPDATE bar_orders SET client_name = ?, table_id = ?, nombre_personnes = ?, moyen_paiement = ?, observation = ?, hotel_reservation_id = ?, room_id = ?, room_guest_name = ?, room_account_paid = ? WHERE id = ?',
         [clientValue, tableValue, guestValue, paymentValue, observationValue, hotelReservationValue, roomIdValue, roomGuestNameValue, roomAccountPaidValue, id]
       );
+      if (previousTableId && previousTableId !== nextTableId) await releaseBarTableIfFree(conn, previousTableId, id);
+      if (nextTableId) await conn.query('UPDATE bar_tables SET statut = "OCCUPEE" WHERE id = ?', [nextTableId]);
       return {
         id: Number(id),
         client: clientValue,
@@ -443,6 +501,8 @@ async function updateBarOrder(id, { clientName, tableId, nombrePersonnes = 1, mo
       'UPDATE bar_orders SET client_name = ?, table_id = ?, nombre_personnes = ?, moyen_paiement = ?, observation = ?, montant_total = ? WHERE id = ?',
       [clientValue, tableValue, guestValue, paymentValue, observationValue, nextTotal, id]
     );
+    if (previousTableId && previousTableId !== nextTableId) await releaseBarTableIfFree(conn, previousTableId, id);
+    if (nextTableId) await conn.query('UPDATE bar_tables SET statut = "OCCUPEE" WHERE id = ?', [nextTableId]);
 
     await syncRestaurantItems(conn, id, [], additions, `Vente restaurant via commande Bar #${id}`);
 
@@ -518,7 +578,7 @@ async function deleteBarOrder(id) {
   await ensureBarTransactionsSchema();
 
   return withTransaction(async (conn) => {
-    const [orders] = await conn.query('SELECT id FROM bar_orders WHERE id = ? FOR UPDATE', [id]);
+    const [orders] = await conn.query('SELECT id, table_id FROM bar_orders WHERE id = ? FOR UPDATE', [id]);
     if (!orders.length) return false;
 
     const [restaurantItems] = await conn.query(
@@ -546,6 +606,9 @@ async function deleteBarOrder(id) {
       [`BAR-ORDER-${id}`, `BAR-ORDER-${id}-STOCK`]
     );
     await conn.query('DELETE FROM bar_orders WHERE id = ?', [id]);
+    if (orders[0].table_id) {
+      await releaseBarTableIfFree(conn, Number(orders[0].table_id), id);
+    }
     return true;
   });
 }
@@ -562,7 +625,7 @@ async function updateBarOrderStatus(id, statut, moyenPaiement) {
 
   return withTransaction(async (conn) => {
     const [orders] = await conn.query(
-      'SELECT id, statut, moyen_paiement FROM bar_orders WHERE id = ? FOR UPDATE',
+      'SELECT id, table_id, statut, moyen_paiement FROM bar_orders WHERE id = ? FOR UPDATE',
       [id]
     );
     if (!orders.length) return null;
@@ -601,6 +664,9 @@ async function updateBarOrderStatus(id, statut, moyenPaiement) {
         [`BAR-ORDER-${id}-STOCK`]
       );
       await conn.query("UPDATE bar_orders SET statut = 'ANNULEE' WHERE id = ?", [id]);
+      if (orders[0].table_id) {
+        await releaseBarTableIfFree(conn, Number(orders[0].table_id), id);
+      }
       return { id: Number(id), statut };
     }
 
@@ -636,6 +702,9 @@ async function updateBarOrderStatus(id, statut, moyenPaiement) {
            VALUES ('BAR', 'ENTREE', ?, ?, ?, ?, 'SYNCED', NOW())`,
           [order.montant_total, id, `BAR-ORDER-${id}`, `Encaissement commande bar #${id}`]
         );
+      }
+      if (orders[0].table_id) {
+        await releaseBarTableIfFree(conn, Number(orders[0].table_id), id);
       }
     }
     return { id: Number(id), statut };
