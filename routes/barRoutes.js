@@ -8,7 +8,7 @@ const router = express.Router();
 const managementRoles = requireRole('admin', 'manager', 'stock_manager');
 const adminOnly = requireRole('admin');
 const cashierRoles = requireRole('admin', 'manager', 'caisse', 'caissier');
-	const orderRoles = requireRole('admin', 'manager', 'caisse', 'water', 'barman', 'hotesse', 'serveur');
+	const orderRoles = requireRole('admin', 'manager', 'caisse', 'caissier', 'water', 'barman', 'hotesse', 'serveur');
 	const createOrderRoles = requireRole('admin', 'manager', 'caisse', 'caissier', 'water', 'barman', 'hotesse', 'serveur');
 const tableRoles = requireRole('admin', 'manager', 'stock_manager', 'water', 'barman', 'caisse', 'caissier');
 
@@ -44,6 +44,7 @@ router.use(requireAuth, (req, res, next) => {
 	if (role === 'caisse' || role === 'caissier') {
 		if (method === 'GET' && ['/products', '/stock', '/tables', '/orders', '/transactions', '/sessions/open', '/cashier-status'].includes(path)) return next();
 		if (method === 'POST' && path === '/orders') return next();
+		if (method === 'PUT' && /^\/orders\/\d+$/.test(path)) return next();
 		if (method === 'PUT' && /^\/orders\/\d+\/status$/.test(path)) return next();
 		if (method === 'POST' && ['/orders/close-all', '/sessions/open', '/sessions/close'].includes(path)) return next();
 		return next(require('../utils/ApiError').forbidden('Le rÃ´le caisse est limitÃ© aux chiffres et aux opÃ©rations dâ€™encaissement du Bar'));

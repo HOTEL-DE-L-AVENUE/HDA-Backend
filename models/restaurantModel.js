@@ -598,7 +598,7 @@ async function createOrderWithItems({ clientId, tableId, items, notes, locationT
   });
 }
 
-async function updateOrderWithItems({ orderId, clientId, tableId, items, notes, locationType, specialPersonName, moyenPaiementPrevu = null }) {
+async function updateOrderWithItems({ orderId, clientId, tableId, items, notes, locationType, specialPersonName, moyenPaiementPrevu = null, actorRole = null }) {
   await ensureRestaurantSchema();
   return withTransaction(async (conn) => {
     const montantTotal = items.reduce((sum, item) => sum + Number(item.quantite) * Number(item.prix_unitaire), 0);
@@ -626,7 +626,39 @@ async function updateOrderWithItems({ orderId, clientId, tableId, items, notes, 
       }
     }
     // Seul l'écart entre l'ancienne et la nouvelle commande passe dans le stock.
-    const [previousItems] = await conn.query('SELECT product_id, quantite, source_module, source_product_id FROM order_items WHERE order_id = ?', [orderId]);
+    const [previousItems] = await conn.query('SELECT product_id, quantite, prix_unitaire, cuisson, source_module, source_product_id FROM order_items WHERE order_id = ?', [orderId]);
+    if (['caisse', 'caissier', 'hotesse', 'serveur'].includes(String(actorRole || '').toLowerCase())) {
+      const getItemKey = (item) => {
+        const sourceModule = String(item.source_module || 'RESTAURANT').toUpperCase();
+        const productId = sourceModule === 'BAR'
+          ? Number(item.source_product_id ?? item.product_id)
+          : Number(item.product_id ?? item.source_product_id);
+        return `${sourceModule}:${productId}:${String(item.cuisson || '').trim().toLowerCase()}`;
+      };
+      const requestedByKey = new Map();
+      for (const item of items) {
+        const key = getItemKey(item);
+        const current = requestedByKey.get(key) || { quantity: 0, price: Number(item.prix_unitaire) };
+        current.quantity += Number(item.quantite);
+        if (current.price !== Number(item.prix_unitaire)) {
+          throw ApiError.badRequest('Le prix d’un article déjà présent ne peut pas être modifié.');
+        }
+        requestedByKey.set(key, current);
+      }
+      const existingByKey = new Map();
+      for (const item of previousItems) {
+        const key = getItemKey(item);
+        const current = existingByKey.get(key) || { quantity: 0, price: Number(item.prix_unitaire) };
+        current.quantity += Number(item.quantite);
+        existingByKey.set(key, current);
+      }
+      for (const [key, existing] of existingByKey) {
+        const requested = requestedByKey.get(key);
+        if (!requested || requested.quantity < existing.quantity || requested.price !== existing.price) {
+          throw ApiError.forbidden('Vous pouvez ajouter des articles, mais pas retirer ou modifier ceux de la commande.');
+        }
+      }
+    }
     const deducted = Boolean(existingRows[0].stock_deducted_at);
     if (deducted && Boolean(existingRows[0].order_ingredients_deducted)) {
       await syncOrderIngredients(conn, {

@@ -607,6 +607,7 @@ async function updateOrderHandler(req, res) {
     locationType: location_type,
     specialPersonName: special_person_name,
     moyenPaiementPrevu: moyen_paiement || null,
+    actorRole: req.user?.role,
   });
   if (!order) throw ApiError.notFound(`Commande #${req.params.id} introuvable`);
   return ok(res, order);

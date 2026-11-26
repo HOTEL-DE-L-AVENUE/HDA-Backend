@@ -230,7 +230,7 @@ async function getProductHistoryHandler(req, res) {
   return ok(res, history);
 }
 
-function normalizeBarOrderRequest(body = {}) {
+function normalizeBarOrderRequest(body = {}, { allowMissingTable = false } = {}) {
   const { client, table, nombre_personnes, moyen_paiement, observation, items, hotel_reservation_id, room_id, room_guest_name, room_account_paid } = body;
   const safeTableValue = Number(table);
   const safeGuestCount = Number(nombre_personnes || 1);
@@ -245,10 +245,10 @@ function normalizeBarOrderRequest(body = {}) {
       }))
     : [];
 
-  if (table === undefined || !Array.isArray(items) || safeItems.length === 0) {
+  if ((!allowMissingTable && table === undefined) || !Array.isArray(items) || safeItems.length === 0) {
     throw ApiError.badRequest('table et items sont requis');
   }
-  if (!Number.isInteger(safeTableValue) || safeTableValue < 0) {
+  if (table !== undefined && (!Number.isInteger(safeTableValue) || safeTableValue < 0)) {
     throw ApiError.badRequest('table doit être un entier valide');
   }
   if (!Number.isInteger(safeGuestCount) || safeGuestCount < 1) {
@@ -260,7 +260,7 @@ function normalizeBarOrderRequest(body = {}) {
 
   return {
     client: typeof client === 'string' ? client : 'Client anonyme',
-    table: safeTableValue,
+    table: table === undefined ? undefined : safeTableValue,
     nombre_personnes: safeGuestCount,
     moyen_paiement: safePayment,
     observation: typeof observation === 'string' ? observation.trim() : '',
@@ -292,7 +292,7 @@ async function createBarOrderHandler(req, res) {
 }
 
 async function updateBarOrderHandler(req, res) {
-  const normalized = normalizeBarOrderRequest(req.body || {});
+  const normalized = normalizeBarOrderRequest(req.body || {}, { allowMissingTable: true });
   const order = await updateBarOrder(req.params.id, {
     clientName: normalized.client,
     tableId: normalized.table,
@@ -301,6 +301,7 @@ async function updateBarOrderHandler(req, res) {
     observation: normalized.observation,
     items: normalized.items,
     createdBy: req.user?.role === 'hotesse' ? req.user.id_admin : undefined,
+    actorRole: req.user?.role,
     hotelReservationId: normalized.hotel_reservation_id,
     roomId: normalized.room_id,
     roomGuestName: normalized.room_guest_name,

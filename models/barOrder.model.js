@@ -379,7 +379,7 @@ async function createBarOrder({ clientName, tableId, nombrePersonnes = 1, moyenP
   });
 }
 
-async function updateBarOrder(id, { clientName, tableId, nombrePersonnes = 1, moyenPaiement = 'ESPECES', observation = '', items, createdBy, hotelReservationId = null, roomId = null, roomGuestName = null, roomAccountPaid = false }) {
+async function updateBarOrder(id, { clientName, tableId, nombrePersonnes = 1, moyenPaiement = 'ESPECES', observation = '', items, createdBy, actorRole = null, hotelReservationId = null, roomId = null, roomGuestName = null, roomAccountPaid = false }) {
   await ensureBarOrderTables();
   await ensureBarTransactionsSchema();
 
@@ -413,6 +413,12 @@ async function updateBarOrder(id, { clientName, tableId, nombrePersonnes = 1, mo
       [id]
     );
 
+    const addOnlyRoles = ['caisse', 'caissier', 'hotesse', 'serveur'];
+    const isAddOnlyRole = addOnlyRoles.includes(String(actorRole || '').toLowerCase());
+    if (isAddOnlyRole && (items || []).some((item) => !Number.isFinite(Number(item.quantite ?? 1)) || Number(item.quantite ?? 1) <= 0)) {
+      throw ApiError.forbidden('Vous pouvez ajouter des articles, mais pas retirer ou modifier ceux de la commande.');
+    }
+
     const normalizedItems = (items || [])
       .map((item) => ({
         product_id: Number(item.product_id ?? item.source_product_id ?? item.id),
@@ -431,9 +437,59 @@ async function updateBarOrder(id, { clientName, tableId, nombrePersonnes = 1, mo
     const existingByProduct = new Map();
     for (const row of existingOrderItems || []) {
       const key = String(row.nom || '').trim().toLowerCase();
-      existingByName.set(key, Number(row.quantite || 0));
+      existingByName.set(key, (existingByName.get(key) || 0) + Number(row.quantite || 0));
       if (row.source_product_id != null) {
-        existingByProduct.set(`${row.source_module || 'BAR'}:${Number(row.source_product_id)}`, Number(row.quantite || 0));
+        const productKey = `${row.source_module || 'BAR'}:${Number(row.source_product_id)}`;
+        existingByProduct.set(productKey, (existingByProduct.get(productKey) || 0) + Number(row.quantite || 0));
+      }
+    }
+
+    if (isAddOnlyRole) {
+      const requestedByProduct = new Map();
+      const requestedByName = new Map();
+      for (const item of normalizedItems) {
+        const nameKey = String(item.nom || '').trim().toLowerCase();
+        const namedItem = requestedByName.get(nameKey) || { quantity: 0, price: item.prix };
+        if (namedItem.price !== item.prix) {
+          namedItem.price = null;
+        }
+        namedItem.quantity += item.quantite;
+        requestedByName.set(nameKey, namedItem);
+        const productKey = `${item.source_module}:${item.product_id}`;
+        if (item.product_id > 0) {
+          const current = requestedByProduct.get(productKey) || { quantity: 0, price: item.prix };
+          if (current.price !== item.prix) {
+            throw ApiError.badRequest('Le prix d’un article déjà présent ne peut pas être modifié.');
+          }
+          current.quantity += item.quantite;
+          requestedByProduct.set(productKey, current);
+        }
+      }
+
+      const existingByIdentity = new Map();
+      for (const row of existingOrderItems || []) {
+        const sourceModule = String(row.source_module || 'BAR').toUpperCase();
+        const productId = row.source_product_id == null ? null : Number(row.source_product_id);
+        const identity = productId === null
+          ? `${sourceModule}:name:${String(row.nom || '').trim().toLowerCase()}`
+          : `${sourceModule}:${productId}`;
+        const current = existingByIdentity.get(identity) || {
+          quantity: 0,
+          price: Number(row.prix),
+          sourceProductId: productId,
+          name: String(row.nom || '').trim().toLowerCase(),
+          sourceModule,
+        };
+        current.quantity += Number(row.quantite || 0);
+        existingByIdentity.set(identity, current);
+      }
+      for (const existing of existingByIdentity.values()) {
+        const requested = existing.sourceProductId === null
+          ? requestedByName.get(existing.name)
+          : requestedByProduct.get(`${existing.sourceModule}:${existing.sourceProductId}`);
+        if (!requested || requested.quantity < existing.quantity || requested.price !== existing.price) {
+          throw ApiError.forbidden('Vous pouvez ajouter des articles, mais pas retirer ou modifier ceux de la commande.');
+        }
       }
     }
 
@@ -542,12 +598,24 @@ async function updateBarOrder(id, { clientName, tableId, nombrePersonnes = 1, mo
       isRestaurantItem(item) ? sum : sum + item.quantite * item.prix
     ), 0);
     if (barStockTotal > 0) {
-      await conn.query(
-        `INSERT INTO financial_transactions
-           (module, type_flux, montant, reference_id, ref_flux_global, description, statut_sync, created_at)
-         VALUES ('BAR', 'SORTIE', ?, ?, ?, ?, 'SYNCED', NOW())`,
-        [barStockTotal, id, `BAR-ORDER-${id}-STOCK`, `Sortie de stock â€” ajout commande bar #${id}`]
+      const stockTransactionRef = `BAR-ORDER-${id}-STOCK`;
+      const [[stockTransaction]] = await conn.query(
+        'SELECT id FROM financial_transactions WHERE module = ? AND ref_flux_global = ? FOR UPDATE',
+        ['BAR', stockTransactionRef]
       );
+      if (stockTransaction) {
+        await conn.query(
+          'UPDATE financial_transactions SET montant = montant + ?, description = ? WHERE id = ?',
+          [barStockTotal, `Sortie de stock — commande bar #${id}`, stockTransaction.id]
+        );
+      } else {
+        await conn.query(
+          `INSERT INTO financial_transactions
+             (module, type_flux, montant, reference_id, ref_flux_global, description, statut_sync, created_at)
+           VALUES ('BAR', 'SORTIE', ?, ?, ?, ?, 'SYNCED', NOW())`,
+          [barStockTotal, id, stockTransactionRef, `Sortie de stock — commande bar #${id}`]
+        );
+      }
     }
 
     const clientId = await findOrCreateClient(clientValue, conn);
