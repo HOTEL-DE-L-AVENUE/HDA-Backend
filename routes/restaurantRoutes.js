@@ -25,7 +25,7 @@ router.use(requireAuth, (req, res, next) => {
     if (method === 'GET' && ['/orders', '/stats', '/menu', '/products', '/categories', '/tables'].includes(path)) return next();
     if (method === 'POST' && path === '/orders') return next();
     if (method === 'GET' && /^\/orders\/[^/]+\/(?:detail|invoice(?:\.pdf)?)$/.test(path)) return next();
-    if (method === 'PUT' && /^\/orders\/[^/]+\/status$/.test(path)) return next();
+    if (method === 'PUT' && (/^\/orders\/[^/]+$/.test(path) || /^\/orders\/[^/]+\/status$/.test(path))) return next();
     if (method === 'POST' && ['/payments', '/orders/close-all', '/cashier/open', '/cashier/close'].includes(path)) return next();
     return next(ApiError.forbidden('Le rôle caisse est limité aux chiffres et aux opérations d’encaissement du restaurant'));
   }

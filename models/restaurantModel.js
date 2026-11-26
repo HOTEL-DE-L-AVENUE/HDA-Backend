@@ -27,6 +27,13 @@ async function ensureRestaurantSchema() {
       if (!orderColumns.some((column) => column.Field === 'table_id')) {
         await pool.query('ALTER TABLE orders ADD COLUMN table_id BIGINT UNSIGNED NULL AFTER client_id');
       }
+      if (!orderColumns.some((column) => column.Field === 'created_by')) {
+        await pool.query('ALTER TABLE orders ADD COLUMN created_by BIGINT UNSIGNED NULL AFTER montant_total');
+        await pool.query('ALTER TABLE orders ADD KEY idx_orders_created_by (created_by)');
+      }
+      if (!orderColumns.some((column) => column.Field === 'moyen_paiement_prevu')) {
+        await pool.query("ALTER TABLE orders ADD COLUMN moyen_paiement_prevu VARCHAR(30) NULL AFTER montant_total");
+      }
 
       if (!orderColumns.some((column) => column.Field === 'cloturee')) {
         await pool.query('ALTER TABLE orders ADD COLUMN cloturee TINYINT(1) NOT NULL DEFAULT 0 AFTER statut');
@@ -528,7 +535,7 @@ const RestaurantSessions = createCrudModel({
 // --- Logique métier -------------------------------------------------------
 
 // Crée une commande + ses lignes, calcule le montant_total automatiquement.
-async function createOrderWithItems({ clientId, tableId, items, notes, locationType, specialPersonName }) {
+async function createOrderWithItems({ clientId, tableId, items, notes, locationType, specialPersonName, moyenPaiementPrevu = null, createdBy = null }) {
   await ensureRestaurantSchema();
   return withTransaction(async (conn) => {
     const montantTotal = items.reduce((sum, it) => sum + Number(it.quantite) * Number(it.prix_unitaire), 0);
@@ -550,9 +557,9 @@ async function createOrderWithItems({ clientId, tableId, items, notes, locationT
     }
 
     const [result] = await conn.query(
-      `INSERT INTO orders (client_id, table_id, source_module, montant_total, statut, created_at, notes, location_type, special_person_name, order_ingredients_deducted)
-      VALUES (?, ?, 'RESTAURANT', ?, 'EN_ATTENTE', NOW(), ?, ?, ?, 0)`,
-      [clientId, tableId, montantTotal, notes || null, locationType || null, specialPersonName || null]
+      `INSERT INTO orders (client_id, table_id, source_module, montant_total, moyen_paiement_prevu, created_by, statut, created_at, notes, location_type, special_person_name, order_ingredients_deducted)
+      VALUES (?, ?, 'RESTAURANT', ?, ?, ?, 'EN_ATTENTE', NOW(), ?, ?, ?, 0)`,
+      [clientId, tableId, montantTotal, moyenPaiementPrevu, createdBy, notes || null, locationType || null, specialPersonName || null]
     );
     const orderId = result.insertId;
 
@@ -579,7 +586,7 @@ async function createOrderWithItems({ clientId, tableId, items, notes, locationT
   });
 }
 
-async function updateOrderWithItems({ orderId, clientId, tableId, items, notes, locationType, specialPersonName }) {
+async function updateOrderWithItems({ orderId, clientId, tableId, items, notes, locationType, specialPersonName, moyenPaiementPrevu = null }) {
   await ensureRestaurantSchema();
   return withTransaction(async (conn) => {
     const montantTotal = items.reduce((sum, item) => sum + Number(item.quantite) * Number(item.prix_unitaire), 0);
@@ -632,10 +639,10 @@ async function updateOrderWithItems({ orderId, clientId, tableId, items, notes, 
 
     await conn.query(
       `UPDATE orders
-       SET client_id = ?, table_id = ?, montant_total = ?, notes = ?, location_type = ?, special_person_name = ?,
+       SET client_id = ?, table_id = ?, montant_total = ?, moyen_paiement_prevu = ?, notes = ?, location_type = ?, special_person_name = ?,
            order_ingredients_deducted = 0
        WHERE id = ?`,
-      [clientId || null, tableId || null, montantTotal, notes || null, locationType || null, specialPersonName || null, orderId]
+      [clientId || null, tableId || null, montantTotal, moyenPaiementPrevu, notes || null, locationType || null, specialPersonName || null, orderId]
     );
     await conn.query('DELETE FROM order_items WHERE order_id = ?', [orderId]);
     for (const item of items) {
@@ -673,9 +680,11 @@ async function updateOrderWithItems({ orderId, clientId, tableId, items, notes, 
 
 async function orderWithItems(orderId) {
   const [orderRows] = await pool.query(
-    `SELECT o.*, t.numero AS table_numero
+    `SELECT o.*, t.numero AS table_numero,
+            u.nom AS creator_nom, u.prenom AS creator_prenom
      FROM orders o
      LEFT JOIN tables_restaurant t ON t.id = o.table_id
+     LEFT JOIN users u ON u.id_admin = o.created_by
      WHERE o.id = ?`,
     [orderId]
   );
@@ -691,7 +700,11 @@ async function orderWithItems(orderId) {
     'SELECT moyen_paiement FROM payments WHERE order_id = ? ORDER BY date_paiement DESC, id DESC LIMIT 1',
     [orderId]
   );
-  return { ...orderRows[0], moyen_paiement: payments[0]?.moyen_paiement || null, items };
+  return {
+    ...orderRows[0],
+    moyen_paiement: payments[0]?.moyen_paiement || orderRows[0].moyen_paiement_prevu || null,
+    items,
+  };
 }
 
 Orders.findAll = async function(options) {

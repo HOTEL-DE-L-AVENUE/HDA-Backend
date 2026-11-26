@@ -524,7 +524,7 @@ async function saveRestaurantProductRecipeHandler(req, res) {
 
 async function createOrderHandler(req, res) {
   console.debug('[restaurant] createOrderHandler body:', JSON.stringify(req.body));
-  const { client_id, table_id, items, notes, location_type, special_person_name } = req.body;
+  const { client_id, table_id, items, notes, location_type, special_person_name, moyen_paiement } = req.body;
   if (!items || !items.length) throw ApiError.badRequest('items requis (au moins une ligne)');
 
   try {
@@ -562,12 +562,21 @@ async function createOrderHandler(req, res) {
     throw ApiError.badRequest('Données de référence invalides');
   }
 
-  const order = await resto.createOrderWithItems({ clientId: client_id, tableId: table_id, items, notes, locationType: location_type, specialPersonName: special_person_name });
+  const order = await resto.createOrderWithItems({
+    clientId: client_id,
+    tableId: table_id,
+    items,
+    notes,
+    locationType: location_type,
+    specialPersonName: special_person_name,
+    moyenPaiementPrevu: moyen_paiement || null,
+    createdBy: req.user?.id_admin ?? null,
+  });
   return created(res, order);
 }
 
 async function updateOrderHandler(req, res) {
-  const { client_id, table_id, items, notes, location_type, special_person_name } = req.body;
+  const { client_id, table_id, items, notes, location_type, special_person_name, moyen_paiement } = req.body;
   if (!Array.isArray(items) || !items.length) throw ApiError.badRequest('items requis (au moins une ligne)');
 
   const restaurantItems = items.filter((item) => String(item.source_module || 'RESTAURANT').toUpperCase() !== 'BAR');
@@ -597,6 +606,7 @@ async function updateOrderHandler(req, res) {
     notes,
     locationType: location_type,
     specialPersonName: special_person_name,
+    moyenPaiementPrevu: moyen_paiement || null,
   });
   if (!order) throw ApiError.notFound(`Commande #${req.params.id} introuvable`);
   return ok(res, order);

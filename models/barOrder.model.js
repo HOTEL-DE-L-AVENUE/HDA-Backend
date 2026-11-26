@@ -153,7 +153,11 @@ async function listBarOrders({ createdBy } = {}) {
   await ensureBarOrderTables();
   const hasCreatorFilter = createdBy !== undefined && createdBy !== null;
   const [orders] = await pool.query(
-    `SELECT * FROM bar_orders WHERE statut <> 'CLOTUREE'${hasCreatorFilter ? ' AND created_by = ?' : ''} ORDER BY created_at DESC`,
+    `SELECT bo.*, u.nom AS creator_nom, u.prenom AS creator_prenom
+       FROM bar_orders bo
+       LEFT JOIN users u ON u.id_admin = bo.created_by
+      WHERE bo.statut <> 'CLOTUREE'${hasCreatorFilter ? ' AND bo.created_by = ?' : ''}
+      ORDER BY bo.created_at DESC`,
     hasCreatorFilter ? [createdBy] : []
   );
   const orderIds = orders.map((order) => order.id);
@@ -180,6 +184,9 @@ async function listBarOrders({ createdBy } = {}) {
     observation: order.observation || '',
     statut: order.statut,
     total: Number(order.montant_total || 0),
+    created_by: order.created_by ?? null,
+    creator_nom: order.creator_nom || null,
+    creator_prenom: order.creator_prenom || null,
     created_at: order.created_at,
     hotel_reservation_id: order.hotel_reservation_id ?? null,
     room_id: order.room_id ?? null,
@@ -197,7 +204,13 @@ async function listBarOrders({ createdBy } = {}) {
 
 async function listBarHistory() {
   await ensureBarOrderTables();
-  const [orders] = await pool.query("SELECT * FROM bar_orders WHERE statut = 'CLOTUREE' ORDER BY cloture_at DESC, created_at DESC");
+  const [orders] = await pool.query(
+    `SELECT bo.*, u.nom AS creator_nom, u.prenom AS creator_prenom
+       FROM bar_orders bo
+       LEFT JOIN users u ON u.id_admin = bo.created_by
+      WHERE bo.statut = 'CLOTUREE'
+      ORDER BY bo.cloture_at DESC, bo.created_at DESC`
+  );
   const orderIds = orders.map((order) => order.id);
   if (!orderIds.length) return [];
   const [items] = await pool.query('SELECT * FROM bar_order_items WHERE order_id IN (?) ORDER BY id ASC', [orderIds]);
@@ -212,6 +225,9 @@ async function listBarHistory() {
     observation: order.observation || '',
     statut: order.statut,
     total: Number(order.montant_total || 0),
+    created_by: order.created_by ?? null,
+    creator_nom: order.creator_nom || null,
+    creator_prenom: order.creator_prenom || null,
     created_at: order.created_at,
     cloture_at: order.cloture_at,
     hotel_reservation_id: order.hotel_reservation_id ?? null,

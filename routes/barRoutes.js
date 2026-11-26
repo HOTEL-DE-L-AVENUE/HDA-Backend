@@ -28,7 +28,7 @@ router.use(requireAuth, (req, res, next) => {
 	}
 	if (!Array.isArray(modules)) modules = [];
 	modules = modules.map((item) => typeof item === 'string' ? item : item?.id).filter(Boolean);
-	const canReadRestaurantDrinkMenu = role === 'serveur'
+	const canReadRestaurantDrinkMenu = ['serveur', 'caisse', 'caissier'].includes(role)
 		&& modules.includes('restaurant')
 		&& req.method === 'GET'
 		&& /^\/products(?:\/\d+)?$/.test(req.path);
