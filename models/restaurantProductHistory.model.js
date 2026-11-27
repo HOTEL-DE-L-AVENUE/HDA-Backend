@@ -40,7 +40,11 @@ async function getProductHistory({ dateFrom, dateTo, productName } = {}) {
     LEFT JOIN categories c ON c.id = p.category_id
     LEFT JOIN bar_products bp ON bp.id = oi.source_product_id AND oi.source_module = 'BAR'
     WHERE ${conditions.join(' AND ')}
-    GROUP BY DATE(o.created_at), COALESCE(oi.source_product_id, oi.product_id), COALESCE(oi.product_nom, p.nom, bp.nom), COALESCE(c.nom, bp.categorie)
+    GROUP BY
+      DATE(o.created_at),
+      COALESCE(oi.source_product_id, oi.product_id),
+      COALESCE(oi.product_nom, p.nom, bp.nom, CONCAT('Produit #', oi.product_id)),
+      COALESCE(c.nom, bp.categorie, 'Autre')
     ORDER BY date_vente DESC, quantite_totale DESC
   `;
 

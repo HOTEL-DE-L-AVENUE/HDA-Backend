@@ -64,6 +64,7 @@ async function saveRestaurantReportHandler(req, res) {
 
 async function getProductHistoryHandler(req, res) {
   const { dateFrom, dateTo, productName } = req.query;
+  await resto.ensureRestaurantSchema();
   const history = await getProductHistory({ dateFrom, dateTo, productName });
   return ok(res, history);
 }
